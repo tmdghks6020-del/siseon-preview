@@ -1,5 +1,6 @@
 const homeView = document.querySelector('#homeView');
 const issueView = document.querySelector('#issueView');
+const pollBoardView = document.querySelector('#pollBoardView');
 const announcementsView = document.querySelector('#announcementsView');
 const archiveView = document.querySelector('#archiveView');
 const openTalkView = document.querySelector('#openTalkView');
@@ -22,6 +23,62 @@ let activeIssueIsReadOnly = false;
 let pendingVote = null;
 let pendingReportContext = null;
 
+function routeUrl(route, params = {}) {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('issue');
+  url.searchParams.delete('view');
+  url.searchParams.delete('notice');
+  url.hash = '';
+  if (route === 'issue' && params.issueId) url.searchParams.set('issue', params.issueId);
+  else if (route !== 'home') url.searchParams.set('view', route);
+  if (params.noticeId) url.searchParams.set('notice', params.noticeId);
+  return `${url.pathname}${url.search}${params.hash || ''}`;
+}
+
+function pushAppRoute(route, params = {}, replace = false) {
+  const state = { siseonRoute: route, ...params };
+  const method = replace ? 'replaceState' : 'pushState';
+  window.history[method](state, '', routeUrl(route, params));
+}
+
+function restoreHomeView(hash = '') {
+  homeView.classList.remove('hidden');
+  pollBoardView.classList.add('hidden'); issueView.classList.add('hidden'); announcementsView.classList.add('hidden'); archiveView.classList.add('hidden');
+  openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); adminView.classList.add('hidden');
+  setTopNavActive(hash === '#archive' ? 'archive' : 'polls');
+  if (hash) requestAnimationFrame(() => document.querySelector(hash)?.scrollIntoView({ behavior: 'instant', block: 'start' }));
+  else window.scrollTo({ top: 0, behavior: 'instant' });
+}
+
+function goBackWithinApp(fallback = 'home') {
+  const route = window.history.state?.siseonRoute;
+  if (route && route !== 'home') { window.history.back(); return; }
+  if (fallback === 'home') restoreHomeView();
+}
+
+function restoreRouteFromHistory(state = {}) {
+  const route = state.siseonRoute || 'home';
+  if (state.siseonRoot && !state.siseonExitGuard) {
+    restoreHomeView();
+    window.history.pushState({ siseonRoute: 'home', siseonExitGuard: true }, '', window.location.href);
+    const dialog = document.querySelector('#exitConfirmDialog');
+    if (dialog && !dialog.open) dialog.showModal();
+    return;
+  }
+  if (route === 'issue') { const id = state.issueId || new URLSearchParams(window.location.search).get('issue'); if (id && getIssueData(id)) return openIssue(id, 'none'); }
+  if (route === 'poll-board') return showPollBoard(false);
+  if (route === 'archive') return showArchiveBoard(false);
+  if (route === 'open-talk' || route === 'suggestions') return showCommunitySubpage(route, false);
+  if (route === 'admin') { showAdminView(false); if (state.adminPage && state.adminPage !== 'overview') renderAdminPage(state.adminPage); return; }
+  if (route === 'announcements') {
+    openAnnouncements(null, false);
+    if (state.noticeId) openAnnouncementDetail(state.noticeId, false);
+    return;
+  }
+  restoreHomeView(state.hash || '');
+  syncSeoMetadata(null, 'none');
+}
+
 function setTopNavActive(key) {
   document.querySelectorAll('.desktop-nav [data-nav-key], .site-map-panel [data-nav-key]').forEach((link) => {
     const active = link.dataset.navKey === key;
@@ -31,9 +88,10 @@ function setTopNavActive(key) {
 }
 setTopNavActive('polls');
 
-function showCommunitySubpage(page) {
-  homeView.classList.add('hidden'); issueView.classList.add('hidden'); announcementsView.classList.add('hidden'); archiveView.classList.add('hidden'); adminView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden');
+function showCommunitySubpage(page, pushHistory = true) {
+  homeView.classList.add('hidden'); pollBoardView.classList.add('hidden'); issueView.classList.add('hidden'); announcementsView.classList.add('hidden'); archiveView.classList.add('hidden'); adminView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden');
   closeSiteMap();
+  if (pushHistory) pushAppRoute(page);
   if (page === 'open-talk') { setTopNavActive('open-talk'); openTalkView.classList.remove('hidden'); document.querySelector('#openTalkDetail').classList.add('hidden'); document.querySelector('#openTalkBoardContent').classList.remove('hidden'); renderOpenTalkList(); }
   if (page === 'suggestions') { setTopNavActive('suggestions'); topicSuggestionsView.classList.remove('hidden'); document.querySelector('#topicSuggestionDetail').classList.add('hidden'); document.querySelector('#topicSuggestionBoardContent').classList.remove('hidden'); renderTopicSuggestions(); }
   window.scrollTo({ top: 0, behavior: 'instant' });
@@ -48,10 +106,8 @@ function closeSiteMap() {
 }
 
 function goHome() {
-  homeView.classList.remove('hidden');
-  issueView.classList.add('hidden'); announcementsView.classList.add('hidden'); archiveView.classList.add('hidden');
-  openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden');
-  adminView.classList.add('hidden');
+  pushAppRoute('home');
+  restoreHomeView();
   activeIssueId = null;
   activeIssueIsArchived = false; activeIssueIsReadOnly = false;
   syncSeoMetadata(null, 'replace');
@@ -505,9 +561,10 @@ function renderHomeCommunityBoard() {
 
 function showHomeCommunityBoard(board) {
   homeView.classList.remove('hidden');
-  issueView.classList.add('hidden'); announcementsView.classList.add('hidden');
+  pollBoardView.classList.add('hidden'); issueView.classList.add('hidden'); announcementsView.classList.add('hidden'); archiveView.classList.add('hidden');
   openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); adminView.classList.add('hidden');
   closeSiteMap();
+  pushAppRoute('home', { hash: '#communityBoards' });
   setTopNavActive(board === 'open-talk' ? 'open-talk' : 'suggestions');
   renderHomeCommunityBoard();
   const target = document.querySelector(board === 'open-talk' ? '#homeOpenTalkHeading' : '#homeSuggestionsHeading');
@@ -561,7 +618,7 @@ document.querySelector('#communityBoards').addEventListener('click', (event) => 
 });
 
 document.querySelectorAll('[data-community-home]').forEach((button) => button.addEventListener('click', () => {
-  openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); homeView.classList.remove('hidden'); setTopNavActive('polls'); window.scrollTo({ top: 0, behavior: 'instant' });
+  goBackWithinApp();
 }));
 document.querySelector('#openTalkForm').addEventListener('submit', (event) => {
   event.preventDefault();
@@ -663,18 +720,20 @@ function renderAnnouncementList() {
   list.innerHTML = items.map((item) => `<a class="announcement-row" href="#announcement" data-announcement-id="${escapeAdminHtml(item.id)}"><div class="announcement-row-meta"><span class="announcement-category">${escapeAdminHtml(item.category)}</span><time>${new Date(item.createdAt).toLocaleDateString('ko-KR')}</time>${item.pinned ? '<b>고정</b>' : ''}</div><h2>${escapeAdminHtml(item.title)}</h2><p>${escapeAdminHtml(item.summary)}</p></a>`).join('') || '<div class="announcement-empty">게시된 공지사항이 없습니다.</div>';
 }
 
-function openAnnouncements(id = null) {
+function openAnnouncements(id = null, pushHistory = true) {
   setTopNavActive('announcements');
-  homeView.classList.add('hidden'); issueView.classList.add('hidden'); archiveView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); adminView.classList.add('hidden');
+  homeView.classList.add('hidden'); pollBoardView.classList.add('hidden'); issueView.classList.add('hidden'); archiveView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); adminView.classList.add('hidden');
+  if (pushHistory) pushAppRoute('announcements');
   announcementsView.classList.remove('hidden');
   renderAnnouncementList();
   if (id) openAnnouncementDetail(id); else backAnnouncementList();
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
-function openAnnouncementDetail(id) {
+function openAnnouncementDetail(id, pushHistory = true) {
   const item = sortedPublicAnnouncements().find((entry) => entry.id === id);
   if (!item) return backAnnouncementList();
+  if (pushHistory) pushAppRoute('announcements', { noticeId: id });
   document.querySelector('#announcementListView').classList.add('hidden');
   const detail = document.querySelector('#announcementDetailView');
   detail.classList.remove('hidden');
@@ -689,24 +748,58 @@ function backAnnouncementList() {
 document.querySelectorAll('[data-open-announcements]').forEach((link) => link.addEventListener('click', (event) => {
   event.preventDefault(); closeSiteMap(); document.querySelector('.desktop-nav').classList.remove('mobile-open'); openAnnouncements(link.dataset.announcementId || null);
 }));
-function showArchiveBoard() {
+function showPollBoard(pushHistory = true) {
   closeSiteMap();
   document.querySelector('.desktop-nav').classList.remove('mobile-open');
-  homeView.classList.add('hidden'); issueView.classList.add('hidden'); announcementsView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); adminView.classList.add('hidden');
+  homeView.classList.add('hidden'); issueView.classList.add('hidden'); announcementsView.classList.add('hidden'); archiveView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); adminView.classList.add('hidden');
+  pollBoardView.classList.remove('hidden');
+  setTopNavActive('polls');
+  renderPollBoard();
+  if (pushHistory) pushAppRoute('poll-board');
+  window.scrollTo({ top: 0, behavior: 'instant' });
+}
+function renderPollBoard() {
+  const list = document.querySelector('#pollBoardList');
+  if (!list) return;
+  list.replaceChildren(...activeIssueIds.map((id, index) => {
+    const issue = issues[id];
+    const row = document.createElement('a');
+    row.className = 'archive-row poll-board-row'; row.href = `?issue=${encodeURIComponent(id)}`; row.dataset.openIssue = id;
+    const main = document.createElement('div'); main.className = 'archive-main';
+    const title = document.createElement('strong'); title.textContent = issue.title;
+    const meta = document.createElement('span'); meta.textContent = `${issue.category} · 진행 중인 투표 ${index + 1} / ${activeIssueIds.length} · 30일 투표`;
+    const summary = document.createElement('small'); summary.textContent = issue.intro;
+    main.append(title, meta, summary);
+    const arrow = document.createElement('div'); arrow.className = 'archive-arrow'; arrow.textContent = '→';
+    row.append(main, arrow); return row;
+  }));
+}
+function showArchiveBoard(pushHistory = true) {
+  closeSiteMap();
+  document.querySelector('.desktop-nav').classList.remove('mobile-open');
+  homeView.classList.add('hidden'); pollBoardView.classList.add('hidden'); issueView.classList.add('hidden'); announcementsView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); adminView.classList.add('hidden');
   archiveView.classList.remove('hidden');
   setTopNavActive('archive');
   renderEditorialArchives();
+  if (pushHistory) pushAppRoute('archive');
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 document.querySelectorAll('[data-open-archive]').forEach((link) => link.addEventListener('click', (event) => { event.preventDefault(); showArchiveBoard(); }));
-document.querySelectorAll('.desktop-nav [data-nav-key]:not([data-open-announcements]):not([data-open-archive]), .site-map-panel [data-nav-key]:not([data-open-announcements]):not([data-open-archive])').forEach((link) => link.addEventListener('click', (event) => {
+document.querySelectorAll('[data-open-poll-board]').forEach((link) => link.addEventListener('click', (event) => { event.preventDefault(); showPollBoard(); }));
+document.querySelector('#pollBoardBackHome').addEventListener('click', goHome);
+document.querySelector('#pollBoardList').addEventListener('click', (event) => {
+  const row = event.target.closest('[data-open-issue]');
+  if (row) { event.preventDefault(); openIssue(row.dataset.openIssue); }
+});
+document.querySelectorAll('.desktop-nav [data-nav-key]:not([data-open-announcements]):not([data-open-archive]):not([data-open-poll-board]), .site-map-panel [data-nav-key]:not([data-open-announcements]):not([data-open-archive]):not([data-open-poll-board])').forEach((link) => link.addEventListener('click', (event) => {
   event.preventDefault();
   const key = link.dataset.navKey;
   if (key === 'open-talk' || key === 'suggestions') { showHomeCommunityBoard(key); return; }
+  pushAppRoute('home', { hash: link.getAttribute('href') });
   setTopNavActive(key);
   closeSiteMap();
   document.querySelector('.desktop-nav').classList.remove('mobile-open');
-  announcementsView.classList.add('hidden'); archiveView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); issueView.classList.add('hidden'); adminView.classList.add('hidden'); homeView.classList.remove('hidden');
+  announcementsView.classList.add('hidden'); archiveView.classList.add('hidden'); pollBoardView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); issueView.classList.add('hidden'); adminView.classList.add('hidden'); homeView.classList.remove('hidden');
   const target = document.querySelector(link.getAttribute('href'));
   if (target) requestAnimationFrame(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }));
 }));
@@ -722,15 +815,13 @@ window.addEventListener('scroll', () => {
   sections.forEach(([key, selector]) => { const section = document.querySelector(selector); if (section && section.getBoundingClientRect().top <= 150) current = key; });
   setTopNavActive(current);
 }, { passive: true });
-document.querySelector('#announcementBackHome').addEventListener('click', () => {
-  announcementsView.classList.add('hidden'); homeView.classList.remove('hidden'); setTopNavActive('polls'); window.scrollTo({ top: 0, behavior: 'instant' });
-});
+document.querySelector('#announcementBackHome').addEventListener('click', goHome);
 document.querySelector('#archiveBackHome').addEventListener('click', goHome);
 document.querySelector('#announcementListTop').addEventListener('click', backAnnouncementList);
 document.querySelector('#announcementList').addEventListener('click', (event) => {
   const link = event.target.closest('[data-announcement-id]'); if (link) { event.preventDefault(); openAnnouncementDetail(link.dataset.announcementId); }
 });
-document.querySelector('#announcementDetailView').addEventListener('click', (event) => { if (event.target.closest('#announcementDetailBack')) backAnnouncementList(); });
+document.querySelector('#announcementDetailView').addEventListener('click', (event) => { if (event.target.closest('#announcementDetailBack')) goBackWithinApp(); });
 
 function saveAdminOperations() {
   localStorage.setItem(adminOperationsKey, JSON.stringify(adminOperations));
@@ -781,8 +872,8 @@ function syncSeoMetadata(issueId = null, historyMode = 'none') {
     ? { '@context': 'https://schema.org', '@type': 'WebPage', name: issue.title, description, url: canonicalUrl, isPartOf: { '@type': 'WebSite', name: '시선', url: websiteUrl }, about: { '@type': 'Thing', name: issue.category } }
     : { '@context': 'https://schema.org', '@type': 'WebSite', name: '시선', url: websiteUrl, description };
   document.querySelector('#seoStructuredData').textContent = JSON.stringify(schema);
-  if (historyMode === 'push') window.history.pushState({ issueId }, '', canonicalUrl);
-  if (historyMode === 'replace') window.history.replaceState({ issueId }, '', canonicalUrl);
+  if (historyMode === 'push') window.history.pushState({ issueId, siseonRoute: 'issue' }, '', canonicalUrl);
+  if (historyMode === 'replace') window.history.replaceState({ ...(window.history.state || {}), issueId, siseonRoute: issueId ? 'issue' : (window.history.state?.siseonRoute || 'home') }, '', canonicalUrl);
 }
 
 function openIssue(issueId, historyMode = 'push') {
@@ -797,7 +888,7 @@ function openIssue(issueId, historyMode = 'push') {
   setTopNavActive('polls');
   syncSeoMetadata(issueId, historyMode);
   renderIssueContent();
-  homeView.classList.add('hidden');
+  homeView.classList.add('hidden'); pollBoardView.classList.add('hidden');
   document.querySelector('#adminView').classList.add('hidden');
   announcementsView?.classList.add('hidden'); archiveView?.classList.add('hidden');
   openTalkView?.classList.add('hidden'); topicSuggestionsView?.classList.add('hidden');
@@ -1077,15 +1168,17 @@ function isAdminMode() {
 }
 if (isAdminMode()) adminEntryButton.classList.remove('hidden');
 
-function showAdminView() {
+function showAdminView(pushHistory = true) {
   if (!isAdminMode()) return openLogin();
   homeView.classList.add('hidden');
+  pollBoardView.classList.add('hidden');
   issueView.classList.add('hidden');
   announcementsView.classList.add('hidden'); archiveView.classList.add('hidden');
   openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden');
   adminView.classList.remove('hidden');
   currentAdminPage = 'overview';
   renderAdminDashboard();
+  if (pushHistory) pushAppRoute('admin', { adminPage: 'overview' });
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
@@ -1328,7 +1421,7 @@ function handleAdminAction(action, id) {
 
 document.querySelector('.admin-sidebar').addEventListener('click', (event) => {
   const button = event.target.closest('[data-admin-page]');
-  if (button) renderAdminPage(button.dataset.adminPage);
+  if (button) { pushAppRoute('admin', { adminPage: button.dataset.adminPage }); renderAdminPage(button.dataset.adminPage); }
 });
 document.querySelector('#adminPageContent').addEventListener('click', (event) => {
   const discussionAction = event.target.closest('[data-discussion-action]');
@@ -1383,7 +1476,7 @@ document.querySelector('#adminPageContent').addEventListener('click', (event) =>
     saveAdminOperations(); renderAnnouncementTicker(); renderAdminPage('announcements'); return;
   }
   const pageButton = event.target.closest('[data-admin-page]');
-  if (pageButton) { renderAdminPage(pageButton.dataset.adminPage); return; }
+  if (pageButton) { pushAppRoute('admin', { adminPage: pageButton.dataset.adminPage }); renderAdminPage(pageButton.dataset.adminPage); return; }
   const draftButton = event.target.closest('[data-review-draft]');
   if (draftButton) { activeDraftId = draftButton.dataset.reviewDraft; renderAdminPage('reviews'); return; }
   const actionButton = event.target.closest('[data-admin-action]');
@@ -1446,11 +1539,7 @@ document.querySelector('#adminDemoButton').addEventListener('click', () => {
 });
 adminEntryButton.addEventListener('click', showAdminView);
 document.querySelector('#adminBackButton').addEventListener('click', () => {
-  adminView.classList.add('hidden');
-  announcementsView.classList.add('hidden');
-  homeView.classList.remove('hidden');
-  renderPollCards();
-  window.scrollTo({ top: 0, behavior: 'instant' });
+  goBackWithinApp();
 });
 editorialForm.addEventListener('input', updateAdminPreview);
 document.querySelector('#saveDraftButton').addEventListener('click', () => {
@@ -1505,12 +1594,7 @@ editorialForm.addEventListener('submit', (event) => {
   renderAdminDashboard();
 });
 document.querySelector('#backButton').addEventListener('click', () => {
-  issueView.classList.add('hidden');
-  homeView.classList.remove('hidden');
-  activeIssueId = null;
-  activeIssueIsArchived = false; activeIssueIsReadOnly = false;
-  syncSeoMetadata(null, 'replace');
-  window.scrollTo({ top: 0, behavior: 'instant' });
+  goBackWithinApp();
 });
 loginButton.addEventListener('click', openLogin);
 document.querySelector('#menuButton').addEventListener('click', () => {
@@ -1741,12 +1825,34 @@ renderAnnouncementTicker();
 renderHomeCommunityBoard();
 syncPollCarousel();
 const initialIssueId = new URLSearchParams(window.location.search).get('issue');
-syncSeoMetadata(initialIssueId && getIssueData(initialIssueId) ? initialIssueId : null, 'replace');
-if (initialIssueId && getIssueData(initialIssueId)) openIssue(initialIssueId, 'none');
-window.addEventListener('popstate', () => {
-  const issueId = new URLSearchParams(window.location.search).get('issue');
-  if (issueId && getIssueData(issueId)) openIssue(issueId, 'none');
-  else if (!issueView.classList.contains('hidden')) goHome();
-  else syncSeoMetadata(null, 'none');
+const initialView = new URLSearchParams(window.location.search).get('view');
+const rootUrl = new URL(window.location.href);
+rootUrl.searchParams.delete('issue'); rootUrl.searchParams.delete('view'); rootUrl.searchParams.delete('notice');
+const rootLocation = `${rootUrl.pathname}${rootUrl.search}${rootUrl.hash}`;
+window.history.replaceState({ siseonRoute: 'home', siseonRoot: true }, '', rootLocation);
+window.history.pushState({ siseonRoute: 'home', siseonExitGuard: true }, '', rootLocation);
+syncSeoMetadata(null, 'none');
+if (initialIssueId && getIssueData(initialIssueId)) openIssue(initialIssueId, 'push');
+else if (initialView === 'poll-board') showPollBoard(false);
+else if (initialView === 'archive') showArchiveBoard(false);
+else if (initialView === 'open-talk' || initialView === 'suggestions') showCommunitySubpage(initialView, false);
+else if (initialView === 'announcements') openAnnouncements(null, false);
+else if (initialView === 'admin') showAdminView(false);
+else restoreHomeView();
+
+const exitConfirmDialog = document.querySelector('#exitConfirmDialog');
+document.querySelector('#stayOnSiteButton').addEventListener('click', () => exitConfirmDialog.close());
+document.querySelector('#leaveSiteButton').addEventListener('click', () => {
+  exitConfirmDialog.close();
+  window.history.go(-2);
+});
+
+window.addEventListener('popstate', (event) => {
+  const state = event.state || {};
+  if (state.siseonRoot && !state.siseonExitGuard) {
+    restoreRouteFromHistory(state);
+    return;
+  }
+  restoreRouteFromHistory(state);
 });
 
