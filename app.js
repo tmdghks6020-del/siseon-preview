@@ -1844,7 +1844,14 @@ const exitConfirmDialog = document.querySelector('#exitConfirmDialog');
 document.querySelector('#stayOnSiteButton').addEventListener('click', () => exitConfirmDialog.close());
 document.querySelector('#leaveSiteButton').addEventListener('click', () => {
   exitConfirmDialog.close();
-  window.history.go(-2);
+  let destination = 'about:blank';
+  if (document.referrer) {
+    try {
+      const previousPage = new URL(document.referrer);
+      if (['http:', 'https:'].includes(previousPage.protocol) && previousPage.href !== window.location.href) destination = previousPage.href;
+    } catch { /* Use the blank page when the referrer is unavailable or invalid. */ }
+  }
+  window.location.replace(destination);
 });
 
 window.addEventListener('popstate', (event) => {
