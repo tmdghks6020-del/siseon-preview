@@ -6,7 +6,15 @@ const topicSuggestionsView = document.querySelector('#topicSuggestionsView');
 const loginDialog = document.querySelector('#loginDialog');
 const postDialog = document.querySelector('#postDialog');
 const loginButton = document.querySelector('#loginButton');
-const authKey = 'dugyeon:demo-auth';
+const previousStoragePrefix = 'dugyeon:';
+const storagePrefix = 'siseon:';
+const previousStorageKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)).filter((key) => key?.startsWith(previousStoragePrefix));
+previousStorageKeys.forEach((key) => {
+  const migratedKey = `${storagePrefix}${key.slice(previousStoragePrefix.length)}`;
+  if (localStorage.getItem(migratedKey) === null) localStorage.setItem(migratedKey, localStorage.getItem(key));
+  localStorage.removeItem(key);
+});
+const authKey = `${storagePrefix}demo-auth`;
 let activeIssueId = null;
 let activeIssueIsArchived = false;
 let activeIssueIsReadOnly = false;
@@ -25,8 +33,8 @@ setTopNavActive('polls');
 function showCommunitySubpage(page) {
   homeView.classList.add('hidden'); issueView.classList.add('hidden'); announcementsView.classList.add('hidden'); adminView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden');
   closeSiteMap();
-  if (page === 'open-talk') { setTopNavActive('open-talk'); openTalkView.classList.remove('hidden'); renderOpenTalkList(); }
-  if (page === 'suggestions') { setTopNavActive('suggestions'); topicSuggestionsView.classList.remove('hidden'); renderTopicSuggestions(); }
+  if (page === 'open-talk') { setTopNavActive('open-talk'); openTalkView.classList.remove('hidden'); document.querySelector('#openTalkDetail').classList.add('hidden'); document.querySelector('#openTalkBoardContent').classList.remove('hidden'); renderOpenTalkList(); }
+  if (page === 'suggestions') { setTopNavActive('suggestions'); topicSuggestionsView.classList.remove('hidden'); document.querySelector('#topicSuggestionDetail').classList.add('hidden'); document.querySelector('#topicSuggestionBoardContent').classList.remove('hidden'); renderTopicSuggestions(); }
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
@@ -248,8 +256,8 @@ curatedTopics.forEach(([id, category, title, intro, fact, source, sourceUrl, for
   };
 });
 
-const editorialStorageKey = 'dugyeon:editorial-demo-state';
-const adminModeKey = 'dugyeon:demo-admin';
+const editorialStorageKey = `${storagePrefix}editorial-demo-state`;
+const adminModeKey = `${storagePrefix}demo-admin`;
 const samplePendingDraft = {
   id: 'smart-glasses-privacy',
   category: '기술 · 사생활',
@@ -293,7 +301,7 @@ samplePendingDrafts.forEach((draft) => {
 // Deployment-generated candidates are imported into the private review queue only.
 // They remain hidden from public polls until an administrator explicitly approves them.
 let deploymentDraftsAdded = false;
-const deploymentDrafts = Array.isArray(window.DUGYEON_DEPLOYMENT_DRAFTS) ? window.DUGYEON_DEPLOYMENT_DRAFTS : [];
+const deploymentDrafts = Array.isArray(window.SISEON_DEPLOYMENT_DRAFTS) ? window.SISEON_DEPLOYMENT_DRAFTS : [];
 const electionTopicPattern = /선거|후보자|선거운동|공약 비교|투표 절차|투표 결과/;
 deploymentDrafts.forEach((draft) => {
   const valid = draft && typeof draft.id === 'string' && typeof draft.category === 'string'
@@ -319,7 +327,7 @@ if (deploymentDraftsAdded) localStorage.setItem(editorialStorageKey, JSON.string
 let currentAdminPage = 'overview';
 let activeDraftId = editorialState.pending[0]?.id || null;
 let activeReviewCategory = '전체 분야';
-const adminOperationsKey = 'dugyeon:admin-operations-demo';
+const adminOperationsKey = `${storagePrefix}admin-operations-demo`;
 const seedAdminOperations = {
   members: [
     { id: 'm-1042', nickname: '생각나눔', joined: '2026.11.20', status: '정상', reports: 0 },
@@ -363,10 +371,10 @@ const seedAdminOperations = {
     { id: 'open-talk-demo-2', category: '취미', title: '취미는 꾸준히 해야 잘하는 걸까요?', body: '잘해야 한다는 생각 때문에 시작을 미루곤 합니다. 실력이 늘지 않아도 즐거우면 충분하다고 생각하시나요?', author: '익명 087', memberRef: 'demo-member-087', status: '공개', createdAt: '2026-11-20T11:00:00.000Z', comments: [] }
   ],
   announcements: [
-    { id: 'notice-respect', category: '운영 원칙', title: '두견은 사람보다 주장에 집중합니다', summary: '근거를 나누고 서로 다른 관점을 존중하는 대화를 지향합니다.', body: '두견은 찬반 의견을 같은 기준으로 소개하고, 참여자가 근거를 살펴볼 수 있도록 운영합니다.\n\n비판은 주장·자료·정책을 대상으로 해 주세요. 의견이 다르다는 이유만으로 상대를 공격하거나 조롱하지 말고, 사실과 해석을 구분해 주세요. 운영진은 양측 의견의 분량과 순서를 균형 있게 관리하고, 오류가 확인되면 정정 내역을 안내합니다.', createdAt: '2026-11-21T09:00:00.000Z', published: true, pinned: true },
-    { id: 'notice-pseudonym', category: '이용 안내', title: '익명 닉네임을 사용해도 서로를 비방할 수는 없습니다', summary: '실명 대신 닉네임으로 참여할 수 있으며, 타인을 향한 모욕과 괴롭힘은 금지됩니다.', body: '두견에서는 실명 공개 없이 닉네임으로 투표와 토론에 참여할 수 있습니다. 다만 익명성은 다른 회원을 모욕하거나 괴롭힐 권리를 뜻하지 않습니다.\n\n특정 회원을 겨냥한 욕설·조롱·협박, 집단에 대한 혐오·차별 표현, 주소·연락처 등 개인정보 공개, 반복적인 도배와 광고는 허용되지 않습니다. 위반 게시물은 맥락과 피해 정도를 확인해 숨김 또는 삭제할 수 있습니다.', createdAt: '2026-11-20T09:00:00.000Z', published: true, pinned: false },
+    { id: 'notice-respect', category: '운영 원칙', title: '시선은 사람보다 주장에 집중합니다', summary: '근거를 나누고 서로 다른 관점을 존중하는 대화를 지향합니다.', body: '시선은 찬반 의견을 같은 기준으로 소개하고, 참여자가 근거를 살펴볼 수 있도록 운영합니다.\n\n비판은 주장·자료·정책을 대상으로 해 주세요. 의견이 다르다는 이유만으로 상대를 공격하거나 조롱하지 말고, 사실과 해석을 구분해 주세요. 운영진은 양측 의견의 분량과 순서를 균형 있게 관리하고, 오류가 확인되면 정정 내역을 안내합니다.', createdAt: '2026-11-21T09:00:00.000Z', published: true, pinned: true },
+    { id: 'notice-pseudonym', category: '이용 안내', title: '익명 닉네임을 사용해도 서로를 비방할 수는 없습니다', summary: '실명 대신 닉네임으로 참여할 수 있으며, 타인을 향한 모욕과 괴롭힘은 금지됩니다.', body: '시선에서는 실명 공개 없이 닉네임으로 투표와 토론에 참여할 수 있습니다. 다만 익명성은 다른 회원을 모욕하거나 괴롭힐 권리를 뜻하지 않습니다.\n\n특정 회원을 겨냥한 욕설·조롱·협박, 집단에 대한 혐오·차별 표현, 주소·연락처 등 개인정보 공개, 반복적인 도배와 광고는 허용되지 않습니다. 위반 게시물은 맥락과 피해 정도를 확인해 숨김 또는 삭제할 수 있습니다.', createdAt: '2026-11-20T09:00:00.000Z', published: true, pinned: false },
     { id: 'notice-sanctions', category: '신고와 제재', title: '신고 접수와 단계별 조치 기준을 안내합니다', summary: '신고 내용을 검토한 뒤 위반 정도와 반복 여부에 따라 조치합니다.', body: '문제가 있는 게시글의 신고하기를 눌러 사유와 필요한 설명을 보내 주세요. 신고자 정보는 신고 대상 회원에게 공개하지 않습니다. 신고만으로 자동 제재하지 않고, 게시글과 앞뒤 대화의 맥락을 운영자가 확인합니다.\n\n조치는 위반 아님 처리, 안내 또는 경고, 게시글 숨김·삭제, 반복적이거나 중대한 위반에 대한 일시 이용 정지 순으로 검토합니다. 협박, 개인정보 노출, 혐오·차별 등 피해가 큰 사안은 즉시 임시 제한할 수 있습니다. 조치 사유는 기록하며, 회원 문의를 통해 재검토를 요청할 수 있습니다.', createdAt: '2026-11-19T09:00:00.000Z', published: true, pinned: false },
-    { id: 'notice-voting', category: '투표 안내', title: '투표 결과는 투표한 뒤 확인할 수 있습니다', summary: '이슈마다 한 번 투표하고, 이후 결과와 토론을 확인할 수 있습니다.', body: '인증된 계정은 각 이슈에 한 번 투표할 수 있습니다. 투표 전에는 해당 이슈의 집계 결과를 볼 수 없고, 투표한 뒤 결과와 토론 글을 확인할 수 있습니다.\n\n각 투표는 30일간 진행된 뒤 지난 투표 보관함으로 이동합니다. 종료 후 6개월이 지나면 읽기 전용으로 전환되어 새 글과 댓글을 작성할 수 없습니다. 화면에 표시되는 투표 결과는 두견 참여자의 의견이며, 전체 국민의 여론이나 과학적 여론조사를 뜻하지 않습니다.', createdAt: '2026-11-18T09:00:00.000Z', published: true, pinned: false },
+    { id: 'notice-voting', category: '투표 안내', title: '투표 결과는 투표한 뒤 확인할 수 있습니다', summary: '이슈마다 한 번 투표하고, 이후 결과와 토론을 확인할 수 있습니다.', body: '인증된 계정은 각 이슈에 한 번 투표할 수 있습니다. 투표 전에는 해당 이슈의 집계 결과를 볼 수 없고, 투표한 뒤 결과와 토론 글을 확인할 수 있습니다.\n\n각 투표는 30일간 진행된 뒤 지난 투표 보관함으로 이동합니다. 종료 후 6개월이 지나면 읽기 전용으로 전환되어 새 글과 댓글을 작성할 수 없습니다. 화면에 표시되는 투표 결과는 시선 참여자의 의견이며, 전체 국민의 여론이나 과학적 여론조사를 뜻하지 않습니다.', createdAt: '2026-11-18T09:00:00.000Z', published: true, pinned: false },
     { id: 'notice-reporting', category: '안전과 개인정보', title: '안전한 토론을 위해 신고와 개인정보를 보호합니다', summary: '신고 내용은 운영 검토에만 사용하고 개인정보 노출 게시물은 신속히 처리합니다.', body: '다른 회원의 전화번호, 주소, 계정 정보 등 개인을 식별하거나 찾아낼 수 있는 정보를 허락 없이 게시하지 마세요. 개인정보가 노출된 게시물은 피해 확산을 막기 위해 우선 숨긴 뒤 검토할 수 있습니다.\n\n신고 내용과 신고자 정보는 운영 업무에 필요한 범위에서만 확인합니다. 계정 정보 처리와 보관에 관한 상세한 내용은 개인정보 처리방침에서 안내합니다. 긴급한 위협이나 안전 문제가 있으면 신고와 함께 회원 문의로 알려 주세요.', createdAt: '2026-11-17T09:00:00.000Z', published: true, pinned: false }
   ]
 };
@@ -374,34 +382,182 @@ const seedAdminOperations = {
 function loadAdminOperations() {
   try {
     const stored = JSON.parse(localStorage.getItem(adminOperationsKey) || 'null');
-    if (stored) return { ...JSON.parse(JSON.stringify(seedAdminOperations)), ...stored };
+    if (stored) {
+      if (Array.isArray(stored.announcements)) {
+        stored.announcements = stored.announcements.map((item) => Object.fromEntries(Object.entries(item).map(([key, value]) => [key, typeof value === 'string' ? value.replaceAll('두견', '시선') : value])));
+      }
+      return { ...JSON.parse(JSON.stringify(seedAdminOperations)), ...stored };
+    }
   } catch (error) { console.warn('운영 시연 데이터를 불러오지 못했습니다.', error); }
   return JSON.parse(JSON.stringify(seedAdminOperations));
 }
 const adminOperations = loadAdminOperations();
 let editingAnnouncementId = null;
+const homeTalkExamples = [
+  { id: 'home-talk-example-1', category: '여행', title: '여행 일정은 빽빽하게 짜는 편인가요?', body: '명소를 최대한 둘러보는 일정과 현지에서 여유롭게 보내는 여행 중 어떤 방식이 더 만족스러우셨나요?', author: '예시 글', status: '공개', createdAt: '2026-11-18T10:00:00.000Z', comments: [], sample: true },
+  { id: 'home-talk-example-2', category: '관계', title: '친한 사이에도 약속 시간을 꼭 지켜야 할까요?', body: '가까운 사이일수록 편하게 이해할 수 있다는 생각과, 서로의 시간을 존중해야 한다는 생각이 있어요. 어디까지가 배려일까요?', author: '예시 글', status: '공개', createdAt: '2026-11-17T10:00:00.000Z', comments: [], sample: true },
+  { id: 'home-talk-example-3', category: '문화', title: '영화는 개봉 직후 극장에서 보는 편이 좋을까요?', body: '큰 화면과 관객 반응을 즐기는 경험, 집에서 편한 시간에 보는 경험 중 어떤 쪽을 더 선호하세요?', author: '예시 글', status: '공개', createdAt: '2026-11-16T10:00:00.000Z', comments: [], sample: true },
+  { id: 'home-talk-example-4', category: '생활', title: '동네 가게의 일회용품 사용을 줄이려면 무엇이 먼저일까요?', body: '다회용기 선택지를 늘리는 일과 반납·세척 시스템을 마련하는 일 중 무엇이 더 효과적일지 이야기해봐요.', author: '예시 글', status: '공개', createdAt: '2026-11-15T10:00:00.000Z', comments: [], sample: true },
+  { id: 'home-talk-example-5', category: '취미', title: '취미를 수익으로 연결하면 더 즐거워질까요?', body: '좋아하는 일을 일이나 부업으로 발전시키는 즐거움과, 부담 없이 취미로 남겨두는 편안함을 비교해보고 싶어요.', author: '예시 글', status: '공개', createdAt: '2026-11-14T10:00:00.000Z', comments: [], sample: true }
+];
+const homeSuggestionExamples = [
+  { id: 'home-suggestion-example-1', category: '자동차·교통', title: '아파트 단지 안 배달 오토바이 속도를 더 엄격히 제한해야 할까?', rationale: '보행자 안전과 배달 노동자의 이동 효율을 함께 살펴볼 수 있습니다.', forText: '보행자와 어린이의 안전을 위해 단지 안에서는 더 낮은 속도 기준이 필요합니다.', againstText: '획일적 제한은 단지 구조와 배달 동선을 고려하지 못해 불편과 지연을 키울 수 있습니다.', sourceUrl: '', sender: '예시 제안', interestCount: 6, status: '검토 대기', createdAt: '2026-11-18T09:30:00.000Z', sample: true },
+  { id: 'home-suggestion-example-2', category: '기술·AI', title: '생성형 AI 결과물임을 플랫폼에서 표시해야 할까?', rationale: '창작 도구의 자유와 이용자가 콘텐츠 출처를 알 권리를 함께 논의할 수 있습니다.', forText: '표시는 이용자가 진위를 판단하고 창작 과정의 맥락을 이해하는 데 도움이 됩니다.', againstText: '표시 기준이 모호하면 일반 편집 도구까지 규제하거나 창작자의 표현을 위축시킬 수 있습니다.', sourceUrl: '', sender: '예시 제안', interestCount: 9, status: '검토 대기', createdAt: '2026-11-17T09:30:00.000Z', sample: true },
+  { id: 'home-suggestion-example-3', category: '요리·식품', title: '배달 음식의 기본 반찬은 주문 단계에서 제외할 수 있어야 할까?', rationale: '음식물 쓰레기와 포장 부담을 줄이는 방법, 이용 편의 사이의 선택을 살펴봅니다.', forText: '원하지 않는 반찬을 줄이면 음식물 쓰레기와 포장재를 아낄 수 있습니다.', againstText: '선택 단계가 복잡해지고 기본 구성이 달라져 매장 운영과 주문 경험에 혼란이 생길 수 있습니다.', sourceUrl: '', sender: '예시 제안', interestCount: 4, status: '검토 대기', createdAt: '2026-11-16T09:30:00.000Z', sample: true },
+  { id: 'home-suggestion-example-4', category: '여행', title: '인기 관광지의 입장 시간을 예약제로 운영해야 할까?', rationale: '혼잡 완화와 현장 방문의 자유, 지역 상권의 영향을 비교해볼 수 있습니다.', forText: '방문객을 분산하면 대기 시간을 줄이고 문화재와 주변 환경을 보호할 수 있습니다.', againstText: '예약이 어려운 사람의 접근을 제한하고 즉흥 여행의 편의를 낮출 수 있습니다.', sourceUrl: '', sender: '예시 제안', interestCount: 8, status: '검토 대기', createdAt: '2026-11-15T09:30:00.000Z', sample: true },
+  { id: 'home-suggestion-example-5', category: '반려동물', title: '반려동물 동반 식당은 별도 구역을 의무적으로 마련해야 할까?', rationale: '반려인과 비반려인의 이용 편의, 위생·안전 관리 기준을 함께 다룰 수 있습니다.', forText: '구역을 나누면 반려인과 비반려인이 서로 편안하게 공간을 이용할 수 있습니다.', againstText: '작은 매장은 공간과 비용 부담이 커지고, 업종별 차이를 반영하기 어렵습니다.', sourceUrl: '', sender: '예시 제안', interestCount: 5, status: '검토 대기', createdAt: '2026-11-14T09:30:00.000Z', sample: true }
+];
+
+function boardOpenTalkPosts() {
+  const actual = adminOperations.openTalkPosts.filter((post) => post.status === '공개').sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  return [...actual, ...homeTalkExamples.slice(0, Math.max(0, 5 - actual.length))];
+}
+
+function homeTalkPosts() { return boardOpenTalkPosts().slice(0, 5); }
+
+function boardTopicSuggestions() {
+  const actual = [...adminOperations.topicSuggestions].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  return [...actual, ...homeSuggestionExamples.slice(0, Math.max(0, 5 - actual.length))];
+}
 
 function getDemoAnonymousAlias() {
-  let alias = localStorage.getItem('dugyeon:anonymous-alias');
-  if (!alias) { alias = `익명 ${String(Math.floor(Math.random() * 900) + 100)}`; localStorage.setItem('dugyeon:anonymous-alias', alias); }
+  let alias = localStorage.getItem(`${storagePrefix}anonymous-alias`);
+  if (!alias) { alias = `익명 ${String(Math.floor(Math.random() * 900) + 100)}`; localStorage.setItem(`${storagePrefix}anonymous-alias`, alias); }
   return alias;
 }
 
 function renderOpenTalkList() {
   const list = document.querySelector('#openTalkList');
   const unavailable = new Set(adminOperations.reports.filter((item) => item.issueId === 'open-talk' && item.postStatus !== '공개').map((item) => item.postId));
-  const posts = adminOperations.openTalkPosts.filter((post) => post.status === '공개' && !unavailable.has(post.id)).sort((a,b) => new Date(b.createdAt)-new Date(a.createdAt));
+  const posts = boardOpenTalkPosts().filter((post) => !unavailable.has(post.id));
   document.querySelector('#openTalkCount').textContent = `${posts.length}개 글`;
-  list.innerHTML = posts.map((post) => `<article class="open-talk-card" data-open-talk-id="${escapeAdminHtml(post.id)}"><div class="open-talk-meta"><span>${escapeAdminHtml(post.category)}</span><b>${escapeAdminHtml(post.author)}</b><time>${new Date(post.createdAt).toLocaleDateString('ko-KR')}</time></div><h3>${escapeAdminHtml(post.title)}</h3><p class="open-talk-body">${escapeAdminHtml(post.body)}</p><div class="open-talk-comments">${(post.comments || []).map((comment) => `<p><b>${escapeAdminHtml(comment.author)}</b>${escapeAdminHtml(comment.text)}</p>`).join('')}</div><form class="open-talk-comment-form"><input name="comment" maxlength="500" required placeholder="익명으로 댓글 남기기"/><button type="submit">등록</button></form><button type="button" class="open-talk-report" data-open-talk-report>신고하기</button></article>`).join('') || '<div class="community-empty">아직 공개된 글이 없습니다. 첫 대화를 시작해 보세요.</div>';
+  list.innerHTML = posts.map((post) => `<article class="open-talk-card open-talk-list-row"><div class="open-talk-meta"><span>${escapeAdminHtml(post.category)}</span>${post.sample ? '<em class="suggestion-status">예시</em>' : ''}<time>${new Date(post.createdAt).toLocaleDateString('ko-KR')}</time></div><button type="button" class="open-talk-title-button" data-open-talk-open="${escapeAdminHtml(post.id)}">${escapeAdminHtml(post.title)} <span>상세 보기 →</span></button><div class="open-talk-row-foot">${post.sample ? '예시 글' : escapeAdminHtml(post.author)} · 댓글 ${(post.comments || []).length}개</div></article>`).join('') || '<div class="community-empty">아직 공개된 글이 없습니다. 첫 대화를 시작해 보세요.</div>';
+}
+
+function openOpenTalkDetail(id) {
+  const post = boardOpenTalkPosts().find((item) => item.id === id);
+  if (!post) return;
+  document.querySelector('#openTalkBoardContent').classList.add('hidden');
+  const detail = document.querySelector('#openTalkDetail');
+  detail.classList.remove('hidden');
+  detail.dataset.openTalkId = post.id;
+  detail.innerHTML = `<button type="button" class="announcement-detail-back" data-open-talk-detail-back>← 자유토론 목록</button><div class="open-talk-detail-card"><div class="open-talk-meta"><span>${escapeAdminHtml(post.category)}</span><b>${post.sample ? '예시 글' : escapeAdminHtml(post.author)}</b><time>${new Date(post.createdAt).toLocaleDateString('ko-KR')}</time></div><h1>${escapeAdminHtml(post.title)}</h1>${post.sample ? '<p class="suggestion-example-note">화면 구성을 위한 예시 글입니다.</p>' : ''}<p class="open-talk-detail-body">${escapeAdminHtml(post.body)}</p><div class="open-talk-detail-comments"><h2>댓글 ${(post.comments || []).length}개</h2>${(post.comments || []).map((comment) => `<p><b>${escapeAdminHtml(comment.author)}</b>${escapeAdminHtml(comment.text)}</p>`).join('') || '<p class="home-no-comments">아직 댓글이 없습니다.</p>'}</div>${post.sample ? '' : `<form class="open-talk-comment-form"><input name="comment" maxlength="500" required placeholder="익명으로 댓글 남기기"/><button type="submit">등록</button></form><button type="button" class="open-talk-report" data-open-talk-report>신고하기</button>`}</div>`;
 }
 
 function renderTopicSuggestions() {
   const list = document.querySelector('#topicSuggestionList');
-  const interested = new Set(readLocalList('dugyeon:topic-interests'));
-  const suggestions = [...adminOperations.topicSuggestions].sort((a,b) => new Date(b.createdAt)-new Date(a.createdAt));
+  const interested = new Set(readLocalList(`${storagePrefix}topic-interests`));
+  const suggestions = boardTopicSuggestions();
   document.querySelector('#topicSuggestionCount').textContent = `${suggestions.length}개 제안`;
-  list.innerHTML = suggestions.map((item) => `<article class="topic-suggestion-card"><div class="open-talk-meta"><span>${escapeAdminHtml(item.category)}</span><b>${escapeAdminHtml(item.sender || '익명 제안자')}</b><time>${new Date(item.createdAt).toLocaleDateString('ko-KR')}</time><em class="suggestion-status">${escapeAdminHtml(item.status)}</em></div><h3>${escapeAdminHtml(item.title)}</h3><p>${escapeAdminHtml(item.rationale)}</p><div class="suggestion-balance"><p><b>가능한 찬성 관점</b>${escapeAdminHtml(item.forText)}</p><p><b>가능한 반대 관점</b>${escapeAdminHtml(item.againstText)}</p></div>${safeHttpsUrl(item.sourceUrl) ? `<a class="candidate-source" href="${escapeAdminHtml(safeHttpsUrl(item.sourceUrl))}" target="_blank" rel="noopener noreferrer">참고 출처 열기 ↗</a>` : ''}<div class="suggestion-footer"><small>관심 ${item.interestCount}명 · 편집팀이 사실과 균형을 검토한 뒤 채택합니다.</small><button type="button" data-interest-id="${escapeAdminHtml(item.id)}" ${interested.has(item.id) ? 'class="interested"' : ''} ${item.status !== '검토 대기' ? 'disabled' : ''}>${interested.has(item.id) ? '관심 표시됨' : '토론해 보고 싶어요'} · ${item.interestCount}</button></div></article>`).join('') || '<div class="community-empty">아직 등록된 제안이 없습니다.</div>';
+  list.innerHTML = suggestions.map((item) => `<article class="topic-suggestion-row"><div class="open-talk-meta"><span>${escapeAdminHtml(item.category)}</span>${item.sample ? '<em class="suggestion-status">예시</em>' : ''}<time>${new Date(item.createdAt).toLocaleDateString('ko-KR')}</time></div><button type="button" class="topic-suggestion-title" data-topic-suggestion-open="${escapeAdminHtml(item.id)}">${escapeAdminHtml(item.title)} <span>상세 보기 →</span></button><div class="suggestion-footer"><small>${item.sample ? '예시 제안' : '이용자 제안'}</small><button type="button" data-interest-id="${escapeAdminHtml(item.id)}" ${interested.has(item.id) ? 'class="interested"' : ''} ${item.sample || item.status !== '검토 대기' ? 'disabled' : ''}>토론해 보고 싶어요 · ${item.interestCount}</button></div></article>`).join('') || '<div class="community-empty">아직 등록된 제안이 없습니다.</div>';
 }
+
+function openTopicSuggestionDetail(id) {
+  const item = boardTopicSuggestions().find((suggestion) => suggestion.id === id);
+  if (!item) return;
+  const interested = new Set(readLocalList(`${storagePrefix}topic-interests`));
+  document.querySelector('#topicSuggestionBoardContent').classList.add('hidden');
+  const detail = document.querySelector('#topicSuggestionDetail');
+  detail.classList.remove('hidden');
+  detail.innerHTML = `<button type="button" class="announcement-detail-back" data-suggestion-detail-back>← 제안 목록</button><div class="topic-suggestion-detail-card"><div class="open-talk-meta"><span>${escapeAdminHtml(item.category)}</span><b>${item.sample ? '예시 제안' : escapeAdminHtml(item.sender || '익명 제안자')}</b><time>${new Date(item.createdAt).toLocaleDateString('ko-KR')}</time></div><h1>${escapeAdminHtml(item.title)}</h1>${item.sample ? '<p class="suggestion-example-note">화면 구성을 위한 예시 제안입니다.</p>' : ''}<p class="suggestion-detail-rationale">${escapeAdminHtml(item.rationale)}</p><div class="suggestion-balance"><p><b>가능한 찬성 관점</b>${escapeAdminHtml(item.forText)}</p><p><b>가능한 반대 관점</b>${escapeAdminHtml(item.againstText)}</p></div>${safeHttpsUrl(item.sourceUrl) ? `<a class="candidate-source" href="${escapeAdminHtml(safeHttpsUrl(item.sourceUrl))}" target="_blank" rel="noopener noreferrer">참고 출처 열기 ↗</a>` : ''}<div class="suggestion-footer"><small>현재 관심 ${item.interestCount}명 · 관심 수는 편집팀 검토의 참고 자료입니다.</small><button type="button" data-interest-id="${escapeAdminHtml(item.id)}" ${interested.has(item.id) ? 'class="interested"' : ''} ${item.sample || item.status !== '검토 대기' ? 'disabled' : ''}>${interested.has(item.id) ? '관심 표시됨' : '토론해 보고 싶어요'} · ${item.interestCount}</button></div></div>`;
+}
+
+function toggleTopicSuggestionInterest(id) {
+  const item = adminOperations.topicSuggestions.find((suggestion) => suggestion.id === id);
+  const interested = new Set(readLocalList(`${storagePrefix}topic-interests`));
+  if (!item || item.status !== '검토 대기') return;
+  if (interested.has(item.id)) { interested.delete(item.id); item.interestCount = Math.max(0, item.interestCount - 1); }
+  else { interested.add(item.id); item.interestCount += 1; }
+  localStorage.setItem(`${storagePrefix}topic-interests`, JSON.stringify([...interested]));
+  saveAdminOperations();
+  renderHomeCommunityBoard();
+  renderTopicSuggestions();
+  if (!document.querySelector('#topicSuggestionDetail').classList.contains('hidden')) openTopicSuggestionDetail(id);
+}
+
+const activeHomeBoardCategories = { 'open-talk': '전체', suggestions: '전체' };
+
+function renderHomeCommunityBoard() {
+  const talkCategoryBar = document.querySelector('#homeOpenTalkCategories');
+  const suggestionCategoryBar = document.querySelector('#homeSuggestionCategories');
+  const openTalkBoard = document.querySelector('#homeOpenTalkBoard');
+  const suggestionsBoard = document.querySelector('#homeSuggestionsBoard');
+  if (!talkCategoryBar || !suggestionCategoryBar || !openTalkBoard || !suggestionsBoard) return;
+  const allTalkPosts = homeTalkPosts();
+  const allSuggestions = boardTopicSuggestions().slice(0, 5);
+  document.querySelector('#homeOpenTalkCount').textContent = String(allTalkPosts.length);
+  document.querySelector('#homeSuggestionCount').textContent = String(allSuggestions.length);
+  const talkCategories = ['전체', ...new Set(allTalkPosts.map((post) => post.category).filter(Boolean))];
+  const suggestionCategories = ['전체', ...new Set(allSuggestions.map((item) => item.category).filter(Boolean))];
+  if (!talkCategories.includes(activeHomeBoardCategories['open-talk'])) activeHomeBoardCategories['open-talk'] = '전체';
+  if (!suggestionCategories.includes(activeHomeBoardCategories.suggestions)) activeHomeBoardCategories.suggestions = '전체';
+  const makeCategoryButtons = (board, categories, selected) => categories.map((category) => `<button type="button" data-home-board-category="${board}" data-home-category="${escapeAdminHtml(category)}" class="${selected === category ? 'active' : ''}" aria-pressed="${selected === category}">${escapeAdminHtml(category)}</button>`).join('');
+  talkCategoryBar.innerHTML = makeCategoryButtons('open-talk', talkCategories, activeHomeBoardCategories['open-talk']);
+  suggestionCategoryBar.innerHTML = makeCategoryButtons('suggestions', suggestionCategories, activeHomeBoardCategories.suggestions);
+  const filteredTalk = allTalkPosts.filter((post) => activeHomeBoardCategories['open-talk'] === '전체' || post.category === activeHomeBoardCategories['open-talk']).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const filteredSuggestions = allSuggestions.filter((item) => activeHomeBoardCategories.suggestions === '전체' || item.category === activeHomeBoardCategories.suggestions).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const unavailable = new Set(adminOperations.reports.filter((item) => item.issueId === 'open-talk' && item.postStatus !== '공개').map((item) => item.postId));
+  openTalkBoard.innerHTML = filteredTalk.filter((post) => !unavailable.has(post.id)).map((post) => `<article class="home-suggestion-row home-talk-row"><div class="home-suggestion-row-meta"><span>${escapeAdminHtml(post.category)}</span>${post.sample ? '<em>예시</em>' : ''}</div><button type="button" class="home-suggestion-title" data-open-talk-open="${escapeAdminHtml(post.id)}">${escapeAdminHtml(post.title)}</button><span class="home-talk-comment-count">${post.sample ? '예시 글' : '댓글'} · ${(post.comments || []).length}</span></article>`).join('') || '<div class="community-empty">이 분야에 아직 글이 없습니다.</div>';
+  const interested = new Set(readLocalList(`${storagePrefix}topic-interests`));
+  suggestionsBoard.innerHTML = filteredSuggestions.map((item) => `<article class="home-suggestion-row"><div class="home-suggestion-row-meta"><span>${escapeAdminHtml(item.category)}</span>${item.sample ? '<em>예시</em>' : ''}</div><button type="button" class="home-suggestion-title" data-topic-suggestion-open="${escapeAdminHtml(item.id)}">${escapeAdminHtml(item.title)}</button><button type="button" class="home-suggestion-interest" data-interest-id="${escapeAdminHtml(item.id)}" ${interested.has(item.id) ? 'class="interested"' : ''} ${item.sample || item.status !== '검토 대기' ? 'disabled' : ''}>토론해 보고 싶어요 · ${item.interestCount}</button></article>`).join('') || '<div class="community-empty">이 분야에 아직 제안이 없습니다.</div>';
+}
+
+function showHomeCommunityBoard(board) {
+  homeView.classList.remove('hidden');
+  issueView.classList.add('hidden'); announcementsView.classList.add('hidden');
+  openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); adminView.classList.add('hidden');
+  closeSiteMap();
+  setTopNavActive(board === 'open-talk' ? 'open-talk' : 'suggestions');
+  renderHomeCommunityBoard();
+  const target = document.querySelector(board === 'open-talk' ? '#homeOpenTalkHeading' : '#homeSuggestionsHeading');
+  window.scrollTo({ top: target.offsetTop - 70, behavior: 'smooth' });
+}
+document.querySelector('#communityBoards').addEventListener('click', (event) => {
+  const talkButton = event.target.closest('[data-open-talk-open]');
+  if (talkButton) {
+    showCommunitySubpage('open-talk');
+    openOpenTalkDetail(talkButton.dataset.openTalkOpen);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    return;
+  }
+  const detailButton = event.target.closest('[data-topic-suggestion-open]');
+  if (detailButton) {
+    showCommunitySubpage('suggestions');
+    openTopicSuggestionDetail(detailButton.dataset.topicSuggestionOpen);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    return;
+  }
+  const button = event.target.closest('[data-home-category]');
+  if (button) {
+    activeHomeBoardCategories[button.dataset.homeBoardCategory] = button.dataset.homeCategory;
+    renderHomeCommunityBoard();
+    return;
+  }
+  const toggle = event.target.closest('[data-home-comments-toggle]');
+  if (!toggle) return;
+  const comments = toggle.closest('.home-board-post').querySelector('.home-board-comments');
+  const isHidden = comments.classList.toggle('hidden');
+  toggle.innerHTML = isHidden ? '댓글 보기 <span>⌄</span>' : '댓글 접기 <span>⌃</span>';
+});
+document.querySelector('#communityBoards').addEventListener('submit', (event) => {
+  const form = event.target.closest('.open-talk-comment-form');
+  if (!form) return;
+  event.preventDefault();
+  if (localStorage.getItem(authKey) !== 'true') { openLogin(); return; }
+  const post = adminOperations.openTalkPosts.find((item) => item.id === form.closest('[data-open-talk-id]')?.dataset.openTalkId);
+  const text = new FormData(form).get('comment')?.trim();
+  if (!post || !text) return;
+  post.comments ||= [];
+  post.comments.push({ author: getDemoAnonymousAlias(), text });
+  saveAdminOperations();
+  renderHomeCommunityBoard();
+  renderOpenTalkList();
+});
+document.querySelector('#communityBoards').addEventListener('click', (event) => {
+  const interestButton = event.target.closest('[data-interest-id]');
+  if (!interestButton) return;
+  toggleTopicSuggestionInterest(interestButton.dataset.interestId);
+});
 
 document.querySelectorAll('[data-community-home]').forEach((button) => button.addEventListener('click', () => {
   openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); homeView.classList.remove('hidden'); setTopNavActive('polls'); window.scrollTo({ top: 0, behavior: 'instant' });
@@ -411,7 +567,7 @@ document.querySelector('#openTalkForm').addEventListener('submit', (event) => {
   if (localStorage.getItem(authKey) !== 'true') { openLogin(); return; }
   const form = event.currentTarget; const values = Object.fromEntries(new FormData(form).entries());
   adminOperations.openTalkPosts.unshift({ id: `talk-${Date.now()}`, category: values.category, title: values.title.trim(), body: values.body.trim(), author: getDemoAnonymousAlias(), memberRef: 'demo-current-account', status: '공개', createdAt: new Date().toISOString(), comments: [] });
-  saveAdminOperations(); form.reset(); renderOpenTalkList(); showUserActionToast('익명 글이 게시됐습니다.');
+  saveAdminOperations(); form.reset(); renderOpenTalkList(); renderHomeCommunityBoard(); showUserActionToast('익명 글이 게시됐습니다.');
 });
 
 document.querySelector('#openTalkList').addEventListener('submit', (event) => {
@@ -420,9 +576,11 @@ document.querySelector('#openTalkList').addEventListener('submit', (event) => {
   if (localStorage.getItem(authKey) !== 'true') { openLogin(); return; }
   const card = form.closest('[data-open-talk-id]'); const post = adminOperations.openTalkPosts.find((item) => item.id === card.dataset.openTalkId);
   const text = new FormData(form).get('comment')?.trim(); if (!post || !text) return;
-  post.comments ||= []; post.comments.push({ author: getDemoAnonymousAlias(), text }); saveAdminOperations(); renderOpenTalkList();
+  post.comments ||= []; post.comments.push({ author: getDemoAnonymousAlias(), text }); saveAdminOperations(); renderOpenTalkList(); renderHomeCommunityBoard();
 });
 document.querySelector('#openTalkList').addEventListener('click', (event) => {
+  const detailButton = event.target.closest('[data-open-talk-open]');
+  if (detailButton) { openOpenTalkDetail(detailButton.dataset.openTalkOpen); window.scrollTo({ top: 0, behavior: 'instant' }); return; }
   if (event.target.closest('[data-open-talk-report]')) {
     if (localStorage.getItem(authKey) !== 'true') { openLogin(); return; }
     const card = event.target.closest('[data-open-talk-id]'); const post = adminOperations.openTalkPosts.find((item) => item.id === card.dataset.openTalkId);
@@ -430,15 +588,47 @@ document.querySelector('#openTalkList').addEventListener('click', (event) => {
     document.querySelector('#reportTargetTitle').textContent = `“${post.title}” · ${post.author}`; document.querySelector('#userReportForm').reset(); document.querySelector('#userReportDialog').showModal();
   }
 });
-document.querySelector('#topicSuggestionList').addEventListener('click', (event) => {
-  const interestButton = event.target.closest('[data-interest-id]');
-  if (interestButton) {
-    const item = adminOperations.topicSuggestions.find((suggestion) => suggestion.id === interestButton.dataset.interestId);
-    const liked = new Set(readLocalList('dugyeon:topic-interests'));
-    if (!item || item.status !== '검토 대기') return;
-    if (liked.has(item.id)) { liked.delete(item.id); item.interestCount = Math.max(0, item.interestCount - 1); } else { liked.add(item.id); item.interestCount += 1; }
-    localStorage.setItem('dugyeon:topic-interests', JSON.stringify([...liked])); saveAdminOperations(); renderTopicSuggestions();
+document.querySelector('#openTalkDetail').addEventListener('click', (event) => {
+  if (event.target.closest('[data-open-talk-detail-back]')) {
+    document.querySelector('#openTalkDetail').classList.add('hidden');
+    document.querySelector('#openTalkBoardContent').classList.remove('hidden');
+    return;
   }
+  if (event.target.closest('[data-open-talk-report]')) {
+    if (localStorage.getItem(authKey) !== 'true') { openLogin(); return; }
+    const post = adminOperations.openTalkPosts.find((item) => item.id === document.querySelector('#openTalkDetail').dataset.openTalkId);
+    if (!post) return;
+    pendingReportContext = { issueId: 'open-talk', postId: post.id, postTitle: post.title, author: post.author, memberRef: post.memberRef };
+    document.querySelector('#reportTargetTitle').textContent = `“${post.title}” · ${post.author}`; document.querySelector('#userReportForm').reset(); document.querySelector('#userReportDialog').showModal();
+  }
+});
+document.querySelector('#openTalkDetail').addEventListener('submit', (event) => {
+  const form = event.target.closest('.open-talk-comment-form');
+  if (!form) return;
+  event.preventDefault();
+  if (localStorage.getItem(authKey) !== 'true') { openLogin(); return; }
+  const post = adminOperations.openTalkPosts.find((item) => item.id === document.querySelector('#openTalkDetail').dataset.openTalkId);
+  const text = new FormData(form).get('comment')?.trim();
+  if (!post || !text) return;
+  post.comments ||= [];
+  post.comments.push({ author: getDemoAnonymousAlias(), text });
+  saveAdminOperations();
+  renderOpenTalkList(); renderHomeCommunityBoard(); openOpenTalkDetail(post.id);
+});
+document.querySelector('#topicSuggestionList').addEventListener('click', (event) => {
+  const detailButton = event.target.closest('[data-topic-suggestion-open]');
+  if (detailButton) { openTopicSuggestionDetail(detailButton.dataset.topicSuggestionOpen); window.scrollTo({ top: 0, behavior: 'instant' }); return; }
+  const interestButton = event.target.closest('[data-interest-id]');
+  if (interestButton) toggleTopicSuggestionInterest(interestButton.dataset.interestId);
+});
+document.querySelector('#topicSuggestionDetail').addEventListener('click', (event) => {
+  if (event.target.closest('[data-suggestion-detail-back]')) {
+    document.querySelector('#topicSuggestionDetail').classList.add('hidden');
+    document.querySelector('#topicSuggestionBoardContent').classList.remove('hidden');
+    return;
+  }
+  const interestButton = event.target.closest('[data-interest-id]');
+  if (interestButton) toggleTopicSuggestionInterest(interestButton.dataset.interestId);
 });
 
 document.querySelector('#topicSuggestionForm').addEventListener('submit', (event) => {
@@ -447,7 +637,7 @@ document.querySelector('#topicSuggestionForm').addEventListener('submit', (event
   const form = event.currentTarget; const values = Object.fromEntries(new FormData(form).entries());
   if (/(선거|대선|총선|지방선거|공천)/.test(values.title)) { showUserActionToast('선거 관련 주제는 제안 대상에서 제외됩니다.'); return; }
   adminOperations.topicSuggestions.unshift({ id: `suggestion-${Date.now()}`, category: values.category, title: values.title.trim(), rationale: values.rationale.trim(), forText: values.forText.trim(), againstText: values.againstText.trim(), sourceUrl: safeHttpsUrl(values.sourceUrl), sender: '익명 제안자', memberRef: 'demo-current-account', interestCount: 0, status: '검토 대기', createdAt: new Date().toISOString() });
-  saveAdminOperations(); form.reset(); renderTopicSuggestions(); showUserActionToast('주제 제안을 접수했습니다.');
+  saveAdminOperations(); form.reset(); renderTopicSuggestions(); renderHomeCommunityBoard(); showUserActionToast('주제 제안을 접수했습니다.');
 });
 
 function sortedPublicAnnouncements() {
@@ -501,7 +691,7 @@ document.querySelectorAll('[data-open-announcements]').forEach((link) => link.ad
 document.querySelectorAll('.desktop-nav [data-nav-key]:not([data-open-announcements]), .site-map-panel [data-nav-key]:not([data-open-announcements])').forEach((link) => link.addEventListener('click', (event) => {
   event.preventDefault();
   const key = link.dataset.navKey;
-  if (key === 'open-talk' || key === 'suggestions') { showCommunitySubpage(key); return; }
+  if (key === 'open-talk' || key === 'suggestions') { showHomeCommunityBoard(key); return; }
   setTopNavActive(key);
   closeSiteMap();
   document.querySelector('.desktop-nav').classList.remove('mobile-open');
@@ -557,7 +747,7 @@ function getIssueArchiveRecord(issueId) {
 }
 
 function voteKey(issueId = activeIssueId) {
-  return `dugyeon:vote:${issueId}`;
+  return `${storagePrefix}vote:${issueId}`;
 }
 
 function syncSeoMetadata(issueId = null, historyMode = 'none') {
@@ -566,8 +756,8 @@ function syncSeoMetadata(issueId = null, historyMode = 'none') {
   const baseUrl = new URL(normalizedPath, window.location.origin);
   if (issue) baseUrl.searchParams.set('issue', issueId);
   const canonicalUrl = baseUrl.href;
-  const title = issue ? `${issue.title} | 두견` : '두견 — 다른 생각, 더 나은 대화';
-  const description = (issue ? `${issue.intro} 찬성·반대의 근거를 살펴보고 의견을 나눠보세요.` : '서로 다른 생각을 근거와 함께 나누는 찬반투표 커뮤니티, 두견.').slice(0, 160);
+  const title = issue ? `${issue.title} | 시선` : '시선 — 다른 관점이 모이는 곳';
+  const description = (issue ? `${issue.intro} 여러 관점의 근거를 살펴보고 의견을 나눠보세요.` : '사회 쟁점을 여러 관점에서 살펴보고 근거와 함께 대화하는 커뮤니티, 시선.').slice(0, 160);
   document.title = title;
   document.querySelector('meta[name="description"]').content = description;
   document.querySelector('meta[property="og:title"]').content = title;
@@ -576,8 +766,8 @@ function syncSeoMetadata(issueId = null, historyMode = 'none') {
   document.querySelector('link[rel="canonical"]').href = canonicalUrl;
   const websiteUrl = `${window.location.origin}${window.location.pathname}`;
   const schema = issue
-    ? { '@context': 'https://schema.org', '@type': 'WebPage', name: issue.title, description, url: canonicalUrl, isPartOf: { '@type': 'WebSite', name: '두견', url: websiteUrl }, about: { '@type': 'Thing', name: issue.category } }
-    : { '@context': 'https://schema.org', '@type': 'WebSite', name: '두견', url: websiteUrl, description };
+    ? { '@context': 'https://schema.org', '@type': 'WebPage', name: issue.title, description, url: canonicalUrl, isPartOf: { '@type': 'WebSite', name: '시선', url: websiteUrl }, about: { '@type': 'Thing', name: issue.category } }
+    : { '@context': 'https://schema.org', '@type': 'WebSite', name: '시선', url: websiteUrl, description };
   document.querySelector('#seoStructuredData').textContent = JSON.stringify(schema);
   if (historyMode === 'push') window.history.pushState({ issueId }, '', canonicalUrl);
   if (historyMode === 'replace') window.history.replaceState({ issueId }, '', canonicalUrl);
@@ -635,11 +825,11 @@ function readLocalList(key) {
 }
 
 function savedPostsKey(issueId) {
-  return `dugyeon:posts:${issueId}`;
+  return `${storagePrefix}posts:${issueId}`;
 }
 
 function savedCommentsKey(issueId, postId) {
-  return `dugyeon:comments:${issueId}:${postId}`;
+  return `${storagePrefix}comments:${issueId}:${postId}`;
 }
 
 function appendCommentElement(list, comment) {
@@ -1140,12 +1330,12 @@ document.querySelector('#adminPageContent').addEventListener('click', (event) =>
       if (!editorialState.pending.some((item) => item.id === draft.id)) editorialState.pending.unshift(draft);
       suggestion.status = '편집 검토 중'; activeDraftId = draft.id; saveEditorialState();
       logAdminAction('이용자 제안을 편집 검토로 전달', suggestion.title, `관심 ${suggestion.interestCount}명 · 수동 사실 확인 필요`);
-      saveAdminOperations(); renderAdminPage('reviews'); return;
+      saveAdminOperations(); renderHomeCommunityBoard(); renderAdminPage('reviews'); return;
     }
     const reason = window.prompt('제안 반려 사유를 기록해 주세요.');
     if (!reason?.trim()) return;
     suggestion.status = '반려'; suggestion.reviewNote = reason.trim();
-    logAdminAction('이용자 주제 제안 반려', suggestion.title, reason.trim()); saveAdminOperations(); renderAdminPage('topic-suggestions'); return;
+    logAdminAction('이용자 주제 제안 반려', suggestion.title, reason.trim()); saveAdminOperations(); renderHomeCommunityBoard(); renderAdminPage('topic-suggestions'); return;
   }
   const talkAction = event.target.closest('[data-open-talk-action]');
   if (talkAction) {
@@ -1157,7 +1347,7 @@ document.querySelector('#adminPageContent').addEventListener('click', (event) =>
     post.status = hidden ? '숨김' : '공개';
     if (!hidden) adminOperations.reports.filter((report) => report.issueId === 'open-talk' && report.postId === post.id && report.postStatus !== '공개').forEach((report) => { report.postStatus = '공개'; report.status = '재검토 완료'; });
     logAdminAction(hidden ? '익명 자유토론 게시글 숨김' : '익명 자유토론 게시글 복구', post.title, reason.trim());
-    saveAdminOperations(); renderAdminPage('open-talk'); renderOpenTalkList(); return;
+    saveAdminOperations(); renderAdminPage('open-talk'); renderOpenTalkList(); renderHomeCommunityBoard(); return;
   }
   const announcementAction = event.target.closest('[data-announcement-action]');
   if (announcementAction) {
@@ -1179,7 +1369,7 @@ document.querySelector('#adminPageContent').addEventListener('click', (event) =>
   if (event.target.closest('#exportAuditButton')) {
     const rows = [...editorialState.history.map((entry) => ({ action: `안건 ${entry.status}`, target: entry.title, operator: '운영 관리자', reason: entry.replacedTitle || '', at: entry.at })), ...adminOperations.audit];
     const csv = ['처리,대상,운영자,사유,시각', ...rows.map((row) => [row.action, row.target, row.operator, row.reason, row.at].map((cell) => `"${String(cell || '').replace(/"/g, '""')}"`).join(','))].join('\n');
-    const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' })); link.download = 'dugyeon-admin-audit.csv'; link.click(); URL.revokeObjectURL(link.href);
+    const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' })); link.download = 'siseon-admin-audit.csv'; link.click(); URL.revokeObjectURL(link.href);
   }
 });
 
@@ -1524,6 +1714,7 @@ window.addEventListener('resize', syncPollCarousel);
 renderPollCards();
 renderEditorialArchives();
 renderAnnouncementTicker();
+renderHomeCommunityBoard();
 syncPollCarousel();
 const initialIssueId = new URLSearchParams(window.location.search).get('issue');
 syncSeoMetadata(initialIssueId && getIssueData(initialIssueId) ? initialIssueId : null, 'replace');
