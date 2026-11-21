@@ -1,6 +1,7 @@
 const homeView = document.querySelector('#homeView');
 const issueView = document.querySelector('#issueView');
 const announcementsView = document.querySelector('#announcementsView');
+const archiveView = document.querySelector('#archiveView');
 const openTalkView = document.querySelector('#openTalkView');
 const topicSuggestionsView = document.querySelector('#topicSuggestionsView');
 const loginDialog = document.querySelector('#loginDialog');
@@ -31,7 +32,7 @@ function setTopNavActive(key) {
 setTopNavActive('polls');
 
 function showCommunitySubpage(page) {
-  homeView.classList.add('hidden'); issueView.classList.add('hidden'); announcementsView.classList.add('hidden'); adminView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden');
+  homeView.classList.add('hidden'); issueView.classList.add('hidden'); announcementsView.classList.add('hidden'); archiveView.classList.add('hidden'); adminView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden');
   closeSiteMap();
   if (page === 'open-talk') { setTopNavActive('open-talk'); openTalkView.classList.remove('hidden'); document.querySelector('#openTalkDetail').classList.add('hidden'); document.querySelector('#openTalkBoardContent').classList.remove('hidden'); renderOpenTalkList(); }
   if (page === 'suggestions') { setTopNavActive('suggestions'); topicSuggestionsView.classList.remove('hidden'); document.querySelector('#topicSuggestionDetail').classList.add('hidden'); document.querySelector('#topicSuggestionBoardContent').classList.remove('hidden'); renderTopicSuggestions(); }
@@ -48,7 +49,7 @@ function closeSiteMap() {
 
 function goHome() {
   homeView.classList.remove('hidden');
-  issueView.classList.add('hidden'); announcementsView.classList.add('hidden');
+  issueView.classList.add('hidden'); announcementsView.classList.add('hidden'); archiveView.classList.add('hidden');
   openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden');
   adminView.classList.add('hidden');
   activeIssueId = null;
@@ -664,7 +665,7 @@ function renderAnnouncementList() {
 
 function openAnnouncements(id = null) {
   setTopNavActive('announcements');
-  homeView.classList.add('hidden'); issueView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); adminView.classList.add('hidden');
+  homeView.classList.add('hidden'); issueView.classList.add('hidden'); archiveView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); adminView.classList.add('hidden');
   announcementsView.classList.remove('hidden');
   renderAnnouncementList();
   if (id) openAnnouncementDetail(id); else backAnnouncementList();
@@ -688,14 +689,24 @@ function backAnnouncementList() {
 document.querySelectorAll('[data-open-announcements]').forEach((link) => link.addEventListener('click', (event) => {
   event.preventDefault(); closeSiteMap(); document.querySelector('.desktop-nav').classList.remove('mobile-open'); openAnnouncements(link.dataset.announcementId || null);
 }));
-document.querySelectorAll('.desktop-nav [data-nav-key]:not([data-open-announcements]), .site-map-panel [data-nav-key]:not([data-open-announcements])').forEach((link) => link.addEventListener('click', (event) => {
+function showArchiveBoard() {
+  closeSiteMap();
+  document.querySelector('.desktop-nav').classList.remove('mobile-open');
+  homeView.classList.add('hidden'); issueView.classList.add('hidden'); announcementsView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); adminView.classList.add('hidden');
+  archiveView.classList.remove('hidden');
+  setTopNavActive('archive');
+  renderEditorialArchives();
+  window.scrollTo({ top: 0, behavior: 'instant' });
+}
+document.querySelectorAll('[data-open-archive]').forEach((link) => link.addEventListener('click', (event) => { event.preventDefault(); showArchiveBoard(); }));
+document.querySelectorAll('.desktop-nav [data-nav-key]:not([data-open-announcements]):not([data-open-archive]), .site-map-panel [data-nav-key]:not([data-open-announcements]):not([data-open-archive])').forEach((link) => link.addEventListener('click', (event) => {
   event.preventDefault();
   const key = link.dataset.navKey;
   if (key === 'open-talk' || key === 'suggestions') { showHomeCommunityBoard(key); return; }
   setTopNavActive(key);
   closeSiteMap();
   document.querySelector('.desktop-nav').classList.remove('mobile-open');
-  announcementsView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); issueView.classList.add('hidden'); adminView.classList.add('hidden'); homeView.classList.remove('hidden');
+  announcementsView.classList.add('hidden'); archiveView.classList.add('hidden'); openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); issueView.classList.add('hidden'); adminView.classList.add('hidden'); homeView.classList.remove('hidden');
   const target = document.querySelector(link.getAttribute('href'));
   if (target) requestAnimationFrame(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }));
 }));
@@ -714,6 +725,7 @@ window.addEventListener('scroll', () => {
 document.querySelector('#announcementBackHome').addEventListener('click', () => {
   announcementsView.classList.add('hidden'); homeView.classList.remove('hidden'); setTopNavActive('polls'); window.scrollTo({ top: 0, behavior: 'instant' });
 });
+document.querySelector('#archiveBackHome').addEventListener('click', goHome);
 document.querySelector('#announcementListTop').addEventListener('click', backAnnouncementList);
 document.querySelector('#announcementList').addEventListener('click', (event) => {
   const link = event.target.closest('[data-announcement-id]'); if (link) { event.preventDefault(); openAnnouncementDetail(link.dataset.announcementId); }
@@ -787,7 +799,7 @@ function openIssue(issueId, historyMode = 'push') {
   renderIssueContent();
   homeView.classList.add('hidden');
   document.querySelector('#adminView').classList.add('hidden');
-  announcementsView?.classList.add('hidden');
+  announcementsView?.classList.add('hidden'); archiveView?.classList.add('hidden');
   openTalkView?.classList.add('hidden'); topicSuggestionsView?.classList.add('hidden');
   issueView.classList.remove('hidden');
   window.scrollTo({ top: 0, behavior: 'instant' });
@@ -1038,6 +1050,8 @@ function renderEditorialArchives() {
     const arrow = document.createElement('div'); arrow.className = 'archive-arrow'; arrow.textContent = '↗';
     row.append(main, arrow); list.prepend(row);
   });
+  const fullList = document.querySelector('#archivePageList');
+  if (fullList) fullList.replaceChildren(...[...list.children].map((row) => row.cloneNode(true)));
 }
 
 document.querySelector('#activePollList').addEventListener('click', (event) => {
@@ -1045,6 +1059,10 @@ document.querySelector('#activePollList').addEventListener('click', (event) => {
   if (link) { event.preventDefault(); openIssue(link.dataset.openIssue); }
 });
 document.querySelector('#archive .archive-list').addEventListener('click', (event) => {
+  const row = event.target.closest('[data-open-issue]');
+  if (row) { event.preventDefault(); openIssue(row.dataset.openIssue); }
+});
+document.querySelector('#archivePageList').addEventListener('click', (event) => {
   const row = event.target.closest('[data-open-issue]');
   if (row) { event.preventDefault(); openIssue(row.dataset.openIssue); }
 });
@@ -1063,7 +1081,7 @@ function showAdminView() {
   if (!isAdminMode()) return openLogin();
   homeView.classList.add('hidden');
   issueView.classList.add('hidden');
-  announcementsView.classList.add('hidden');
+  announcementsView.classList.add('hidden'); archiveView.classList.add('hidden');
   openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden');
   adminView.classList.remove('hidden');
   currentAdminPage = 'overview';
@@ -1212,6 +1230,12 @@ function renderAdminPage(page = currentAdminPage) {
     return;
   } else if (page === 'polls') {
     content.innerHTML = `${header('POLL MANAGEMENT', '투표 관리', `진행 중인 안건 ${activeIssueIds.length}건 · 승인 및 마감 현황을 살펴보세요.`)}<div class="table-toolbar"><span>진행 중 <b>${activeIssueIds.length}</b>건</span><input id="pollSearch" placeholder="투표 제목 검색" aria-label="투표 검색" /></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>주제</th><th>분야</th><th>상태</th><th>출처</th><th>관리</th></tr></thead><tbody>${activeIssueIds.map((id) => { const item = issues[id]; return `<tr><td><strong>${escapeAdminHtml(item.title)}</strong><small>30일 투표 · 진행 중</small></td><td>${escapeAdminHtml(item.category)}</td><td><span class="admin-status status-good">진행 중</span></td><td>${escapeAdminHtml(item.source)}</td><td><button data-open-issue="${escapeAdminHtml(id)}" class="table-action">상세 보기</button></td></tr>`; }).join('')}</tbody></table></div><p class="admin-footnote">투표 마감·일정 변경은 시연 데이터에 연결되지 않았습니다. 승인 후 공개되는 투표는 30개 정원을 유지합니다.</p>`;
+  } else if (page === 'archive') {
+    content.innerHTML = `${header('PAST CONVERSATIONS', '지난 투표 보관함', '종료된 투표의 결과와 토론을 확인합니다. 보관 기간이 지난 투표는 읽기 전용으로 표시됩니다.')}<div class="archive-list admin-archive-list" id="adminArchiveList"></div>`;
+    const adminList = document.querySelector('#adminArchiveList');
+    const archiveRows = document.querySelector('#archivePageList');
+    if (adminList && archiveRows) adminList.replaceChildren(...[...archiveRows.children].map((row) => row.cloneNode(true)));
+    if (adminList && !adminList.children.length) adminList.innerHTML = '<div class="community-empty">보관된 투표가 없습니다.</div>';
   } else if (page === 'members') {
     content.innerHTML = `${header('COMMUNITY MEMBERS', '회원 관리', '회원별 신고 이력과 제재 상태를 살펴보고 필요한 조치를 기록합니다.')}<div class="member-summary"><span>회원 <b>12,840명</b></span><span>정상 <b>${adminOperations.members.filter((m) => m.status === '정상').length}명</b></span><span>주의·정지 <b>${adminOperations.members.filter((m) => m.status !== '정상').length}명</b></span></div><div class="table-toolbar"><input id="memberSearch" placeholder="닉네임 또는 회원 번호 검색" aria-label="회원 검색" /><select id="memberStatusFilter"><option>전체</option><option>정상</option><option>검토 중</option><option>주의</option><option>7일 정지</option></select></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>회원</th><th>가입일</th><th>상태</th><th>신고</th><th>권한</th><th>조치</th></tr></thead><tbody id="memberTableBody"></tbody></table></div><p class="admin-footnote">제재 조치에는 구체적인 운영 사유를 남기고, 회원에게 안내할 이의 제기 절차를 제공하세요.</p>`;
     renderMembersTable();
