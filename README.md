@@ -40,12 +40,12 @@
 
 AI 안건은 사이트 배포 때 자동 생성되지 않습니다. 관리자가 **AI 안건 검토 → 최신 이슈 후보 1~5개 생성**을 누르면, 그 시점에 Bing News 주요 기사 RSS에서 읽힌 기사 목록을 바탕으로 근거가 충분한 찬반 토론 후보를 1~5개 만듭니다. 게시일을 오늘로 한정하거나 최근 7일만 조회하지 않습니다. 각 후보는 현재 페이지 기사 ID를 근거로 연결하고, 사실·출처와 찬반 균형을 운영자가 확인합니다. 선거 관련 주제는 제외하지만 선거와 무관한 정책·정치 토론은 다룰 수 있습니다. 생성 성공 시 `topic_candidates` 행을 실제 생성된 후보 수만큼 새 후보로 교체합니다. Bing RSS는 별도 키가 필요 없는 비공식 피드이므로 차단되거나 형식이 바뀌면 생성이 실패할 수 있습니다.
 
-Supabase SQL Editor에서 `supabase/migrations/202611230002_topic_candidate_review.sql`을 한 번 실행하고, 새 `content-admin` Edge Function을 배포해야 합니다. 기존 Edge Function Secret `OPENAI_API_KEY`를 사용합니다. 별도 네이버 API나 Bing API 키는 요구하지 않습니다. Bing RSS는 비공식 피드이므로 접근 차단이나 응답 형식 변경이 발생하면 생성이 실패할 수 있습니다. 이 경우 관리자 화면에 HTTP 상태, 응답 형식, 읽은 기사 항목 수가 표시됩니다.
+Supabase SQL Editor에서 `supabase/migrations/202611230002_topic_candidate_review.sql`과 `supabase/migrations/202611230003_api_integrations.sql`을 한 번 실행하고, `content-admin` Edge Function을 배포해야 합니다. OpenAI 키는 기존 Edge Function Secret `OPENAI_API_KEY` 또는 관리자 페이지의 **API 설정**에서 연결할 수 있습니다. 별도 네이버 API나 Bing API 키는 요구하지 않습니다. Bing RSS는 비공식 피드이므로 접근 차단이나 응답 형식 변경이 발생하면 생성이 실패할 수 있습니다. 이 경우 관리자 화면에 HTTP 상태, 응답 형식, 읽은 기사 항목 수가 표시됩니다.
 
 네이버 크리에이터 어드바이저의 채널별 유입 검색어는 이 기능에서 사용하지 않습니다. 공개 투표 게시판은 아직 정적 사이트의 브라우저 시연 데이터이므로, 승인 기록은 Supabase에 남지만 실제 모든 방문자에게 같은 투표로 게시되지는 않습니다.
 ## AI 홍보 콘텐츠와 외부 채널 발행
 
-관리자 메뉴 **콘텐츠 자동화**는 Supabase Auth, PostgreSQL, RLS, Edge Functions를 사용하도록 구성했습니다. 공개 GitHub Pages에는 Supabase URL과 publishable key만 두고, OpenAI·Meta 비밀 키와 Supabase 서버 키는 Edge Functions secrets에 둡니다.
+관리자 메뉴 **API 설정**은 **사이트 기본 설정**(OpenAI)과 **마케팅·광고 채널**(Instagram, Threads, Facebook)로 나뉩니다. 연결 정보는 관리자 전용 Edge Function을 통해 Supabase Vault에 암호화 저장하고, 연결 테스트 결과와 계정 이름만 화면에 표시합니다. 키 값은 다시 브라우저로 반환하지 않습니다. Supabase 프로젝트 키는 입력 대상이 아닙니다. Instagram·Threads·Facebook은 Meta 개발자 앱에서 발급한 올바른 토큰·계정 ID와 게시 권한이 있어야 합니다. 네이버 블로그 글쓰기 API는 종료되어 원고 복사와 수동 게시만 지원합니다.
 
 ### Supabase 준비
 
@@ -53,19 +53,19 @@ Supabase SQL Editor에서 `supabase/migrations/202611230002_topic_candidate_revi
 2. `supabase-config.js`에 Project URL과 **publishable key**를 입력합니다. 이 값은 브라우저 공개용입니다. `secret` 키나 예전 `service_role` 키를 이 파일에 넣으면 안 됩니다.
 3. Supabase CLI에서 `supabase login`과 `supabase link --project-ref YOUR_PROJECT_REF`를 실행하고 `supabase db push`로 `supabase/migrations/`의 테이블, RLS, 승인 검증 함수를 적용합니다.
 4. Supabase Authentication에서 `user_roles` 테이블에 운영자 사용자 UID와 `admin` 역할을 SQL Editor로 등록합니다: `insert into public.user_roles(user_id, role) values ('AUTH_USER_UUID', 'admin');` 이 표는 브라우저에서 읽거나 수정할 수 없고 Edge Function만 관리자 역할을 확인합니다.
-5. Edge Function secrets로 `OPENAI_API_KEY`, `META_ACCESS_TOKEN`, `THREADS_ACCESS_TOKEN`, `SISEON_SITE_URL`, `META_GRAPH_VERSION`, `META_FACEBOOK_PAGE_ID`, `META_INSTAGRAM_USER_ID`, `META_THREADS_USER_ID`, `SCHEDULER_SECRET`을 등록합니다. Supabase URL과 서버 secret key는 런타임 기본 환경 변수에서 읽습니다. `secret` key는 절대 공개 파일이나 GitHub Pages에 올리지 마세요.
+5. 예약 게시를 사용하는 경우 `SISEON_SITE_URL`, `META_GRAPH_VERSION`, `SCHEDULER_SECRET`을 Supabase Edge Function secrets에 등록하고, `publish-scheduled` 함수를 배포합니다. Meta 채널별 액세스 토큰·계정 ID와 OpenAI API 키는 운영자 로그인 후 **API 설정**에서 등록할 수 있습니다. `OPENAI_API_KEY`는 화면 연결 전의 대체 설정으로 계속 읽을 수 있습니다. Supabase server secret key는 런타임 기본 변수로 읽으며 공개 파일이나 GitHub Pages에 올리지 않습니다.
 6. `supabase functions deploy content-admin`과 `supabase functions deploy publish-scheduled`로 함수를 배포합니다. `publish-scheduled`는 사용자 JWT 대신 `SCHEDULER_SECRET`을 검사하도록 설정되어 있습니다.
 7. Supabase Database의 `pg_cron`, `pg_net`, `supabase_vault` 확장을 켜고 [cron.sql](supabase/cron.sql)의 프로젝트 URL·키·스케줄 비밀값을 Vault에 저장한 뒤 5분 예약 작업을 등록합니다. GitHub Pages는 `index.html`, `app.js`, `content-automation.js`, `supabase-config.js`, `styles.css`, `assets/`를 포함해 갱신합니다. Pages와 Supabase 함수는 각각 배포해야 합니다.
 
 ### 운영 흐름과 플랫폼 제약
 
-- 콘텐츠 자동화 화면은 한 이슈의 제목·요약·찬반 관점·참고 URL을 받아 플랫폼별 초안을 생성합니다. 초안은 무조건 검토 대기이며, PostgreSQL의 승인 검증 함수와 서버 함수에서 모두 승인 여부를 확인합니다. 네 테이블은 RLS가 켜져 있고 브라우저 접근 권한을 부여하지 않았습니다.
+- 투표 관리의 **홍보 콘텐츠 만들기**는 활성화된 플랫폼을 선택해 이슈별 초안을 만듭니다. 초안은 무조건 검토 대기이며, Instagram 이미지 시안을 별도 생성해 미리볼 수 있습니다. 관리자가 콘텐츠 자동화에서 확인·수정·승인한 뒤에만 즉시 또는 예약 게시할 수 있습니다. 네이버 블로그는 원고 복사 후 수동 게시입니다. PostgreSQL의 승인 검증 함수와 서버 함수에서 모두 승인 여부를 확인합니다.
 - 검토자는 콘텐츠 JSON을 수정하거나 승인·반려할 수 있습니다. Meta 플랫폼은 승인 후 예약 게시 대기열로 보낼 수 있고, Cron이 5분 간격으로 처리합니다. 실패 작업은 관리자가 최대 3회 재시도할 수 있습니다. 게시 ID·URL·실패 내용을 보관합니다.
-- Instagram은 공개 HTTPS 이미지 URL이 필요합니다. AI는 이미지 제작 지시문을 생성하지만 이미지 파일 호스팅·자동 카드뉴스 이미지 제작은 아직 붙어 있지 않으므로 관리자가 편집 JSON에 `imageUrl`을 제공해야 게시할 수 있습니다. Facebook Page Feed의 `pages_manage_posts`, `pages_read_engagement`, `pages_show_list` 및 페이지의 게시 권한이 필요합니다. Instagram은 전문 계정, 로그인 유형에 맞는 권한과 앱 검수가 필요합니다.
+- Instagram은 공개 HTTPS 이미지 URL이 필요합니다. 콘텐츠 자동화에서 이미지 시안 생성 버튼을 누르면 OpenAI 이미지 모델을 호출하고 결과 파일을 공개 Supabase Storage 버킷에 저장합니다. 생성 호출에는 별도 사용 비용이 발생할 수 있으며, 이미지 파일 URL은 Instagram이 읽을 수 있도록 공개됩니다. Facebook Page Feed의 게시 권한과 Instagram 전문 계정·앱 검수가 필요합니다.
 - Threads는 Facebook/Instagram용 Meta 토큰을 공유하지 않고 Threads 전용 OAuth 토큰을 사용합니다. 게시 권한은 `threads_basic`, `threads_content_publish`이며, API는 컨테이너 생성 후 게시하는 두 단계로 연결합니다. Threads 사용자 ID와 앱 검수 설정도 필요합니다.
 - 네이버 블로그 외부 글쓰기 API는 종료되어 자동 발행하지 않습니다. 초안을 복사해 직접 게시한 뒤 실제 `blog.naver.com` 게시 주소를 등록합니다.
 - UTM 링크는 이슈·플랫폼·콘텐츠 ID별로 생성합니다. 다만 저장소의 투표·게시글은 현재 브라우저 시연 데이터라 실제 방문자 수나 실제 투표 전환율을 안전하게 산출할 수 없습니다. GA4/서버 기반 실사용자 투표가 연결될 때까지 전환 분석 숫자를 만들어 표시하지 않습니다. 공개 Pages에서 어떤 행동도 자동으로 실투표 통계에 반영되지 않습니다.
-- Meta 토큰 만료 상태를 자동 갱신하거나 계정을 OAuth로 직접 연결하는 화면은 아직 없습니다. 운영자는 Meta 개발자 콘솔에서 발급·갱신하고 Supabase Edge Function secrets를 교체해야 합니다. 토큰 권한·만료, 인스타 이미지 준비, 게시물 주소는 실제 운영 계정으로 검증해야 합니다.
+- Meta 토큰 만료 상태를 자동 갱신하거나 계정을 OAuth로 직접 연결하는 화면은 아직 없습니다. 운영자는 Meta 개발자 콘솔에서 토큰과 계정 ID를 발급받아 **API 설정**에 등록하고, 만료되면 새 토큰으로 저장해야 합니다. 연결 테스트는 계정 접근을 확인하지만 실제 게시 권한·앱 검수·예약 발행은 운영 계정에서 별도로 확인해야 합니다.
 
 Edge Functions·Cron의 실제 사용 가능 범위와 비용은 Supabase 요금제 및 사용량에 따릅니다. 이 작업공간에는 실제 Supabase 프로젝트·Meta 계정 정보가 없어 실제 외부 게시를 수행하거나 API 연결 성공을 확인하지 않았습니다. 월 비용은 함수 호출, 데이터베이스·저장 공간, OpenAI 검색·토큰 사용량에 따라 달라져 이 코드만으로 고정할 수 없습니다. Supabase 사용량 알림과 OpenAI 사용 한도를 설정하세요.
 

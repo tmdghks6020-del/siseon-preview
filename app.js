@@ -1328,6 +1328,10 @@ function renderAdminPage(page = currentAdminPage) {
   if (page === 'content-automation') {
     content.innerHTML = `${header('CONTENT AUTOMATION', '홍보 콘텐츠 관리', '이슈별 플랫폼 콘텐츠를 만들고, 검토·승인한 뒤 발행 상태를 관리합니다.')}<section class="admin-card"><div id="contentAutomationRoot"><p>관리자 인증과 콘텐츠 목록을 불러오는 중입니다.</p></div></section>`;
     return;
+  } else if (page === 'api-settings') {
+    content.innerHTML = `${header('API & CHANNEL SETTINGS', 'API 설정', '사이트 기능과 마케팅 채널 연결을 분리해 관리합니다. 키와 토큰은 서버에 암호화해 보관합니다.')}<section class="admin-card"><div id="apiSettingsRoot"><p>연결 상태를 확인하고 있습니다.</p></div></section>`;
+    window.SISEON_CONTENT_AUTOMATION?.renderApiSettings();
+    return;
   } else if (page === 'overview') {
     const openReports = adminOperations.reports.filter((item) => item.status === '미검토').length;
     const unanswered = adminOperations.inquiries.filter((item) => item.status === '미답변').length;
@@ -1338,7 +1342,7 @@ function renderAdminPage(page = currentAdminPage) {
     renderReviewQueue();
     return;
   } else if (page === 'polls') {
-    content.innerHTML = `${header('POLL MANAGEMENT', '투표 관리', `진행 중인 안건 ${activeIssueIds.length}건 · 승인 및 마감 현황을 살펴보세요.`)}<div class="table-toolbar"><span>진행 중 <b>${activeIssueIds.length}</b>건</span><input id="pollSearch" placeholder="투표 제목 검색" aria-label="투표 검색" /></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>주제</th><th>분야</th><th>상태</th><th>출처</th><th>관리</th></tr></thead><tbody>${activeIssueIds.map((id) => { const item = issues[id]; return `<tr><td><strong>${escapeAdminHtml(item.title)}</strong><small>30일 투표 · 진행 중</small></td><td>${escapeAdminHtml(item.category)}</td><td><span class="admin-status status-good">진행 중</span></td><td>${escapeAdminHtml(item.source)}</td><td><button data-open-issue="${escapeAdminHtml(id)}" class="table-action">상세 보기</button></td></tr>`; }).join('')}</tbody></table></div><p class="admin-footnote">투표 마감·일정 변경은 시연 데이터에 연결되지 않았습니다. 승인 후 공개되는 투표는 30개 정원을 유지합니다.</p>`;
+    content.innerHTML = `${header('POLL MANAGEMENT', '투표 관리', `진행 중인 안건 ${activeIssueIds.length}건 · 게시할 홍보 초안도 여기서 시작할 수 있습니다.`)}<div class="table-toolbar"><span>진행 중 <b>${activeIssueIds.length}</b>건</span><input id="pollSearch" placeholder="투표 제목 검색" aria-label="투표 검색" /></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>주제</th><th>분야</th><th>상태</th><th>출처</th><th>관리</th></tr></thead><tbody>${activeIssueIds.map((id) => { const item = issues[id]; return `<tr><td><strong>${escapeAdminHtml(item.title)}</strong><small>30일 투표 · 진행 중</small></td><td>${escapeAdminHtml(item.category)}</td><td><span class="admin-status status-good">진행 중</span></td><td>${escapeAdminHtml(item.source)}</td><td><button data-poll-promo="${escapeAdminHtml(id)}" class="table-action">홍보 콘텐츠 만들기</button></td></tr>`; }).join('')}</tbody></table></div><p class="admin-footnote">버튼은 연결된 플랫폼용 초안을 생성해 콘텐츠 자동화 검토 목록으로 보냅니다. 검토·승인 후에만 게시할 수 있습니다. 네이버 블로그는 게시 API가 없어 복사·수동 게시로 처리합니다.</p>`;
   } else if (page === 'archive') {
     content.innerHTML = `${header('PAST CONVERSATIONS', '지난 투표 보관함', '종료된 투표의 결과와 토론을 확인합니다. 보관 기간이 지난 투표는 읽기 전용으로 표시됩니다.')}<div class="archive-list admin-archive-list" id="adminArchiveList"></div>`;
     const adminList = document.querySelector('#adminArchiveList');
@@ -1440,6 +1444,44 @@ document.querySelector('.admin-sidebar').addEventListener('click', (event) => {
   if (button) { pushAppRoute('admin', { adminPage: button.dataset.adminPage }); renderAdminPage(button.dataset.adminPage); }
 });
 document.querySelector('#adminPageContent').addEventListener('click', (event) => {
+  const pollPromoButton = event.target.closest('[data-poll-promo]');
+  if (pollPromoButton) {
+    const issueId = pollPromoButton.dataset.pollPromo; const issue = issues[issueId];
+    if (!issue) return;
+    const automation = window.SISEON_CONTENT_AUTOMATION;
+    if (!automation) { window.alert('콘텐츠 자동화 기능을 불러오지 못했습니다. 페이지를 새로고침해 주세요.'); return; }
+    pollPromoButton.disabled = true;
+    automation.getIntegrations().then((rows) => {
+      const statuses = new Map(rows.map((row) => [row.provider, row]));
+      const providers = [
+        ['instagram','인스타그램'], ['threads','Threads'], ['facebook','Facebook']
+      ];
+      const options = providers.map(([key,label]) => {
+        const row = statuses.get(key); const active = row?.status === 'connected';
+        return `<label class="promo-platform-choice ${active ? '' : 'inactive'}"><input type="checkbox" name="platform" value="${key}" ${active ? 'checked' : 'disabled'}><span class="connection-light ${active ? 'is-on' : 'is-off'}"></span>${label}<small>${active ? escapeAdminHtml(row.accountLabel || '연결됨') : 'API 설정에서 연결 필요'}</small></label>`;
+      }).join('');
+      const dialog = document.createElement('dialog'); dialog.className = 'promo-compose-dialog';
+      dialog.innerHTML = `<form method="dialog" class="promo-dialog-close"><button aria-label="닫기">×</button></form><h2>투표 홍보 콘텐츠 만들기</h2><p>${escapeAdminHtml(issue.title)}</p><span class="section-kicker">게시할 채널</span><form id="pollPromoForm"><div class="promo-platform-list">${options}<label class="promo-platform-choice"><input type="checkbox" name="platform" value="naver_blog"><span class="connection-light is-manual"></span>네이버 블로그<small>초안 복사 후 수동 게시</small></label></div><p class="admin-footnote">선택한 채널별 초안을 생성해 검토 대기 상태로 저장합니다. 이미지가 필요한 채널은 초안의 이미지 안내를 확인하고, 최종 승인 후 게시하세요.</p><div class="promo-dialog-actions"><button type="button" class="table-action" data-promo-cancel>취소</button><button class="primary-button" type="submit">초안 생성 및 검토</button></div></form>`;
+      document.body.append(dialog); dialog.showModal();
+      dialog.addEventListener('close', () => dialog.remove());
+      dialog.querySelector('[data-promo-cancel]')?.addEventListener('click', () => dialog.close());
+      dialog.querySelector('#pollPromoForm')?.addEventListener('submit', async (submitEvent) => {
+        submitEvent.preventDefault();
+        const selected = [...new FormData(submitEvent.currentTarget).getAll('platform')];
+        if (!selected.length) { window.alert('게시할 채널을 하나 이상 선택해 주세요.'); return; }
+        const submit = submitEvent.submitter; submit.disabled = true; submit.textContent = '초안을 만들고 있습니다…';
+        const facts = (issue.facts || []).map((fact) => `• ${fact}`).join('\n');
+        const forView = (issue.forArguments || []).map(([heading,body]) => `${heading}: ${body}`).join('\n');
+        const againstView = (issue.againstArguments || []).map(([heading,body]) => `${heading}: ${body}`).join('\n');
+        try {
+          await automation.generateForPoll({ issueId, title: issue.title, summary: `${issue.intro}\n\n확인된 사실\n${facts}`, forView, againstView, sources: issue.sourceUrl ? [issue.sourceUrl] : [] }, selected);
+          dialog.close(); pushAppRoute('admin', { adminPage: 'content-automation' }); renderAdminPage('content-automation');
+          window.SISEON_CONTENT_AUTOMATION.loadContents();
+        } catch (error) { window.alert(error.message || '콘텐츠 초안을 만들지 못했습니다.'); submit.disabled = false; submit.textContent = '초안 생성 및 검토'; }
+      });
+    }).catch((error) => window.alert(`연결 상태를 확인하지 못했습니다: ${error.message}`)).finally(() => { pollPromoButton.disabled = false; });
+    return;
+  }
   const discussionAction = event.target.closest('[data-discussion-action]');
   if (discussionAction) {
     const hidden = discussionAction.dataset.discussionAction === 'hide';

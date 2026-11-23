@@ -35,7 +35,7 @@ function render() {
   const target = root(); if (!target) return;
   const counts = contents.reduce((acc, item) => (acc[item.status] = (acc[item.status] || 0) + 1, acc), {});
   target.innerHTML = `
-    <div class="content-auto-toolbar"><div><strong>승인 전 자동 발행 차단</strong><p>게시물은 관리자 검토·승인 후에만 예약 대기열에 들어갑니다. 네이버 블로그는 복사·수동 게시 방식입니다.</p><p>계정 토큰은 서버 Secret으로 등록합니다. 페이지 안에서는 토큰을 표시하거나 입력하지 않습니다.</p></div><button type="button" class="table-action" data-content-action="refresh">새로고침</button></div>
+    <div class="content-auto-toolbar"><div><strong>승인 전 자동 발행 차단</strong><p>게시물은 관리자 검토·승인 후에만 예약 대기열에 들어갑니다. 네이버 블로그는 복사·수동 게시 방식입니다.</p><p>서비스 키와 계정 토큰은 API 설정에서 서버에 암호화 저장합니다.</p></div><button type="button" class="table-action" data-content-action="refresh">새로고침</button></div>
     <form id="contentGenerationForm" class="announcement-editor content-generation-form">
       <h2>이슈 콘텐츠 만들기</h2>
       <div class="content-form-grid"><label>이슈 ID<input name="issueId" maxlength="100" required placeholder="예: issue-week-four-day"></label><label>이슈 제목<input name="title" maxlength="240" required placeholder="이슈 제목"></label></div>
@@ -54,11 +54,14 @@ function renderContent(item) {
   const sourceLinks = (item.sources || []).map((url) => `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>`).join(' · ') || '등록된 출처 없음';
   const jsonValue = JSON.stringify(platformContentShape(item), null, 2);
   const jobState = item.errorMessage ? `<p class="content-error">${esc(item.errorMessage)}</p>` : '';
+  const imageUrl = /^https:\/\//i.test(item.content?.imageUrl || '') ? item.content.imageUrl : '';
+  const imagePreview = item.platform === 'instagram' && imageUrl ? `<img class="content-image-preview" src="${esc(imageUrl)}" alt="Instagram 홍보 이미지 시안" loading="lazy">` : '';
   const publishedLink = item.externalPostUrl ? `<p><a href="${esc(item.externalPostUrl)}" target="_blank" rel="noopener noreferrer">게시물 확인 ↗</a></p>` : '';
   const scheduleLabel = item.scheduledAt ? `<p class="admin-footnote">게시 예약 시각: ${esc(new Date(item.scheduledAt).toLocaleString('ko-KR'))} · 작업 ${esc(item.jobStatus || '')} · 재시도 ${Number(item.retryCount || 0)}회</p>` : '';
   const buttons = [
     editable ? '<button type="button" data-content-action="save" data-id="' + esc(item.id) + '">수정 저장</button>' : '',
     editable ? '<button type="button" data-content-action="regenerate" data-id="' + esc(item.id) + '">AI 재생성</button>' : '',
+    item.platform === 'instagram' && ['review_required','rejected'].includes(item.status) ? `<button type="button" data-content-action="generate-image" data-id="${esc(item.id)}">${imageUrl ? '이미지 시안 다시 만들기' : 'Instagram 이미지 시안 생성'}</button>` : '',
     ['review_required', 'rejected'].includes(item.status) ? '<button type="button" data-content-action="approve" data-id="' + esc(item.id) + '">검토 후 승인</button>' : '',
     ['review_required', 'approved'].includes(item.status) ? '<button type="button" data-content-action="reject" data-id="' + esc(item.id) + '">반려</button>' : '',
     item.status === 'approved' && item.platform === 'naver_blog' ? '<label class="content-post-url">네이버 게시물 주소<input type="url" data-post-url="' + esc(item.id) + '" placeholder="수동 게시 후 URL 입력"></label><button type="button" data-content-action="manual-publish" data-id="' + esc(item.id) + '">게시 완료 기록</button>' : '',
@@ -69,7 +72,35 @@ function renderContent(item) {
   return `<article class="content-auto-card" data-content-card="${esc(item.id)}"><div class="content-auto-card-head"><div><span class="announcement-category">${esc(platformNames[item.platform] || item.platform)}</span><small>${esc(item.issueTitle || item.issueId || '')}</small></div><span class="admin-status ${['approved','queued','published'].includes(item.status) ? 'status-good' : item.status === 'failed' || item.status === 'rejected' ? 'status-blocked' : 'status-warn'}">${esc(statusLabel)}</span></div>
     <details><summary>초안 미리보기 · JSON 수정</summary><pre class="content-preview">${esc(JSON.stringify(platformContentShape(item), null, 2))}</pre></details>
     ${editable ? `<label>플랫폼별 콘텐츠 JSON<textarea data-content-json="${esc(item.id)}" rows="12" spellcheck="false">${esc(jsonValue)}</textarea></label>` : ''}
-    <p class="admin-footnote">출처: ${sourceLinks}</p>${scheduleLabel}${jobState}${publishedLink}<div class="content-auto-actions">${buttons}</div></article>`;
+    ${imagePreview}<p class="admin-footnote">출처: ${sourceLinks}</p>${scheduleLabel}${jobState}${publishedLink}<div class="content-auto-actions">${buttons}</div></article>`;
+}
+const integrationMeta = {
+  openai: { title: 'OpenAI', group: 'site', description: 'AI 안건 후보와 플랫폼별 홍보 초안을 생성합니다.', fields: [{ name: 'apiKey', label: 'OpenAI API 키', type: 'password', placeholder: '새 키를 입력하세요. 저장한 키는 다시 표시되지 않습니다.' }] },
+  instagram: { title: 'Instagram', group: 'marketing', description: '비즈니스/크리에이터 계정의 게시 권한 토큰과 계정 ID를 연결합니다.', fields: [{ name: 'accessToken', label: '액세스 토큰', type: 'password', placeholder: 'Meta에서 발급한 액세스 토큰' }, { name: 'accountId', label: 'Instagram 계정 ID', type: 'text', placeholder: 'Instagram professional account ID' }] },
+  threads: { title: 'Threads', group: 'marketing', description: 'Threads 게시 권한 토큰을 연결합니다. 사용자 ID는 연결 테스트에서 자동으로 확인합니다.', fields: [{ name: 'accessToken', label: '액세스 토큰', type: 'password', placeholder: 'Threads API 액세스 토큰' }, { name: 'accountId', label: 'Threads 사용자 ID (선택)', type: 'text', placeholder: '모르면 비워두세요. 연결 테스트 때 자동 확인합니다.' }] },
+  facebook: { title: 'Facebook 페이지', group: 'marketing', description: '게시 권한이 있는 Facebook 페이지 토큰과 페이지 ID를 연결합니다.', fields: [{ name: 'accessToken', label: '페이지 액세스 토큰', type: 'password', placeholder: 'Meta에서 발급한 페이지 액세스 토큰' }, { name: 'accountId', label: 'Facebook 페이지 ID', type: 'text', placeholder: 'Facebook Page ID' }] }
+};
+function connectionLight(status) { return `<span class="connection-light ${status === 'connected' ? 'is-on' : 'is-off'}" aria-label="${status === 'connected' ? '활성' : '비활성'}"></span>`; }
+async function getIntegrations() {
+  if (!isAdmin) throw new Error('운영자 로그인이 필요합니다.');
+  const { integrations = [] } = await call('integrations-list');
+  return integrations;
+}
+async function renderApiSettings() {
+  const target = document.querySelector('#apiSettingsRoot'); if (!target) return;
+  if (!isAdmin) { target.innerHTML = '<div class="content-auth-panel"><h2>운영자 로그인 필요</h2><p>API 연결 정보는 운영자만 확인하고 변경할 수 있습니다.</p></div>'; return; }
+  target.innerHTML = '<p>안전한 서버 저장소의 연결 상태를 확인하고 있습니다.</p>';
+  try {
+    const rows = await getIntegrations(); const statusMap = new Map(rows.map((row) => [row.provider, row]));
+    const card = (provider) => {
+      const meta = integrationMeta[provider]; const row = statusMap.get(provider); const active = row?.status === 'connected';
+      const fields = meta.fields.map((field) => `<label>${esc(field.label)}<input name="${field.name}" type="${field.type}" ${field.name === 'apiKey' ? 'autocomplete="new-password"' : ''} placeholder="${esc(field.placeholder)}" ${provider === 'openai' && field.name === 'apiKey' || provider === 'threads' && field.name === 'accountId' ? '' : 'required'}></label>`).join('');
+      const tested = row?.last_tested_at ? `마지막 확인 ${esc(new Date(row.last_tested_at).toLocaleString('ko-KR'))}` : '아직 연결 테스트를 하지 않았습니다.';
+      const error = row?.status === 'error' && row.last_error ? `<p class="integration-error">${esc(row.last_error)}</p>` : '';
+      return `<article class="integration-card"><div class="integration-card-head"><div>${connectionLight(row?.status)}<h3>${esc(meta.title)}</h3></div><span class="integration-state ${active ? 'active' : 'inactive'}">${active ? '활성' : '비활성'}</span></div><p>${esc(meta.description)}</p>${active ? `<small class="integration-account">연결 계정 · ${esc(row.account_label || '연결됨')} · ${tested}</small>` : `<small class="integration-account">${tested}</small>`}${error}<form data-integration-form="${provider}">${fields}<div class="integration-actions"><button class="primary-button" type="submit">저장하고 연결 테스트</button><button type="button" class="table-action" data-integration-action="test" data-provider="${provider}">저장된 정보 테스트</button>${row ? `<button type="button" class="table-action" data-integration-action="disconnect" data-provider="${provider}">연결 해제</button>` : ''}</div><p class="admin-footnote" data-integration-message="${provider}" aria-live="polite"></p></form></article>`;
+    };
+    target.innerHTML = `<section class="integration-group"><div class="integration-group-heading"><div><span class="section-kicker">SITE BASICS</span><h2>사이트 기본 설정</h2><p>사이트 데이터 연결과 AI 기능을 관리합니다.</p></div><span class="integration-summary"><i class="connection-light is-on"></i>Supabase 서버 연결됨</span></div>${card('openai')}</section><section class="integration-group"><div class="integration-group-heading"><div><span class="section-kicker">MARKETING & ADS</span><h2>마케팅·광고 채널</h2><p>연결된 채널만 투표 관리에서 홍보 초안 생성 대상으로 선택할 수 있습니다.</p></div></div><div class="integration-grid">${card('instagram')}${card('threads')}${card('facebook')}<article class="integration-card integration-manual"><div class="integration-card-head"><div><span class="connection-light is-manual"></span><h3>네이버 블로그</h3></div><span class="integration-state manual">수동 게시</span></div><p>네이버 공식 블로그 글쓰기 API는 종료되어 직접 자동 게시 연결을 제공할 수 없습니다.</p><small class="integration-account">콘텐츠 자동화에서 원고를 복사해 블로그에 직접 게시할 수 있습니다.</small></article></div></section><p class="integration-security-note">API 키와 액세스 토큰은 Supabase Vault에 암호화해 저장합니다. 이 화면은 저장된 비밀값을 다시 표시하지 않습니다. 연결 테스트는 인증/계정 접근만 확인하며, 실제 게시 권한과 요금·사용 한도는 별도로 적용됩니다.</p>`;
+  } catch (error) { target.innerHTML = `<div class="moderation-guidance"><strong>연결 확인 실패</strong><span>${esc(error.message)}. 새 API 설정 데이터베이스 구조가 아직 배포되지 않았는지 확인해 주세요.</span></div>`; }
 }
 async function loadContents() {
   if (!isAdmin) return;
@@ -93,6 +124,17 @@ async function init() {
   }
   try {
     supabase = createClient(config.url, config.publishableKey);
+    window.SISEON_CONTENT_AUTOMATION = {
+      renderApiSettings,
+      getIntegrations,
+      async loadContents() { return loadContents(); },
+      async generateForPoll(issue, selectedPlatforms) {
+        if (!isAdmin) throw new Error('운영자 로그인이 필요합니다.');
+        const result = await call('generate', { ...issue, platforms: selectedPlatforms });
+        await loadContents();
+        return result;
+      }
+    };
     window.SISEON_TOPIC_ADMIN = {
       async list() {
         const { candidates } = await call('topics-list');
@@ -185,6 +227,27 @@ document.querySelector('.admin-sidebar')?.addEventListener('click', (event) => {
   }, 0);
 });
 document.querySelector('#adminPageContent')?.addEventListener('submit', async (event) => {
+  const integrationForm = event.target.closest('[data-integration-form]');
+  if (integrationForm) {
+    event.preventDefault();
+    const provider = integrationForm.dataset.integrationForm; const formData = new FormData(integrationForm);
+    const credentials = provider === 'openai'
+      ? { apiKey: formData.get('apiKey') }
+      : { accessToken: formData.get('accessToken'), accountId: formData.get('accountId') };
+    const status = document.querySelector(`[data-integration-message="${CSS.escape(provider)}"]`);
+    const button = event.submitter; button.disabled = true; if (status) status.textContent = '암호화 저장 후 연결을 확인하고 있습니다.';
+    try {
+      await call('integration-save', { provider, credentials });
+      await renderApiSettings();
+    } catch (error) {
+      if (status) status.textContent = error.message || '연결 확인에 실패했습니다.';
+      button.disabled = false;
+      await renderApiSettings();
+      const refreshedStatus = document.querySelector(`[data-integration-message="${CSS.escape(provider)}"]`);
+      if (refreshedStatus) refreshedStatus.textContent = error.message || '연결 확인에 실패했습니다.';
+    }
+    return;
+  }
   if (event.target.id === 'contentAdminLogin') {
     event.preventDefault();
     const form = new FormData(event.target);
@@ -203,6 +266,31 @@ document.querySelector('#adminPageContent')?.addEventListener('submit', async (e
   catch (error) { window.alert(error.message || '생성에 실패했습니다.'); button.disabled = false; button.textContent = 'AI 플랫폼별 초안 생성'; }
 });
 document.querySelector('#adminPageContent')?.addEventListener('click', async (event) => {
+  const integrationButton = event.target.closest('[data-integration-action]');
+  if (integrationButton) {
+    const { integrationAction: action, provider } = integrationButton.dataset;
+    integrationButton.disabled = true;
+    try {
+      if (action === 'disconnect') {
+        if (!window.confirm(`${integrationMeta[provider]?.title || provider} 연결을 해제할까요? 저장된 토큰도 삭제됩니다.`)) return;
+        await call('integration-disconnect', { provider });
+        await renderApiSettings();
+      } else if (action === 'test') {
+        const status = document.querySelector(`[data-integration-message="${CSS.escape(provider)}"]`);
+        if (status) status.textContent = '저장된 연결 정보를 확인하고 있습니다.';
+        try {
+          await call('integration-test', { provider });
+          await renderApiSettings();
+        } catch (error) {
+          await renderApiSettings();
+          const refreshedStatus = document.querySelector(`[data-integration-message="${CSS.escape(provider)}"]`);
+          if (refreshedStatus) refreshedStatus.textContent = error.message || '연결 확인에 실패했습니다.';
+        }
+      }
+    } catch (error) { window.alert(error.message || 'API 설정을 변경하지 못했습니다.'); }
+    finally { integrationButton.disabled = false; }
+    return;
+  }
   const button = event.target.closest('[data-content-action]'); if (!button) return;
   const action = button.dataset.contentAction; const id = button.dataset.id;
   try {
@@ -214,7 +302,11 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       const text = [data.title, data.intro, data.body, ...(data.headings || []), ...(data.tags || []).map((tag) => `#${tag}`)].filter(Boolean).join('\n\n');
       await navigator.clipboard.writeText(text); button.textContent = '복사했어요'; setTimeout(() => { button.textContent = '네이버용 복사'; button.disabled = false; }, 1400);
     }
-    else if (action === 'save') {
+    else if (action === 'generate-image') {
+      const field = document.querySelector(`[data-content-json="${CSS.escape(id)}"]`);
+      const content = field ? JSON.parse(field.value) : {};
+      await call('image-generate', { id, imageBrief: content.imageBrief || '' }); await loadContents();
+    } else if (action === 'save') {
       const field = document.querySelector(`[data-content-json="${CSS.escape(id)}"]`);
       await call('save', { id, content: JSON.parse(field.value) }); await loadContents();
     } else if (action === 'regenerate') {
@@ -231,6 +323,10 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       await loadContents();
     } else if (action === 'retry') { await call('retry', { id }); await loadContents(); }
   } catch (error) { window.alert(error.message || '요청을 처리하지 못했습니다.'); button.disabled = false; }
+});
+
+window.addEventListener('siseon-admin-authenticated', () => {
+  if (document.querySelector('#apiSettingsRoot')) renderApiSettings();
 });
 
 init();
