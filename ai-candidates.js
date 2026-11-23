@@ -1,3 +1,3 @@
-// Generated during deployment by scripts/generate-ai-candidates.mjs.
-// This file contains review drafts only; app.js never publishes them automatically.
+// Candidate generation is initiated by an administrator and stored in Supabase.
+// This compatibility file intentionally contains no candidate records.
 window.SISEON_DEPLOYMENT_DRAFTS = [];

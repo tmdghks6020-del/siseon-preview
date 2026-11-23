@@ -20,7 +20,13 @@ function renderNotice(message, isError = false) {
 }
 async function call(action, data = {}) {
   const { data: result, error } = await supabase.functions.invoke('content-admin', { body: { ...data, action } });
-  if (error) throw new Error(result?.error || error.message || '서버 요청에 실패했습니다.');
+  if (error) {
+    let details = result;
+    try { if (!details && error.context?.clone) details = await error.context.clone().json(); } catch { /* keep the SDK message */ }
+    const message = details?.error || error.message || '서버 요청에 실패했습니다.';
+    const status = error.context?.status;
+    throw new Error(status ? `${message} (HTTP ${status})` : message);
+  }
   if (result?.error) throw new Error(result.error);
   return result;
 }

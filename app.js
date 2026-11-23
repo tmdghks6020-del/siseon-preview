@@ -1241,9 +1241,11 @@ function renderReviewQueue() {
     const batchLabel = batch.length ? `이번 생성 후보 ${batch.length}개 중 ${batchPosition}번` : 'AI 검토 안건';
     const recency = draft.trendingReason ? `<small>최근 이슈 근거 · ${escapeAdminHtml(draft.trendingReason)}</small>` : '';
     const selectedField = draft.selectedField ? `<small>후보 생성 분야 · ${escapeAdminHtml(draft.selectedField)}</small>` : '';
-    const naver = draft.dataSignals?.naver;
-    const naverSummary = naver?.available ? `<small>네이버 상대 검색지수 최근 7일 ${naver.last7DayAverage ?? '자료 없음'} · 최근 뉴스 ${naver.recentNewsCount7d ?? 0}건</small>` : '';
-    return `<article class="review-queue-item ${draft.id === activeDraftId ? 'selected' : ''}"><div><span class="ai-recommend-tag">${batchLabel} · 운영자 검토 필요</span><strong>${escapeAdminHtml(draft.title)}</strong><small>${escapeAdminHtml(draft.category)} · 출처 ${escapeAdminHtml(draft.source)}</small>${selectedField}${recency}${naverSummary}</div><button type="button" data-review-draft="${escapeAdminHtml(draft.id)}">${draft.id === activeDraftId ? '검토 중' : '검토하기'} <span>→</span></button></article>`;
+    const bing = draft.dataSignals?.bing;
+    const bingSummary = bing?.available ? `<small>Bing News 최근 7일 기사 ${bing.recentNewsCount7d ?? 0}건 · 검색어 ${escapeAdminHtml(bing.query || '')}</small>` : '';
+    const bingLinks = (bing?.recentNews || []).slice(0, 2).map((article) => safeHttpsUrl(article.url) ? `<a href="${escapeAdminHtml(safeHttpsUrl(article.url))}" target="_blank" rel="noopener noreferrer">Bing 뉴스 확인 ↗</a>` : '').filter(Boolean).join(' · ');
+    const bingEvidence = bingLinks ? `<small>${bingLinks}</small>` : '';
+    return `<article class="review-queue-item ${draft.id === activeDraftId ? 'selected' : ''}"><div><span class="ai-recommend-tag">${batchLabel} · 운영자 검토 필요</span><strong>${escapeAdminHtml(draft.title)}</strong><small>${escapeAdminHtml(draft.category)} · 출처 ${escapeAdminHtml(draft.source)}</small>${selectedField}${recency}${bingSummary}${bingEvidence}</div><button type="button" data-review-draft="${escapeAdminHtml(draft.id)}">${draft.id === activeDraftId ? '검토 중' : '검토하기'} <span>→</span></button></article>`;
   }).join('') || `<div class="empty-draft">${editorialState.pending.length ? '선택한 분야의 검토 대기 안건이 없습니다.' : '검토 대기 안건이 없습니다.'}</div>`;
   const draft = visibleDrafts.find((item) => item.id === activeDraftId);
   if (draft && activeDraftId !== draft.id) activeDraftId = draft.id;
@@ -1281,13 +1283,13 @@ document.querySelector('#generateTopicCandidatesButton')?.addEventListener('clic
   const status = document.querySelector('#topicGenerationStatus');
   const api = window.SISEON_TOPIC_ADMIN;
   if (!api) { status.textContent = '관리자 Supabase 연결을 먼저 확인해 주세요.'; return; }
-  if (!window.confirm('현재 검토 대기 안건을 비우고 최신 후보 5개를 새로 만들까요? 기존 승인·반려 이력은 유지됩니다.')) return;
+  if (!window.confirm('현재 AI 안건 후보 표를 비우고 새 후보 5개를 만들까요? 생성 성공 시 기존 후보 행은 모두 교체됩니다. 이전 승인·반려 감사 기록은 별도 운영 기록에 남습니다.')) return;
   const terms = document.querySelector('#creatorAdvisorTerms').value.split(/\r?\n/).map((term) => term.trim()).filter(Boolean).slice(0, 20);
   const topicField = document.querySelector('#topicGenerationField').value;
   button.disabled = true; status.textContent = '최근 뉴스와 검색 흐름을 확인하고 후보 5개를 생성하고 있습니다. 잠시 기다려 주세요.';
   try {
     const result = await api.generate({ topicField, creatorAdvisorTerms: terms, existingTitles: activeIssueIds.map((id) => issues[id]?.title).filter(Boolean) });
-    status.textContent = `후보 ${result.candidates.length}개를 저장했습니다. ${result.naverConfigured ? '네이버 검색 트렌드·뉴스 신호를 포함했습니다.' : '네이버 API 키가 없어 웹 검색만 반영했습니다.'} 각 후보의 출처와 찬반 균형을 확인해 주세요.`;
+    status.textContent = `Bing News RSS의 최근 7일 기사 수를 비교해 후보 ${result.candidates.length}개를 저장했습니다. 각 후보의 출처와 찬반 균형을 확인해 주세요.`;
     renderReviewQueue();
   } catch (error) {
     status.textContent = `생성에 실패했습니다: ${error.message}`;
