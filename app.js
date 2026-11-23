@@ -1242,8 +1242,8 @@ function renderReviewQueue() {
     const recency = draft.trendingReason ? `<small>최근 이슈 근거 · ${escapeAdminHtml(draft.trendingReason)}</small>` : '';
     const selectedField = draft.selectedField ? `<small>후보 생성 분야 · ${escapeAdminHtml(draft.selectedField)}</small>` : '';
     const headlines = draft.dataSignals?.relatedHeadlines || [];
-    const bingSummary = headlines.length ? `<small>오늘 Bing News 기사 ${headlines.length}건을 근거로 생성</small>` : '';
-    const bingLinks = headlines.slice(0, 2).map((article) => safeHttpsUrl(article.url) ? `<a href="${escapeAdminHtml(safeHttpsUrl(article.url))}" target="_blank" rel="noopener noreferrer">오늘 기사 확인 ↗</a>` : '').filter(Boolean).join(' · ');
+    const bingSummary = headlines.length ? `<small>생성 시점의 Bing News 주요 기사 ${headlines.length}건을 근거로 검토</small>` : '';
+    const bingLinks = headlines.slice(0, 2).map((article) => safeHttpsUrl(article.url) ? `<a href="${escapeAdminHtml(safeHttpsUrl(article.url))}" target="_blank" rel="noopener noreferrer">기사 확인 ↗</a>` : '').filter(Boolean).join(' · ');
     const bingEvidence = bingLinks ? `<small>${bingLinks}</small>` : '';
     return `<article class="review-queue-item ${draft.id === activeDraftId ? 'selected' : ''}"><div><span class="ai-recommend-tag">${batchLabel} · 운영자 검토 필요</span><strong>${escapeAdminHtml(draft.title)}</strong><small>${escapeAdminHtml(draft.category)} · 출처 ${escapeAdminHtml(draft.source)}</small>${selectedField}${recency}${bingSummary}${bingEvidence}</div><button type="button" data-review-draft="${escapeAdminHtml(draft.id)}">${draft.id === activeDraftId ? '검토 중' : '검토하기'} <span>→</span></button></article>`;
   }).join('') || `<div class="empty-draft">${editorialState.pending.length ? '선택한 분야의 검토 대기 안건이 없습니다.' : '검토 대기 안건이 없습니다.'}</div>`;
@@ -1283,12 +1283,12 @@ document.querySelector('#generateTopicCandidatesButton')?.addEventListener('clic
   const status = document.querySelector('#topicGenerationStatus');
   const api = window.SISEON_TOPIC_ADMIN;
   if (!api) { status.textContent = '관리자 Supabase 연결을 먼저 확인해 주세요.'; return; }
-  if (!window.confirm('현재 AI 안건 후보 표를 비우고 새 후보 5개를 만들까요? 생성 성공 시 기존 후보 행은 모두 교체됩니다. 이전 승인·반려 감사 기록은 별도 운영 기록에 남습니다.')) return;
+  if (!window.confirm('현재 AI 안건 후보 표를 비우고 새 후보를 생성할까요? 근거가 충분한 후보 1~5개를 만들며, 생성 성공 시 기존 후보 행은 실제 생성된 후보로 교체됩니다. 이전 승인·반려 감사 기록은 별도 운영 기록에 남습니다.')) return;
   const topicField = document.querySelector('#topicGenerationField').value;
-  button.disabled = true; status.textContent = 'Bing News 주요 기사에서 오늘 게시된 내용만 확인해 후보 5개를 만들고 있습니다.';
+  button.disabled = true; status.textContent = '생성 시점의 Bing News 주요 기사 페이지를 확인해 근거가 충분한 후보를 만들고 있습니다.';
   try {
     const result = await api.generate({ topicField, existingTitles: activeIssueIds.map((id) => issues[id]?.title).filter(Boolean) });
-    status.textContent = `오늘 Bing News 기사에 근거한 후보 ${result.candidates.length}개를 저장했습니다. 출처와 찬반 균형을 확인해 주세요.`;
+    status.textContent = `현재 Bing News 주요 기사 페이지를 근거로 후보 ${result.candidates.length}개를 저장했습니다. 출처와 찬반 균형을 확인해 주세요.`;
     renderReviewQueue();
   } catch (error) {
     status.textContent = `생성에 실패했습니다: ${error.message}`;
