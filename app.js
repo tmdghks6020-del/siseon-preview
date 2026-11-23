@@ -69,7 +69,7 @@ function restoreRouteFromHistory(state = {}) {
   if (route === 'poll-board') return showPollBoard(false);
   if (route === 'archive') return showArchiveBoard(false);
   if (route === 'open-talk' || route === 'suggestions') return showCommunitySubpage(route, false);
-  if (route === 'admin') { showAdminView(false); if (state.adminPage && state.adminPage !== 'overview') renderAdminPage(state.adminPage); return; }
+  if (route === 'admin') { showAdminView(false); if (isVerifiedAdmin && state.adminPage && state.adminPage !== 'overview') renderAdminPage(state.adminPage); return; }
   if (route === 'announcements') {
     openAnnouncements(null, false);
     if (state.noticeId) openAnnouncementDetail(state.noticeId, false);
@@ -314,7 +314,6 @@ curatedTopics.forEach(([id, category, title, intro, fact, source, sourceUrl, for
 });
 
 const editorialStorageKey = `${storagePrefix}editorial-demo-state`;
-const adminModeKey = `${storagePrefix}demo-admin`;
 const samplePendingDraft = {
   id: 'smart-glasses-privacy',
   category: '기술 · 사생활',
@@ -1162,14 +1161,14 @@ const adminView = document.querySelector('#adminView');
 const adminEntryButton = document.querySelector('#adminEntryButton');
 const editorialForm = document.querySelector('#editorialForm');
 const editorialFieldNames = ['category', 'title', 'intro', 'facts', 'source', 'sourceUrl', 'forText', 'againstText'];
-
-function isAdminMode() {
-  return localStorage.getItem(adminModeKey) === 'true';
-}
-if (isAdminMode()) adminEntryButton.classList.remove('hidden');
+let isVerifiedAdmin = false;
 
 function showAdminView(pushHistory = true) {
-  if (!isAdminMode()) return openLogin();
+  if (!isVerifiedAdmin) {
+    const dialog = document.querySelector('#adminLoginDialog');
+    if (dialog && !dialog.open) dialog.showModal();
+    return;
+  }
   homeView.classList.add('hidden');
   pollBoardView.classList.add('hidden');
   issueView.classList.add('hidden');
@@ -1534,13 +1533,29 @@ document.querySelector('#adminPageContent').addEventListener('change', (event) =
   }
 });
 
-document.querySelector('#adminDemoButton').addEventListener('click', () => {
-  localStorage.setItem(adminModeKey, 'true');
+adminEntryButton.addEventListener('click', showAdminView);
+document.addEventListener('click', (event) => {
+  if (event.target.closest('[data-open-admin-login]')) {
+    event.preventDefault();
+    closeSiteMap();
+    const dialog = document.querySelector('#adminLoginDialog');
+    if (dialog && !dialog.open) dialog.showModal();
+  }
+  if (event.target.closest('[data-close-admin-login]')) document.querySelector('#adminLoginDialog')?.close();
+});
+window.addEventListener('siseon-admin-authenticated', () => {
+  isVerifiedAdmin = true;
   adminEntryButton.classList.remove('hidden');
-  loginDialog.close();
+  const dialog = document.querySelector('#adminLoginDialog');
+  if (dialog?.open) dialog.close();
   showAdminView();
 });
-adminEntryButton.addEventListener('click', showAdminView);
+window.addEventListener('siseon-admin-signed-out', () => {
+  isVerifiedAdmin = false;
+  adminEntryButton.classList.add('hidden');
+  adminView.classList.add('hidden');
+  restoreHomeView();
+});
 document.querySelector('#adminBackButton').addEventListener('click', () => {
   goBackWithinApp();
 });
