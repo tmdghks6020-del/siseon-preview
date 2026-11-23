@@ -83,14 +83,51 @@ async function init() {
       currentUser = user; isAdmin = false;
       const updateAuthView = async () => {
         if (user) { try { await call('list'); isAdmin = true; } catch { isAdmin = false; } }
+        if (isAdmin) window.dispatchEvent(new CustomEvent('siseon-admin-authenticated'));
+        else if (!user) window.dispatchEvent(new CustomEvent('siseon-admin-signed-out'));
         const operatorNote = document.querySelector('.admin-operator small');
-        if (operatorNote) operatorNote.textContent = isAdmin ? 'Supabase 관리자 인증 완료' : user ? '콘텐츠 관리자 권한 없음' : '로그인 필요';
+        if (operatorNote) operatorNote.textContent = isAdmin ? 'Supabase 관리자 인증 완료 · 일부 메뉴는 시연용' : user ? '운영자 권한 없음' : '로그인 필요';
         renderAuthState();
       };
       setTimeout(updateAuthView, 0);
     });
   } catch (error) { renderNotice(`Supabase 초기화 실패: ${error.message}`, true); }
 }
+
+document.querySelector('#adminAccessLogin')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const message = document.querySelector('#adminLoginMessage');
+  const button = event.submitter;
+  if (!supabase) { message.textContent = 'Supabase 설정을 확인할 수 없습니다.'; return; }
+  button.disabled = true; message.textContent = '운영자 계정을 확인하고 있습니다.';
+  const { error } = await supabase.auth.signInWithPassword({ email: form.get('email'), password: form.get('password') });
+  if (error) {
+    message.textContent = '로그인 정보를 확인해 주세요.';
+    button.disabled = false;
+    return;
+  }
+  try {
+    await call('list');
+    message.textContent = '';
+    window.dispatchEvent(new CustomEvent('siseon-admin-authenticated'));
+  } catch (authError) {
+    await supabase.auth.signOut();
+    message.textContent = authError.message || '이 계정에는 운영자 권한이 없습니다.';
+    button.disabled = false;
+  }
+});
+document.querySelector('#adminLogoutButton')?.addEventListener('click', async () => {
+  if (supabase) await supabase.auth.signOut();
+});
+document.querySelector('#adminLoginDialog')?.addEventListener('close', () => {
+  const form = document.querySelector('#adminAccessLogin');
+  if (form) form.reset();
+  const message = document.querySelector('#adminLoginMessage');
+  if (message) message.textContent = '';
+  const button = form?.querySelector('button[type="submit"]');
+  if (button) button.disabled = false;
+});
 
 document.querySelector('.admin-sidebar')?.addEventListener('click', (event) => {
   if (event.target.closest('[data-admin-page="content-automation"]')) setTimeout(() => {
