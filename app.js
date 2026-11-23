@@ -1312,7 +1312,10 @@ function renderAdminPage(page = currentAdminPage) {
   const latestAudit = [...editorialState.history.map((entry) => ({ action: `안건 ${entry.status}`, target: entry.title, at: entry.at })), ...adminOperations.audit].sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 5);
   const auditRows = (entries) => entries.length ? entries.map((entry) => `<div class="activity-row"><span class="activity-dot"></span><div><strong>${escapeAdminHtml(entry.action)} · ${escapeAdminHtml(entry.target)}</strong><small>${escapeAdminHtml(entry.operator || '운영 편집')} · ${new Date(entry.at).toLocaleString('ko-KR')}${entry.reason ? ` · ${escapeAdminHtml(entry.reason)}` : ''}</small></div></div>`).join('') : '<p class="table-empty">아직 운영 기록이 없습니다.</p>';
   const header = (eyebrow, title, description, action = '') => `<div class="admin-page-heading"><div><span class="section-kicker">${eyebrow}</span><h1>${title}</h1><p>${description}</p></div>${action}</div>`;
-  if (page === 'overview') {
+  if (page === 'content-automation') {
+    content.innerHTML = `${header('CONTENT AUTOMATION', '홍보 콘텐츠 관리', '이슈별 플랫폼 콘텐츠를 만들고, 검토·승인한 뒤 발행 상태를 관리합니다.')}<section class="admin-card"><div id="contentAutomationRoot"><p>관리자 인증과 콘텐츠 목록을 불러오는 중입니다.</p></div></section>`;
+    return;
+  } else if (page === 'overview') {
     const openReports = adminOperations.reports.filter((item) => item.status === '미검토').length;
     const unanswered = adminOperations.inquiries.filter((item) => item.status === '미답변').length;
     const openPartners = adminOperations.partnerships.filter((item) => item.status !== '완료').length;
