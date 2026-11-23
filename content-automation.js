@@ -4,6 +4,15 @@ const root = () => document.querySelector('#contentAutomationRoot');
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const platformNames = { instagram: '인스타그램', threads: '스레드', facebook: '페이스북', naver_blog: '네이버 블로그' };
 let supabase; let currentUser = null; let isAdmin = false; let contents = [];
+function topicDraftFromRow(row) {
+  return {
+    id: row.id, batchId: row.batch_id, category: row.category, title: row.title, intro: row.intro,
+    trendingReason: row.trending_reason, facts: row.facts || [], source: row.source, sourceUrl: row.source_url,
+    sourceDate: row.source_date, forText: row.for_text, againstText: row.against_text,
+    searchKeywords: row.search_keywords || [], dataSignals: row.data_signals || {},
+    selectedField: row.data_signals?.selectedField || '', createdAt: row.created_at
+  };
+}
 
 function renderNotice(message, isError = false) {
   const target = root();
@@ -78,11 +87,43 @@ async function init() {
   }
   try {
     supabase = createClient(config.url, config.publishableKey);
+    window.SISEON_TOPIC_ADMIN = {
+      async list() {
+        const { candidates } = await call('topics-list');
+        const mapped = (candidates || []).map(topicDraftFromRow);
+        window.dispatchEvent(new CustomEvent('siseon-topic-candidates-loaded', { detail: { candidates: mapped } }));
+        return mapped;
+      },
+      async generate(payload) {
+        const result = await call('topics-generate', payload);
+        const candidates = await this.list();
+        return { ...result, candidates };
+      },
+      async save(draft) {
+        await call('topics-save', {
+          id: draft.id, category: draft.category, title: draft.title, intro: draft.intro,
+          trendingReason: draft.trendingReason, facts: draft.facts, source: draft.source,
+          sourceDate: draft.sourceDate, sourceUrl: draft.sourceUrl, forText: draft.forText, againstText: draft.againstText
+        });
+        return this.list();
+      },
+      async review(id, decision, note = '') {
+        await call('topics-review', { id, decision, note });
+        return this.list();
+      }
+    };
     supabase.auth.onAuthStateChange((_event, session) => {
       const user = session?.user || null;
       currentUser = user; isAdmin = false;
       const updateAuthView = async () => {
-        if (user) { try { await call('list'); isAdmin = true; } catch { isAdmin = false; } }
+        if (user) {
+          try { await call('list'); isAdmin = true; }
+          catch { isAdmin = false; }
+          if (isAdmin) {
+            try { await window.SISEON_TOPIC_ADMIN.list(); }
+            catch (error) { window.dispatchEvent(new CustomEvent('siseon-topic-candidates-error', { detail: { message: `AI 안건 저장소를 읽지 못했습니다. 새 데이터베이스 구조를 적용했는지 확인해 주세요. (${error.message})` } })); }
+          }
+        }
         if (isAdmin) window.dispatchEvent(new CustomEvent('siseon-admin-authenticated'));
         else if (!user) window.dispatchEvent(new CustomEvent('siseon-admin-signed-out'));
         const operatorNote = document.querySelector('.admin-operator small');

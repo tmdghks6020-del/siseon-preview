@@ -313,7 +313,7 @@ curatedTopics.forEach(([id, category, title, intro, fact, source, sourceUrl, for
   };
 });
 
-const editorialStorageKey = `${storagePrefix}editorial-demo-state`;
+const editorialStorageKey = `${storagePrefix}editorial-ai-review-v2`;
 const samplePendingDraft = {
   id: 'smart-glasses-privacy',
   category: '기술 · 사생활',
@@ -344,33 +344,14 @@ function loadEditorialState() {
   } catch (error) {
     console.warn('편성 시연 기록을 불러오지 못했습니다.', error);
   }
-  return { pending: samplePendingDrafts, history: [], approved: [], archived: [], activeIssueIds: null };
+  return { pending: [], history: [], approved: [], archived: [], activeIssueIds: null };
 }
 
 const editorialState = loadEditorialState();
 const handledDraftTitles = new Set([...editorialState.history.map((entry) => entry.title), ...editorialState.approved.map((entry) => entry.issue?.title)]);
 const handledDraftIds = new Set(editorialState.history.map((entry) => entry.draftId).filter(Boolean));
 const pendingDraftIds = new Set(editorialState.pending.map((entry) => entry.id));
-samplePendingDrafts.forEach((draft) => {
-  if (!pendingDraftIds.has(draft.id) && !handledDraftIds.has(draft.id) && !handledDraftTitles.has(draft.title)) editorialState.pending.push(draft);
-});
-// Deployment-generated candidates are imported into the private review queue only.
-// They remain hidden from public polls until an administrator explicitly approves them.
-let deploymentDraftsAdded = false;
-const deploymentDrafts = Array.isArray(window.SISEON_DEPLOYMENT_DRAFTS) ? window.SISEON_DEPLOYMENT_DRAFTS : [];
-const electionTopicPattern = /선거|후보자|선거운동|공약 비교|투표 절차|투표 결과/;
-deploymentDrafts.forEach((draft) => {
-  const valid = draft && typeof draft.id === 'string' && typeof draft.category === 'string'
-    && typeof draft.title === 'string' && typeof draft.intro === 'string'
-    && Array.isArray(draft.facts) && draft.facts.length > 0
-    && typeof draft.source === 'string' && /^https:\/\//i.test(draft.sourceUrl || '')
-    && typeof draft.forText === 'string' && typeof draft.againstText === 'string'
-    && !electionTopicPattern.test(`${draft.category} ${draft.title}`);
-  if (!valid || pendingDraftIds.has(draft.id) || handledDraftIds.has(draft.id) || handledDraftTitles.has(draft.title)) return;
-  editorialState.pending.push(draft);
-  pendingDraftIds.add(draft.id);
-  deploymentDraftsAdded = true;
-});
+// 후보는 자동 배포 파일이나 브라우저 샘플에서 읽지 않고 Supabase 검토 대기열에서만 불러옵니다.
 editorialState.approved.forEach((entry) => {
   if (entry?.id && entry.issue) issues[entry.id] = entry.issue;
 });
@@ -378,7 +359,6 @@ let activeIssueIds = Array.isArray(editorialState.activeIssueIds)
   ? editorialState.activeIssueIds.filter((id) => issues[id])
   : Object.keys(issues);
 if (!activeIssueIds.length) activeIssueIds = Object.keys(issues);
-if (deploymentDraftsAdded) localStorage.setItem(editorialStorageKey, JSON.stringify({ ...editorialState, activeIssueIds }));
 
 let currentAdminPage = 'overview';
 let activeDraftId = editorialState.pending[0]?.id || null;
@@ -1258,10 +1238,12 @@ function renderReviewQueue() {
   queue.innerHTML = visibleDrafts.map((draft) => {
     const batch = draft.batchId ? editorialState.pending.filter((item) => item.batchId === draft.batchId) : [];
     const batchPosition = batch.findIndex((item) => item.id === draft.id) + 1;
-    const batchLabel = batch.length ? `배포 후보 ${batch.length}개 중 ${batchPosition}번` : '기존 검토 안건';
+    const batchLabel = batch.length ? `이번 생성 후보 ${batch.length}개 중 ${batchPosition}번` : 'AI 검토 안건';
     const recency = draft.trendingReason ? `<small>최근 이슈 근거 · ${escapeAdminHtml(draft.trendingReason)}</small>` : '';
     const selectedField = draft.selectedField ? `<small>후보 생성 분야 · ${escapeAdminHtml(draft.selectedField)}</small>` : '';
-    return `<article class="review-queue-item ${draft.id === activeDraftId ? 'selected' : ''}"><div><span class="ai-recommend-tag">${batchLabel} · 운영자 검토 필요</span><strong>${escapeAdminHtml(draft.title)}</strong><small>${escapeAdminHtml(draft.category)} · 출처 ${escapeAdminHtml(draft.source)}</small>${selectedField}${recency}</div><button type="button" data-review-draft="${escapeAdminHtml(draft.id)}">${draft.id === activeDraftId ? '검토 중' : '검토하기'} <span>→</span></button></article>`;
+    const naver = draft.dataSignals?.naver;
+    const naverSummary = naver?.available ? `<small>네이버 상대 검색지수 최근 7일 ${naver.last7DayAverage ?? '자료 없음'} · 최근 뉴스 ${naver.recentNewsCount7d ?? 0}건</small>` : '';
+    return `<article class="review-queue-item ${draft.id === activeDraftId ? 'selected' : ''}"><div><span class="ai-recommend-tag">${batchLabel} · 운영자 검토 필요</span><strong>${escapeAdminHtml(draft.title)}</strong><small>${escapeAdminHtml(draft.category)} · 출처 ${escapeAdminHtml(draft.source)}</small>${selectedField}${recency}${naverSummary}</div><button type="button" data-review-draft="${escapeAdminHtml(draft.id)}">${draft.id === activeDraftId ? '검토 중' : '검토하기'} <span>→</span></button></article>`;
   }).join('') || `<div class="empty-draft">${editorialState.pending.length ? '선택한 분야의 검토 대기 안건이 없습니다.' : '검토 대기 안건이 없습니다.'}</div>`;
   const draft = visibleDrafts.find((item) => item.id === activeDraftId);
   if (draft && activeDraftId !== draft.id) activeDraftId = draft.id;
@@ -1280,6 +1262,37 @@ function renderReviewQueue() {
   }
   renderEditorialHistory();
 }
+
+window.addEventListener('siseon-topic-candidates-loaded', (event) => {
+  const candidates = Array.isArray(event.detail?.candidates) ? event.detail.candidates : [];
+  editorialState.pending = candidates;
+  activeDraftId = candidates[0]?.id || null;
+  saveEditorialState();
+  if (currentAdminPage === 'reviews') renderReviewQueue();
+});
+
+window.addEventListener('siseon-topic-candidates-error', (event) => {
+  const status = document.querySelector('#topicGenerationStatus');
+  if (status) status.textContent = event.detail?.message || 'Supabase 안건 대기열을 불러오지 못했습니다.';
+});
+
+document.querySelector('#generateTopicCandidatesButton')?.addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  const status = document.querySelector('#topicGenerationStatus');
+  const api = window.SISEON_TOPIC_ADMIN;
+  if (!api) { status.textContent = '관리자 Supabase 연결을 먼저 확인해 주세요.'; return; }
+  if (!window.confirm('현재 검토 대기 안건을 비우고 최신 후보 5개를 새로 만들까요? 기존 승인·반려 이력은 유지됩니다.')) return;
+  const terms = document.querySelector('#creatorAdvisorTerms').value.split(/\r?\n/).map((term) => term.trim()).filter(Boolean).slice(0, 20);
+  const topicField = document.querySelector('#topicGenerationField').value;
+  button.disabled = true; status.textContent = '최근 뉴스와 검색 흐름을 확인하고 후보 5개를 생성하고 있습니다. 잠시 기다려 주세요.';
+  try {
+    const result = await api.generate({ topicField, creatorAdvisorTerms: terms, existingTitles: activeIssueIds.map((id) => issues[id]?.title).filter(Boolean) });
+    status.textContent = `후보 ${result.candidates.length}개를 저장했습니다. ${result.naverConfigured ? '네이버 검색 트렌드·뉴스 신호를 포함했습니다.' : '네이버 API 키가 없어 웹 검색만 반영했습니다.'} 각 후보의 출처와 찬반 균형을 확인해 주세요.`;
+    renderReviewQueue();
+  } catch (error) {
+    status.textContent = `생성에 실패했습니다: ${error.message}`;
+  } finally { button.disabled = false; }
+});
 
 function renderMembersTable() {
   const body = document.querySelector('#memberTableBody');
@@ -1560,20 +1573,30 @@ document.querySelector('#adminBackButton').addEventListener('click', () => {
   goBackWithinApp();
 });
 editorialForm.addEventListener('input', updateAdminPreview);
-document.querySelector('#saveDraftButton').addEventListener('click', () => {
-  const draft = saveCurrentDraft();
-  if (draft) document.querySelector('#draftStatus').textContent = '수정 저장됨';
-});
-document.querySelector('#rejectDraftButton').addEventListener('click', () => {
+document.querySelector('#saveDraftButton').addEventListener('click', async () => {
   const draft = saveCurrentDraft();
   if (!draft) return;
+  if (!window.SISEON_TOPIC_ADMIN) { document.querySelector('#draftStatus').textContent = 'Supabase 안건 검토 연결을 확인해 주세요.'; return; }
+  try {
+    await window.SISEON_TOPIC_ADMIN.save(draft);
+    document.querySelector('#draftStatus').textContent = '수정 내용이 Supabase에 저장됐습니다.';
+  } catch (error) { document.querySelector('#draftStatus').textContent = `저장 실패: ${error.message}`; }
+});
+document.querySelector('#rejectDraftButton').addEventListener('click', async () => {
+  const draft = saveCurrentDraft();
+  if (!draft) return;
+  if (!window.SISEON_TOPIC_ADMIN) { document.querySelector('#draftStatus').textContent = 'Supabase 안건 검토 연결을 확인해 주세요.'; return; }
+  try {
+    await window.SISEON_TOPIC_ADMIN.save(draft);
+    await window.SISEON_TOPIC_ADMIN.review(draft.id, 'reject', '운영자 반려');
+  } catch (error) { document.querySelector('#draftStatus').textContent = `반려 처리 실패: ${error.message}`; return; }
   editorialState.pending = editorialState.pending.filter((item) => item.id !== draft.id);
   editorialState.history.push({ status: '반려', draftId: draft.id, title: draft.title, category: draft.category, at: new Date().toISOString() });
   activeDraftId = editorialState.pending[0]?.id || null;
   saveEditorialState();
   renderAdminDashboard();
 });
-editorialForm.addEventListener('submit', (event) => {
+editorialForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (!editorialForm.reportValidity()) return;
   const draft = saveCurrentDraft();
@@ -1584,7 +1607,12 @@ editorialForm.addEventListener('submit', (event) => {
   const replacementTitle = issues[activeIssueIds[activeIssueIds.length - 1]]?.title || '기존 투표';
   const batchAlternatives = draft.batchId ? editorialState.pending.filter((item) => item.batchId === draft.batchId && item.id !== draft.id) : [];
   const siblingNote = batchAlternatives.length ? ` 같은 배포의 나머지 후보 ${batchAlternatives.length}개는 미선택 처리됩니다.` : '';
-  if (!window.confirm(`이 안건을 승인해 즉시 공개하고 현재 목록의 마지막 투표인 “${replacementTitle}”을 시연 보관함으로 이동할까요?${siblingNote}`)) return;
+  if (!window.confirm(`이 안건을 승인해 Supabase 안건 기록에 등록할까요? 화면의 진행 투표 반영과 보관함 이동은 현재 브라우저 시연 데이터로만 적용됩니다. 마지막 투표 “${replacementTitle}”이 이 브라우저에서 보관함으로 이동합니다.${siblingNote}`)) return;
+  if (!window.SISEON_TOPIC_ADMIN) { document.querySelector('#draftStatus').textContent = 'Supabase 안건 검토 연결을 확인해 주세요.'; return; }
+  try {
+    await window.SISEON_TOPIC_ADMIN.save(draft);
+    await window.SISEON_TOPIC_ADMIN.review(draft.id, 'approve', '운영자 승인');
+  } catch (error) { document.querySelector('#draftStatus').textContent = `승인 실패: ${error.message}`; return; }
   const id = `approved-${Date.now()}`;
   const issue = {
     category: draft.category, title: draft.title, intro: draft.intro, facts: draft.facts,

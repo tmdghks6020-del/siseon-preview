@@ -105,7 +105,7 @@
           <span class="admin-nav-caption">운영</span>
           <button class="admin-nav active" data-admin-page="overview">▦ <span>대시보드</span></button>
           <button class="admin-nav" data-admin-page="polls">◉ <span>투표 관리</span><b>30</b></button>
-          <button class="admin-nav" data-admin-page="reviews">✦ <span>AI 안건 검토</span><b id="navPendingCount">5</b></button>
+          <button class="admin-nav" data-admin-page="reviews">✦ <span>AI 안건 검토</span><b id="navPendingCount">0</b></button>
           <button class="admin-nav" data-admin-page="content-automation">↗ <span>콘텐츠 자동화</span></button>
           <span class="admin-nav-caption">사이트 안내</span>
           <button class="admin-nav" data-admin-page="archive">▤ <span>지난 투표 보관함</span></button>
@@ -125,8 +125,9 @@
         <section class="admin-main-panel">
           <div id="adminPageContent"></div>
           <section id="adminReviewWorkflow" class="hidden">
-              <div class="admin-page-heading"><div><span class="section-kicker">EDITORIAL REVIEW</span><h1>AI 추천 안건 검토</h1><p>AI가 모은 주제를 사람이 사실·출처·양측 관점을 확인한 뒤 승인합니다.</p></div><span class="pending-badge"><b id="pendingCount">5</b>건 대기</span></div>
-              <p class="review-batch-guidance">배포 때 중점 분야를 선택해 최근 7일 이슈를 우선 검색하고, 부족하면 최근 30일까지 넓혀 후보 5개를 만듭니다. 정치·정책 분야도 선택할 수 있으며, 선거·후보자 관련 안건은 제외합니다. 한 묶음에서 하나를 승인하면 나머지는 미선택 처리됩니다.</p>
+              <div class="admin-page-heading"><div><span class="section-kicker">EDITORIAL REVIEW</span><h1>AI 추천 안건 검토</h1><p>최근 뉴스와 검색 흐름을 바탕으로 만든 후보를 출처·찬반 균형까지 확인한 뒤 검토합니다.</p></div><span class="pending-badge"><b id="pendingCount">0</b>건 대기</span></div>
+              <section class="review-generation-panel"><div class="review-generation-copy"><strong>최신 이슈 후보 5개 생성</strong><p>최근 한국 뉴스 검색으로 후보를 만들고, 설정한 경우 네이버 뉴스와 검색 트렌드도 참고합니다. 크리에이터 어드바이저는 내 채널의 상위 유입 검색어를 직접 붙여 넣어 참고 신호로 쓸 수 있습니다.</p></div><label for="creatorAdvisorTerms">크리에이터 어드바이저 상위 유입 검색어 <small>선택 · 한 줄에 하나씩, 최대 20개</small></label><textarea id="creatorAdvisorTerms" rows="3" maxlength="1600" placeholder="내 채널의 최근 유입 검색어를 붙여 넣어 주세요. 개인·채널 분석값이므로 토론 사실의 근거로 쓰지 않습니다."></textarea><div class="review-generation-actions"><label for="topicGenerationField">우선 분야<select id="topicGenerationField"><option>전체 분야</option><option>사회·복지</option><option>경제·금융</option><option>노동·직장</option><option>법·권리</option><option>교육</option><option>건강·의료</option><option>환경·기후</option><option>기술·AI</option><option>문화·연예</option><option>스포츠</option><option>주식·가상자산</option><option>소비·유통</option><option>주거·부동산</option><option>요리·식품</option><option>여행</option><option>자동차·교통</option><option>반려동물</option><option>가족·육아</option><option>관계·고민</option><option>취미·여가</option><option>정치·정책</option><option>기타</option></select></label><button type="button" class="primary-button" id="generateTopicCandidatesButton">기존 안건 비우고 새 후보 5개 생성</button></div><p id="topicGenerationStatus" class="review-generation-status" role="status">생성에 성공하면 후보 테이블을 새 5건으로 교체합니다. 승인 전에는 공개 투표에 반영되지 않습니다.</p><p class="review-generation-status">네이버 검색량 비교를 켜려면 Supabase Edge Function Secrets에 NAVER_API_HUB_CLIENT_ID와 NAVER_API_HUB_CLIENT_SECRET을 등록하세요.</p></section>
+              <p class="review-batch-guidance">최근 7일 이슈를 우선하고 부족하면 30일까지 넓힙니다. 선거 관련 주제는 제외하며, 정치·정책은 포함할 수 있습니다. 네이버 트렌드 수치는 절대 검색량이 아닌 상대 지수로 표시됩니다. 한 묶음에서 하나를 승인하면 나머지 후보는 미선택 처리됩니다.</p>
             <label class="review-category-filter" for="reviewCategoryFilter">후보 분야별 보기 <select id="reviewCategoryFilter"><option>전체 분야</option></select></label>
             <div id="reviewQueueList" class="review-queue-list"></div>
             <section class="admin-workspace review-workspace">
@@ -141,7 +142,7 @@
                   <label for="draftSourceUrl">출처 링크</label><input id="draftSourceUrl" name="sourceUrl" type="url" required />
                   <label for="draftFor">찬성 관점</label><textarea id="draftFor" name="forText" rows="3" maxlength="500" required></textarea>
                   <label for="draftAgainst">반대 관점</label><textarea id="draftAgainst" name="againstText" rows="3" maxlength="500" required></textarea>
-                  <div class="admin-actions"><button type="button" class="admin-secondary" id="rejectDraftButton">반려</button><button type="button" class="admin-secondary" id="saveDraftButton">수정 저장</button><button type="submit" class="admin-approve">승인하고 즉시 공개 <span>→</span></button></div>
+                  <div class="admin-actions"><button type="button" class="admin-secondary" id="rejectDraftButton">반려</button><button type="button" class="admin-secondary" id="saveDraftButton">수정 저장</button><button type="submit" class="admin-approve">안건 승인 <span>→</span></button></div>
                 </form>
               </div>
               <aside class="admin-preview-panel"><span class="section-kicker">PUBLIC PREVIEW</span><h2>이용자 화면 미리보기</h2><article class="admin-preview-card"><span class="category" id="previewCategory"></span><h3 id="previewTitle"></h3><p id="previewIntro"></p><div class="preview-fact"><strong>먼저 확인된 사실</strong><ul id="previewFacts"></ul><a id="previewSource" target="_blank" rel="noopener noreferrer"></a></div><div class="preview-stance for"><strong>찬성 관점</strong><p id="previewFor"></p></div><div class="preview-stance against"><strong>반대 관점</strong><p id="previewAgainst"></p></div></article><p class="preview-guidance">출처를 확인하고 양쪽 주장이 비슷한 수준으로 정리됐는지 살핀 뒤 승인해 주세요.</p><p class="preview-recency" id="previewRecency"></p></aside>

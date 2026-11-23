@@ -87,3 +87,12 @@ button:disabled{cursor:not-allowed;opacity:.58}
 .admin-operator{gap:10px}
 .admin-operator .table-action{white-space:nowrap}
 @media(max-width:700px){.admin-login-dialog{padding:23px 19px}.admin-operator{gap:6px}.admin-operator .table-action{padding:5px 7px;font-size:8px}}
+.review-generation-panel{margin:0 0 20px;padding:18px;border:1px solid #dce5dd;border-radius:12px;background:#f5f8f4}
+.review-generation-copy strong{font-size:15px}.review-generation-copy p,.review-generation-status{color:#6f7d73;font-size:12px;line-height:1.65}
+.review-generation-panel>label,.review-generation-actions label{display:grid;gap:7px;margin-top:12px;font-size:12px;font-weight:700;color:#35473b}
+.review-generation-panel label small{font-weight:400;color:#7c887e}
+.review-generation-panel textarea,.review-generation-panel select{width:100%;padding:10px 12px;border:1px solid #d5ded5;border-radius:8px;background:white;color:var(--ink);font:inherit}
+.review-generation-actions{display:grid;grid-template-columns:minmax(180px, .8fr) minmax(240px, 1.2fr);align-items:end;gap:12px;margin-top:10px}
+.review-generation-actions .primary-button{min-height:42px}
+.review-generation-status{min-height:20px;margin:10px 0 0}
+@media(max-width:700px){.review-generation-panel{padding:14px}.review-generation-actions{grid-template-columns:1fr}.review-generation-actions .primary-button{width:100%}}
