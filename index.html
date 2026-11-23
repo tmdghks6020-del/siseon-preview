@@ -10,6 +10,7 @@
   <meta property="og:type" content="website" />
   <meta property="og:title" content="시선 — 다른 관점이 모이는 곳" />
   <meta property="og:description" content="사회 쟁점을 여러 관점에서 살펴보고 근거와 함께 대화하는 커뮤니티, 시선." />
+  <link rel="stylesheet" href="styles.css" />
   <meta property="og:image" content="assets/siseon-share.svg" />
   <meta property="og:image:alt" content="시선 — 다른 관점이 모이는 곳" />
   <meta name="twitter:card" content="summary_large_image" />
@@ -98,13 +99,14 @@
   <main id="adminView" class="admin-view hidden">
     <div class="admin-shell">
       <header class="admin-topbar"><div><button type="button" class="admin-back" id="adminBackButton">← 서비스 홈</button><span class="admin-brand"><img src="assets/siseon-mark.svg" alt="" />시선 <i>운영센터</i></span></div><div class="admin-operator"><span class="operator-avatar">관</span><span>운영 관리자<small>관리자 시연 모드</small></span></div></header>
-      <div class="admin-demo-notice"><strong>시연 데이터</strong><span>회원·신고·문의 수치와 AI 추천 안건은 운영 흐름 검토를 위한 예시입니다. 관리자 진입과 저장은 이 브라우저에서만 동작합니다.</span></div>
+      <div class="admin-demo-notice"><strong>기존 메뉴는 시연</strong><span>회원·신고·문의 등 기존 관리자 메뉴는 예시 데이터를 브라우저에 저장합니다. 콘텐츠 자동화는 Supabase 연결 후 서버 인증·저장을 사용합니다.</span></div>
       <div class="admin-layout">
         <nav class="admin-sidebar" aria-label="관리 메뉴">
           <span class="admin-nav-caption">운영</span>
           <button class="admin-nav active" data-admin-page="overview">▦ <span>대시보드</span></button>
           <button class="admin-nav" data-admin-page="polls">◉ <span>투표 관리</span><b>30</b></button>
           <button class="admin-nav" data-admin-page="reviews">✦ <span>AI 안건 검토</span><b id="navPendingCount">5</b></button>
+          <button class="admin-nav" data-admin-page="content-automation">↗ <span>콘텐츠 자동화</span></button>
           <span class="admin-nav-caption">사이트 안내</span>
           <button class="admin-nav" data-admin-page="archive">▤ <span>지난 투표 보관함</span></button>
           <button class="admin-nav" data-admin-page="announcements">▤ <span>공지사항 관리</span></button>
@@ -299,6 +301,8 @@
     @media(max-width:700px){.poll-section-links{gap:9px;align-items:flex-start;flex-direction:column}.poll-section-links .text-link{font-size:9px}.poll-section-links .text-link span{font-size:12px}.poll-board-row .archive-main small{font-size:10px}}
   </style>
   <script src="ai-candidates.js"></script>
+  <script src="supabase-config.js"></script>
   <script src="app.js?v=exit-fallback-20261121"></script>
+  <script type="module" src="content-automation.js"></script>
 </body>
 </html>
