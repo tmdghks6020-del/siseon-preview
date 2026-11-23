@@ -137,7 +137,9 @@ async function init() {
     };
     window.SISEON_TOPIC_ADMIN = {
       async list() {
-        const { candidates } = await call('topics-list');
+        const { candidates, guidelines } = await call('topics-list');
+        const guidelineView = document.querySelector('#topicGuidelinesText');
+        if (guidelineView) guidelineView.textContent = guidelines?.text ? `적용 버전: ${guidelines.version}\n\n${guidelines.text}` : '서버에 새 작성 지침이 아직 배포되지 않았습니다. content-admin 함수를 업데이트해 주세요.';
         const mapped = (candidates || []).map(topicDraftFromRow);
         window.dispatchEvent(new CustomEvent('siseon-topic-candidates-loaded', { detail: { candidates: mapped } }));
         return mapped;

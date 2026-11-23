@@ -1244,7 +1244,9 @@ function renderReviewQueue() {
     const headlines = draft.dataSignals?.relatedHeadlines || [];
     const bingSummary = headlines.length ? `<small>생성 시점의 Bing News 주요 기사 ${headlines.length}건을 근거로 검토</small>` : '';
     const bingLinks = headlines.slice(0, 2).map((article) => safeHttpsUrl(article.url) ? `<a href="${escapeAdminHtml(safeHttpsUrl(article.url))}" target="_blank" rel="noopener noreferrer">기사 확인 ↗</a>` : '').filter(Boolean).join(' · ');
-    const bingEvidence = bingLinks ? `<small>${bingLinks}</small>` : '';
+    const reviewNote = draft.dataSignals?.editorialReview;
+    const guidelineNote = draft.dataSignals?.guidelineVersion ? `<small>작성 지침 · ${escapeAdminHtml(draft.dataSignals.guidelineVersion)}</small>` : '<small>새 작성 지침 적용 전 후보</small>';
+    const bingEvidence = `${bingLinks ? `<small>${bingLinks}</small>` : ''}${guidelineNote}${reviewNote ? `<details><summary>AI 편집 검토 의견</summary><p style="white-space:pre-wrap">${escapeAdminHtml(reviewNote)}</p></details>` : ''}`;
     return `<article class="review-queue-item ${draft.id === activeDraftId ? 'selected' : ''}"><div><span class="ai-recommend-tag">${batchLabel} · 운영자 검토 필요</span><strong>${escapeAdminHtml(draft.title)}</strong><small>${escapeAdminHtml(draft.category)} · 출처 ${escapeAdminHtml(draft.source)}</small>${selectedField}${recency}${bingSummary}${bingEvidence}</div><button type="button" data-review-draft="${escapeAdminHtml(draft.id)}">${draft.id === activeDraftId ? '검토 중' : '검토하기'} <span>→</span></button></article>`;
   }).join('') || `<div class="empty-draft">${editorialState.pending.length ? '선택한 분야의 검토 대기 안건이 없습니다.' : '검토 대기 안건이 없습니다.'}</div>`;
   const draft = visibleDrafts.find((item) => item.id === activeDraftId);
