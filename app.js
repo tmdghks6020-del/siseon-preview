@@ -20,6 +20,13 @@ previousStorageKeys.forEach((key) => {
 });
 let pendingMemberAction = null;
 let memberSession = null;
+const memberVoteChoices = new Map();
+const memberVoteResults = new Map();
+const issuePostsCache = new Map();
+const issueCommentsCache = new Map();
+const visitRecordedFor = new Set();
+const memberInterestedSuggestions = new Set();
+let activityTrackingInterval = null;
 const authConfig = window.SISEON_SUPABASE_CONFIG;
 const memberAuth = window.supabase?.createClient && authConfig?.url && authConfig?.publishableKey
   ? window.supabase.createClient(authConfig.url, authConfig.publishableKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
@@ -35,10 +42,17 @@ function openNicknameSetup() {
 }
 function syncMemberAuth(session) {
   memberSession = session;
+  if(!session?.user){memberVoteChoices.clear();memberVoteResults.clear();issuePostsCache.clear();issueCommentsCache.clear();memberInterestedSuggestions.clear();}
+  if(!session?.user&&activityTrackingInterval){clearInterval(activityTrackingInterval);activityTrackingInterval=null;}
   refreshMemberControls();
   renderCommunityAccess();
   if (activeIssueId) renderVoteState();
   if (session?.user) {
+    if (!visitRecordedFor.has(session.user.id)) {
+      visitRecordedFor.add(session.user.id);
+      memberAuth?.rpc('record_member_visit', { p_active_seconds: 0 }).then(({ error }) => { if (error) console.warn('방문 기록 저장 실패:', error.message); });
+    }
+    if(!activityTrackingInterval) activityTrackingInterval=setInterval(()=>{if(document.visibilityState==='visible'&&isMemberSignedIn())memberAuth?.rpc('record_member_active_seconds',{p_seconds:60}).then(({error})=>{if(error)console.warn('이용 시간 저장 실패:',error.message);});},60000);
     if (loginDialog?.open) loginDialog.close();
     if (!getMemberNickname()) {
       openNicknameSetup();
@@ -55,6 +69,8 @@ function syncMemberAuth(session) {
         return;
       }
     }
+    refreshCommunityFromSupabase().catch((error)=>console.warn('커뮤니티 데이터 동기화 실패:',error.message));
+    if(activeIssueId) loadMemberIssueData(activeIssueId).then(resumePendingAuthVote).catch((error)=>console.warn('투표/토론 데이터를 동기화하지 못했습니다:',error.message));
   } else if (nicknameDialog?.open) {
     nicknameDialog.close();
   }
@@ -65,7 +81,7 @@ function resumePendingAuthVote() {
   if (!requestedVote || !isMemberSignedIn() || !activeIssueId) return;
   sessionStorage.removeItem('siseon:pending-auth-vote');
   pendingVote = null;
-  if (!localStorage.getItem(voteKey())) castDemoVote(requestedVote);
+  if (!memberVoteChoices.has(activeIssueId)) castMemberVote(requestedVote);
 }
 if (memberAuth) {
   memberAuth.auth.getSession().then(({ data, error }) => {
@@ -238,7 +254,8 @@ let currentAdminPage = 'overview';
 let activeDraftId = editorialState.pending[0]?.id || null;
 let activeReviewCategory = '전체 분야';
 let scheduledTopicQueue = [];
-const adminOperationsKey = `${storagePrefix}admin-operations-demo`;
+let adminDiscussionPosts = [];
+let memberTotalCount = 0;
 const seedAdminOperations = {
   members: [
     { id: 'm-1042', nickname: '생각나눔', joined: '2026.11.20', status: '정상', reports: 0 },
@@ -266,16 +283,9 @@ const seedAdminOperations = {
 };
 
 function loadAdminOperations() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(adminOperationsKey) || 'null');
-    if (stored) {
-      if (Array.isArray(stored.announcements)) {
-        stored.announcements = stored.announcements.map((item) => Object.fromEntries(Object.entries(item).map(([key, value]) => [key, typeof value === 'string' ? value.replaceAll('두견', '시선') : value])));
-      }
-      return { ...JSON.parse(JSON.stringify(seedAdminOperations)), ...stored };
-    }
-  } catch (error) { console.warn('운영 시연 데이터를 불러오지 못했습니다.', error); }
-  return JSON.parse(JSON.stringify(seedAdminOperations));
+  const empty = JSON.parse(JSON.stringify(seedAdminOperations));
+  Object.keys(empty).forEach((key) => { if (Array.isArray(empty[key])) empty[key] = []; });
+  return empty;
 }
 const adminOperations = loadAdminOperations();
 let editingAnnouncementId = null;
@@ -295,9 +305,29 @@ function boardTopicSuggestions() {
 }
 
 function getDemoAnonymousAlias() {
-  let alias = localStorage.getItem(`${storagePrefix}anonymous-alias`);
-  if (!alias) { alias = `익명 ${String(Math.floor(Math.random() * 900) + 100)}`; localStorage.setItem(`${storagePrefix}anonymous-alias`, alias); }
-  return alias;
+  return '익명';
+}
+
+async function refreshCommunityFromSupabase() {
+  if (!memberAuth) return;
+  const authenticated = isMemberSignedIn();
+  const talkFields = authenticated ? 'id,author_id,author_nickname,category,title,body,status,created_at' : 'id,category,title,status,created_at';
+  const [{ data: talkRows, error: talkError }, { data: suggestionRows, error: suggestionError }] = await Promise.all([
+    memberAuth.from('open_talk_posts').select(talkFields).eq('status','published').order('created_at',{ascending:false}).limit(100),
+    memberAuth.from('topic_suggestions').select(authenticated ? 'id,author_id,category,title,rationale,for_text,against_text,source_url,status,created_at' : 'id,category,title,status,created_at').in('status',['pending','approved']).order('created_at',{ascending:false}).limit(100)
+  ]);
+  if (talkError) console.warn('자유토론 목록 동기화 실패:',talkError.message);
+  else adminOperations.openTalkPosts=(talkRows||[]).map(row=>({id:row.id,category:row.category,title:row.title,body:row.body||'',author:row.author_nickname||'익명',memberRef:row.author_id||'',status:'공개',createdAt:row.created_at,comments:[]}));
+  if (suggestionError) console.warn('주제 제안 목록 동기화 실패:',suggestionError.message);
+  else adminOperations.topicSuggestions=(suggestionRows||[]).map(row=>({id:row.id,category:row.category,title:row.title,rationale:row.rationale||'',forText:row.for_text||'',againstText:row.against_text||'',sourceUrl:row.source_url||'',sender:'익명 제안자',memberRef:row.author_id||'',interestCount:0,status:row.status==='pending'?'검토 대기':row.status,createdAt:row.created_at}));
+  if (authenticated) {
+    const {data:ownInterests}=await memberAuth.from('topic_suggestion_interests').select('suggestion_id').eq('user_id',memberSession.user.id);
+    memberInterestedSuggestions.clear(); (ownInterests||[]).forEach(x=>memberInterestedSuggestions.add(x.suggestion_id));
+  }
+  const {data:counts}=await memberAuth.rpc('get_topic_suggestion_counts');
+  const countMap=new Map((counts||[]).map(x=>[x.suggestion_id,Number(x.interest_count)]));
+  for(const item of adminOperations.topicSuggestions)item.interestCount=countMap.get(item.id)||0;
+  renderHomeCommunityBoard(); renderOpenTalkList(); renderTopicSuggestions();
 }
 
 function renderOpenTalkList() {
@@ -308,9 +338,14 @@ function renderOpenTalkList() {
   list.innerHTML = posts.map((post) => `<article class="open-talk-card open-talk-list-row"><div class="open-talk-meta"><span>${escapeAdminHtml(post.category)}</span>${post.sample ? '<em class="suggestion-status">예시</em>' : ''}<time>${new Date(post.createdAt).toLocaleDateString('ko-KR')}</time></div><button type="button" class="open-talk-title-button" data-open-talk-open="${escapeAdminHtml(post.id)}">${escapeAdminHtml(post.title)} <span>상세 보기 →</span></button><div class="open-talk-row-foot">${post.sample ? '예시 글' : escapeAdminHtml(post.author)} · 댓글 ${(post.comments || []).length}개</div></article>`).join('') || '<div class="community-empty">아직 공개된 글이 없습니다. 첫 대화를 시작해 보세요.</div>';
 }
 
-function openOpenTalkDetail(id) {
+async function openOpenTalkDetail(id) {
   if (!isMemberSignedIn()) { openLogin(() => openOpenTalkDetail(id)); return; }
-  const post = boardOpenTalkPosts().find((item) => item.id === id);
+  let post = boardOpenTalkPosts().find((item) => item.id === id);
+  const {data:fullPost,error:postError}=await memberAuth.from('open_talk_posts').select('id,author_id,author_nickname,category,title,body,status,created_at').eq('id',id).maybeSingle();
+  if(postError||!fullPost){showUserActionToast('게시글을 불러오지 못했습니다.');return;}
+  const {data:comments}=await memberAuth.from('open_talk_comments').select('id,author_nickname,body,created_at').eq('post_id',id).eq('status','published').order('created_at');
+  post={...post,category:fullPost.category,title:fullPost.title,body:fullPost.body,author:fullPost.author_nickname,memberRef:fullPost.author_id,createdAt:fullPost.created_at,comments:(comments||[]).map(x=>({author:x.author_nickname,text:x.body,id:x.id}))};
+  adminOperations.openTalkPosts=adminOperations.openTalkPosts.map(x=>x.id===id?post:x);
   if (!post) return;
   document.querySelector('#openTalkBoardContent').classList.add('hidden');
   const detail = document.querySelector('#openTalkDetail');
@@ -321,32 +356,35 @@ function openOpenTalkDetail(id) {
 
 function renderTopicSuggestions() {
   const list = document.querySelector('#topicSuggestionList');
-  const interested = new Set(readLocalList(`${storagePrefix}topic-interests`));
+  const interested = memberInterestedSuggestions;
   const suggestions = boardTopicSuggestions();
   document.querySelector('#topicSuggestionCount').textContent = `${suggestions.length}개 제안`;
   list.innerHTML = suggestions.map((item) => `<article class="topic-suggestion-row"><div class="open-talk-meta"><span>${escapeAdminHtml(item.category)}</span>${item.sample ? '<em class="suggestion-status">예시</em>' : ''}<time>${new Date(item.createdAt).toLocaleDateString('ko-KR')}</time></div><button type="button" class="topic-suggestion-title" data-topic-suggestion-open="${escapeAdminHtml(item.id)}">${escapeAdminHtml(item.title)} <span>상세 보기 →</span></button><div class="suggestion-footer"><small>${item.sample ? '예시 제안' : '이용자 제안'}</small><button type="button" data-interest-id="${escapeAdminHtml(item.id)}" ${interested.has(item.id) ? 'class="interested"' : ''} ${item.sample || item.status !== '검토 대기' ? 'disabled' : ''}>토론해 보고 싶어요 · ${item.interestCount}</button></div></article>`).join('') || '<div class="community-empty">아직 등록된 제안이 없습니다.</div>';
 }
 
-function openTopicSuggestionDetail(id) {
+async function openTopicSuggestionDetail(id) {
   if (!isMemberSignedIn()) { openLogin(() => openTopicSuggestionDetail(id)); return; }
-  const item = boardTopicSuggestions().find((suggestion) => suggestion.id === id);
+  let item = boardTopicSuggestions().find((suggestion) => suggestion.id === id);
+  const {data:row,error}=await memberAuth.from('topic_suggestions').select('id,author_id,category,title,rationale,for_text,against_text,source_url,status,created_at').eq('id',id).maybeSingle();
+  if(error||!row){showUserActionToast('제안 내용을 불러오지 못했습니다.');return;}
+  const {data:count}=await memberAuth.rpc('get_topic_suggestion_count',{p_suggestion_id:id});
+  item={...item,id:row.id,category:row.category,title:row.title,rationale:row.rationale,forText:row.for_text,againstText:row.against_text,sourceUrl:row.source_url,sender:'익명 제안자',memberRef:row.author_id,status:row.status==='pending'?'검토 대기':row.status,createdAt:row.created_at,interestCount:Number(count)||0};
+  adminOperations.topicSuggestions=adminOperations.topicSuggestions.map(x=>x.id===id?item:x);
   if (!item) return;
-  const interested = new Set(readLocalList(`${storagePrefix}topic-interests`));
+  const interested = memberInterestedSuggestions;
   document.querySelector('#topicSuggestionBoardContent').classList.add('hidden');
   const detail = document.querySelector('#topicSuggestionDetail');
   detail.classList.remove('hidden');
   detail.innerHTML = `<button type="button" class="announcement-detail-back" data-suggestion-detail-back>← 제안 목록</button><div class="topic-suggestion-detail-card"><div class="open-talk-meta"><span>${escapeAdminHtml(item.category)}</span><b>${item.sample ? '예시 제안' : escapeAdminHtml(item.sender || '익명 제안자')}</b><time>${new Date(item.createdAt).toLocaleDateString('ko-KR')}</time></div><h1>${escapeAdminHtml(item.title)}</h1>${item.sample ? '<p class="suggestion-example-note">화면 구성을 위한 예시 제안입니다.</p>' : ''}<p class="suggestion-detail-rationale">${escapeAdminHtml(item.rationale)}</p><div class="suggestion-balance"><p><b>가능한 찬성 관점</b>${escapeAdminHtml(item.forText)}</p><p><b>가능한 반대 관점</b>${escapeAdminHtml(item.againstText)}</p></div>${safeHttpsUrl(item.sourceUrl) ? `<a class="candidate-source" href="${escapeAdminHtml(safeHttpsUrl(item.sourceUrl))}" target="_blank" rel="noopener noreferrer">참고 출처 열기 ↗</a>` : ''}<div class="suggestion-footer"><small>현재 관심 ${item.interestCount}명 · 관심 수는 편집팀 검토의 참고 자료입니다.</small><button type="button" data-interest-id="${escapeAdminHtml(item.id)}" ${interested.has(item.id) ? 'class="interested"' : ''} ${item.sample || item.status !== '검토 대기' ? 'disabled' : ''}>${interested.has(item.id) ? '관심 표시됨' : '토론해 보고 싶어요'} · ${item.interestCount}</button></div></div>`;
 }
 
-function toggleTopicSuggestionInterest(id) {
+async function toggleTopicSuggestionInterest(id) {
   if (!isMemberSignedIn()) { openLogin(() => toggleTopicSuggestionInterest(id)); return; }
   const item = adminOperations.topicSuggestions.find((suggestion) => suggestion.id === id);
-  const interested = new Set(readLocalList(`${storagePrefix}topic-interests`));
   if (!item || item.status !== '검토 대기') return;
-  if (interested.has(item.id)) { interested.delete(item.id); item.interestCount = Math.max(0, item.interestCount - 1); }
-  else { interested.add(item.id); item.interestCount += 1; }
-  localStorage.setItem(`${storagePrefix}topic-interests`, JSON.stringify([...interested]));
-  saveAdminOperations();
+  const {data:existing}=await memberAuth.from('topic_suggestion_interests').select('suggestion_id').eq('suggestion_id',id).eq('user_id',memberSession.user.id).maybeSingle();
+  if(existing){const {error}=await memberAuth.from('topic_suggestion_interests').delete().eq('suggestion_id',id).eq('user_id',memberSession.user.id);if(error){showUserActionToast(`관심 표시를 취소하지 못했습니다: ${error.message}`);return;}memberInterestedSuggestions.delete(id);item.interestCount=Math.max(0,item.interestCount-1);}
+  else {const {error}=await memberAuth.from('topic_suggestion_interests').insert({suggestion_id:id,user_id:memberSession.user.id});if(error){showUserActionToast(`관심 표시를 저장하지 못했습니다: ${error.message}`);return;}memberInterestedSuggestions.add(id);item.interestCount+=1;}
   renderHomeCommunityBoard();
   renderTopicSuggestions();
   if (!document.querySelector('#topicSuggestionDetail').classList.contains('hidden')) openTopicSuggestionDetail(id);
@@ -388,7 +426,7 @@ function renderHomeCommunityBoard() {
   const filteredSuggestions = allSuggestions.filter((item) => activeHomeBoardCategories.suggestions === '전체' || item.category === activeHomeBoardCategories.suggestions).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const unavailable = new Set(adminOperations.reports.filter((item) => item.issueId === 'open-talk' && item.postStatus !== '공개').map((item) => item.postId));
   openTalkBoard.innerHTML = filteredTalk.filter((post) => !unavailable.has(post.id)).map((post) => `<article class="home-suggestion-row home-talk-row"><div class="home-suggestion-row-meta"><span>${escapeAdminHtml(post.category)}</span>${post.sample ? '<em>예시</em>' : ''}</div><button type="button" class="home-suggestion-title" data-open-talk-open="${escapeAdminHtml(post.id)}">${escapeAdminHtml(post.title)}</button><span class="home-talk-comment-count">${post.sample ? '예시 글' : '댓글'} · ${(post.comments || []).length}</span></article>`).join('') || '<div class="community-empty">이 분야에 아직 글이 없습니다.</div>';
-  const interested = new Set(readLocalList(`${storagePrefix}topic-interests`));
+  const interested = memberInterestedSuggestions;
   suggestionsBoard.innerHTML = filteredSuggestions.map((item) => `<article class="home-suggestion-row"><div class="home-suggestion-row-meta"><span>${escapeAdminHtml(item.category)}</span>${item.sample ? '<em>예시</em>' : ''}</div><button type="button" class="home-suggestion-title" data-topic-suggestion-open="${escapeAdminHtml(item.id)}">${escapeAdminHtml(item.title)}</button><button type="button" class="home-suggestion-interest" data-interest-id="${escapeAdminHtml(item.id)}" ${interested.has(item.id) ? 'class="interested"' : ''} ${item.sample || item.status !== '검토 대기' ? 'disabled' : ''}>토론해 보고 싶어요 · ${item.interestCount}</button></article>`).join('') || '<div class="community-empty">이 분야에 아직 제안이 없습니다.</div>';
 }
 
@@ -430,7 +468,7 @@ document.querySelector('#communityBoards').addEventListener('click', (event) => 
   const isHidden = comments.classList.toggle('hidden');
   toggle.innerHTML = isHidden ? '댓글 보기 <span>⌄</span>' : '댓글 접기 <span>⌃</span>';
 });
-document.querySelector('#communityBoards').addEventListener('submit', (event) => {
+document.querySelector('#communityBoards').addEventListener('submit', async (event) => {
   const form = event.target.closest('.open-talk-comment-form');
   if (!form) return;
   event.preventDefault();
@@ -438,9 +476,9 @@ document.querySelector('#communityBoards').addEventListener('submit', (event) =>
   const post = adminOperations.openTalkPosts.find((item) => item.id === form.closest('[data-open-talk-id]')?.dataset.openTalkId);
   const text = new FormData(form).get('comment')?.trim();
   if (!post || !text) return;
-  post.comments ||= [];
-  post.comments.push({ author: getDemoAnonymousAlias(), text });
-  saveAdminOperations();
+  const {error}=await memberAuth.from('open_talk_comments').insert({post_id:post.id,author_id:memberSession.user.id,author_nickname:'익명',body:text});
+  if(error){showUserActionToast(`댓글을 저장하지 못했습니다: ${error.message}`);return;}
+  post.comments ||= []; post.comments.push({ author: '익명', text });
   renderHomeCommunityBoard();
   renderOpenTalkList();
 });
@@ -453,12 +491,14 @@ document.querySelector('#communityBoards').addEventListener('click', (event) => 
 document.querySelectorAll('[data-community-home]').forEach((button) => button.addEventListener('click', () => {
   goBackWithinApp();
 }));
-document.querySelector('#openTalkForm').addEventListener('submit', (event) => {
+document.querySelector('#openTalkForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (!isMemberSignedIn()) { openLogin(); return; }
   const form = event.currentTarget; const values = Object.fromEntries(new FormData(form).entries());
-  adminOperations.openTalkPosts.unshift({ id: `talk-${Date.now()}`, category: values.category, title: values.title.trim(), body: values.body.trim(), author: getDemoAnonymousAlias(), memberRef: 'demo-current-account', status: '공개', createdAt: new Date().toISOString(), comments: [] });
-  saveAdminOperations(); form.reset(); renderOpenTalkList(); renderHomeCommunityBoard(); showUserActionToast('익명 글이 게시됐습니다.');
+  const {data,error}=await memberAuth.from('open_talk_posts').insert({author_id:memberSession.user.id,author_nickname:'익명',category:values.category,title:values.title.trim(),body:values.body.trim()}).select('id,created_at').single();
+  if(error){showUserActionToast(`글을 저장하지 못했습니다: ${error.message}`);return;}
+  adminOperations.openTalkPosts.unshift({ id:data.id, category: values.category, title: values.title.trim(), body: values.body.trim(), author:'익명', memberRef:memberSession.user.id,status:'공개',createdAt:data.created_at,comments:[] });
+  form.reset(); renderOpenTalkList(); renderHomeCommunityBoard(); showUserActionToast('익명 글이 게시됐습니다.');
 });
 document.querySelector('#openTalkLoginButton').addEventListener('click', () => openLogin(() => {
   renderCommunityAccess();
@@ -469,13 +509,15 @@ document.querySelector('#topicSuggestionLoginButton').addEventListener('click', 
   document.querySelector('#suggestionTitle').focus();
 }));
 
-document.querySelector('#openTalkList').addEventListener('submit', (event) => {
+document.querySelector('#openTalkList').addEventListener('submit', async (event) => {
   const form = event.target.closest('.open-talk-comment-form'); if (!form) return;
   event.preventDefault();
   if (!isMemberSignedIn()) { openLogin(); return; }
   const card = form.closest('[data-open-talk-id]'); const post = adminOperations.openTalkPosts.find((item) => item.id === card.dataset.openTalkId);
   const text = new FormData(form).get('comment')?.trim(); if (!post || !text) return;
-  post.comments ||= []; post.comments.push({ author: getDemoAnonymousAlias(), text }); saveAdminOperations(); renderOpenTalkList(); renderHomeCommunityBoard();
+  const {error}=await memberAuth.from('open_talk_comments').insert({post_id:post.id,author_id:memberSession.user.id,author_nickname:'익명',body:text});
+  if(error){showUserActionToast(`댓글을 저장하지 못했습니다: ${error.message}`);return;}
+  post.comments ||= []; post.comments.push({ author: '익명', text }); renderOpenTalkList(); renderHomeCommunityBoard();
 });
 document.querySelector('#openTalkList').addEventListener('click', (event) => {
   const detailButton = event.target.closest('[data-open-talk-open]');
@@ -501,7 +543,7 @@ document.querySelector('#openTalkDetail').addEventListener('click', (event) => {
     document.querySelector('#reportTargetTitle').textContent = `“${post.title}” · ${post.author}`; document.querySelector('#userReportForm').reset(); document.querySelector('#userReportDialog').showModal();
   }
 });
-document.querySelector('#openTalkDetail').addEventListener('submit', (event) => {
+document.querySelector('#openTalkDetail').addEventListener('submit', async (event) => {
   const form = event.target.closest('.open-talk-comment-form');
   if (!form) return;
   event.preventDefault();
@@ -509,9 +551,9 @@ document.querySelector('#openTalkDetail').addEventListener('submit', (event) => 
   const post = adminOperations.openTalkPosts.find((item) => item.id === document.querySelector('#openTalkDetail').dataset.openTalkId);
   const text = new FormData(form).get('comment')?.trim();
   if (!post || !text) return;
-  post.comments ||= [];
-  post.comments.push({ author: getDemoAnonymousAlias(), text });
-  saveAdminOperations();
+  const {error}=await memberAuth.from('open_talk_comments').insert({post_id:post.id,author_id:memberSession.user.id,author_nickname:'익명',body:text});
+  if(error){showUserActionToast(`댓글을 저장하지 못했습니다: ${error.message}`);return;}
+  post.comments ||= []; post.comments.push({ author: '익명', text });
   renderOpenTalkList(); renderHomeCommunityBoard(); openOpenTalkDetail(post.id);
 });
 document.querySelector('#topicSuggestionList').addEventListener('click', (event) => {
@@ -530,13 +572,16 @@ document.querySelector('#topicSuggestionDetail').addEventListener('click', (even
   if (interestButton) toggleTopicSuggestionInterest(interestButton.dataset.interestId);
 });
 
-document.querySelector('#topicSuggestionForm').addEventListener('submit', (event) => {
+document.querySelector('#topicSuggestionForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (!isMemberSignedIn()) { openLogin(); return; }
   const form = event.currentTarget; const values = Object.fromEntries(new FormData(form).entries());
   if (/(선거|대선|총선|지방선거|공천)/.test(values.title)) { showUserActionToast('선거 관련 주제는 제안 대상에서 제외됩니다.'); return; }
-  adminOperations.topicSuggestions.unshift({ id: `suggestion-${Date.now()}`, category: values.category, title: values.title.trim(), rationale: values.rationale.trim(), forText: values.forText.trim(), againstText: values.againstText.trim(), sourceUrl: safeHttpsUrl(values.sourceUrl), sender: '익명 제안자', memberRef: 'demo-current-account', interestCount: 0, status: '검토 대기', createdAt: new Date().toISOString() });
-  saveAdminOperations(); form.reset(); renderTopicSuggestions(); renderHomeCommunityBoard(); showUserActionToast('주제 제안을 접수했습니다.');
+  const payload={author_id:memberSession.user.id,category:values.category,title:values.title.trim(),rationale:values.rationale.trim(),for_text:values.forText.trim(),against_text:values.againstText.trim(),source_url:safeHttpsUrl(values.sourceUrl)};
+  const {data,error}=await memberAuth.from('topic_suggestions').insert(payload).select('id,created_at').single();
+  if(error){showUserActionToast(`제안을 저장하지 못했습니다: ${error.message}`);return;}
+  adminOperations.topicSuggestions.unshift({ id:data.id,category:payload.category,title:payload.title,rationale:payload.rationale,forText:payload.for_text,againstText:payload.against_text,sourceUrl:payload.source_url,sender:'익명 제안자',memberRef:memberSession.user.id,interestCount:0,status:'검토 대기',createdAt:data.created_at });
+  form.reset(); renderTopicSuggestions(); renderHomeCommunityBoard(); showUserActionToast('주제 제안을 접수했습니다.');
 });
 
 function sortedPublicAnnouncements() {
@@ -665,17 +710,63 @@ document.querySelector('#announcementList').addEventListener('click', (event) =>
 document.querySelector('#announcementDetailView').addEventListener('click', (event) => { if (event.target.closest('#announcementDetailBack')) goBackWithinApp(); });
 
 function saveAdminOperations() {
-  localStorage.setItem(adminOperationsKey, JSON.stringify(adminOperations));
+  // Operational records are now persisted by their typed Supabase table at the point of each action.
 }
 
 function logAdminAction(action, target, reason = '') {
   adminOperations.audit.unshift({ action, target, reason, at: new Date().toISOString(), operator: '운영 관리자' });
+  if(isVerifiedAdmin&&memberSession?.user) memberAuth?.from('admin_audit_log').insert({actor_id:memberSession.user.id,action,target,reason}).then(({error})=>{if(error)console.warn('운영 로그 저장 실패:',error.message);});
   saveAdminOperations();
+}
+
+async function refreshAnnouncementsFromSupabase(admin=false) {
+  if(!memberAuth)return;
+  let query=memberAuth.from('announcements').select('id,category,title,summary,body,published,pinned,created_at').order('pinned',{ascending:false}).order('created_at',{ascending:false});
+  if(!admin)query=query.eq('published',true);
+  const {data,error}=await query;
+  if(error){console.warn('공지 동기화 실패:',error.message);return;}
+  adminOperations.announcements=(data||[]).map(row=>({id:row.id,category:row.category,title:row.title,summary:row.summary,body:row.body,published:row.published,pinned:row.pinned,createdAt:row.created_at}));
+  renderAnnouncementTicker();renderAnnouncementList();
+}
+
+async function refreshAdminOperations() {
+  if(!memberAuth)throw new Error('Supabase 설정이 없습니다.');
+  if(!memberSession?.user){const {data}=await memberAuth.auth.getSession();memberSession=data?.session||null;}
+  if(!memberSession?.user)throw new Error('운영자 인증 세션이 없습니다. 다시 로그인해 주세요.');
+  const queries=await Promise.all([
+    memberAuth.from('member_profiles').select('user_id,nickname,status,trust_level,created_at').order('created_at',{ascending:false}).limit(1000),
+    memberAuth.from('user_reports').select('*').order('created_at',{ascending:false}).limit(1000),
+    memberAuth.from('user_inquiries').select('*').order('created_at',{ascending:false}).limit(1000),
+    memberAuth.from('partnership_inquiries').select('*').order('created_at',{ascending:false}).limit(1000),
+    memberAuth.from('announcements').select('id,category,title,summary,body,published,pinned,created_at').order('created_at',{ascending:false}),
+    memberAuth.from('open_talk_posts').select('id,author_id,author_nickname,category,title,body,status,created_at').order('created_at',{ascending:false}).limit(1000),
+    memberAuth.from('topic_suggestions').select('id,author_id,category,title,rationale,for_text,against_text,source_url,status,created_at').order('created_at',{ascending:false}).limit(1000),
+    memberAuth.from('issue_posts').select('id,topic_id,author_id,author_nickname,stance,kind,title,body,source_url,status,created_at').order('created_at',{ascending:false}).limit(1000),
+    memberAuth.from('admin_audit_log').select('action,target,reason,created_at').order('created_at',{ascending:false}).limit(200),
+    memberAuth.from('admin_site_state').select('payload').eq('state_key','editorial').maybeSingle()
+  ]);
+  const failed=queries.find(x=>x.error);if(failed)throw failed.error;
+  const [members,reports,inquiries,partners,notices,talk,suggestions,posts,audit,siteState]=queries.map(x=>x.data||[]);
+  if(siteState?.payload)Object.assign(editorialState,siteState.payload);
+  memberTotalCount=members.length;
+  const targetMap=new Map([...talk.map(x=>[x.id,{owner:x.author_id,nickname:x.author_nickname,title:x.title,status:x.status}]),...posts.map(x=>[x.id,{owner:x.author_id,nickname:x.author_nickname,title:x.title,status:x.status}])]);
+  adminOperations.members=members.map(x=>({id:x.user_id,nickname:x.nickname,authRef:x.user_id,joined:new Date(x.created_at).toLocaleDateString('ko-KR'),status:({active:'정상',warned:'주의',suspended:'7일 정지',deleted:'탈퇴'})[x.status]||'정상',role:x.trust_level==='trusted'?'신뢰 회원':'일반 회원',reports:reports.filter(r=>targetMap.get(r.target_id)?.owner===x.user_id).length}));
+  adminOperations.reports=reports.map(x=>{const target=targetMap.get(x.target_id)||{};return {id:x.id,memberId:target.owner||'',nickname:target.nickname||'익명 작성자',area:x.target_type==='open_talk_post'?'익명 자유토론장':'토론 게시글',summary:x.details,reason:x.reason,count:1,status:({pending:'미검토',reviewing:'검토 중',resolved:'조치 완료',dismissed:'위반 아님'})[x.status],postStatus:({published:'공개',hidden:'숨김',removed:'삭제됨'})[target.status]||'공개',postId:x.target_id,postTitle:target.title,issueId:x.target_type==='open_talk_post'?'open-talk':`topic-${posts.find(p=>p.id===x.target_id)?.topic_id||''}`,reportedAt:x.created_at};});
+  adminOperations.inquiries=inquiries.map(x=>({id:x.id,type:x.category,title:x.title,sender:x.sender,received:new Date(x.created_at).toLocaleString('ko-KR'),status:({pending:'미답변',answered:'답변 중',closed:'완료'})[x.status],message:x.message,reply:x.admin_note,createdAt:x.created_at}));
+  adminOperations.partnerships=partners.map(x=>({id:x.id,type:x.category,title:x.title,sender:x.organization,received:new Date(x.created_at).toLocaleString('ko-KR'),status:({pending:'미확인',reviewing:'검토 중',answered:'답변 중',closed:'완료'})[x.status],message:x.message,reply:x.admin_note,createdAt:x.created_at}));
+  adminOperations.announcements=notices.map(x=>({id:x.id,category:x.category,title:x.title,summary:x.summary,body:x.body,published:x.published,pinned:x.pinned,createdAt:x.created_at}));
+  adminOperations.openTalkPosts=talk.map(x=>({id:x.id,category:x.category,title:x.title,body:x.body,author:x.author_nickname,memberRef:x.author_id,status:({published:'공개',hidden:'숨김',removed:'삭제됨'})[x.status],createdAt:x.created_at,comments:[]}));
+  adminOperations.topicSuggestions=suggestions.map(x=>({id:x.id,category:x.category,title:x.title,rationale:x.rationale,forText:x.for_text,againstText:x.against_text,sourceUrl:x.source_url,sender:'익명 제안자',memberRef:x.author_id,interestCount:0,status:({pending:'검토 대기',approved:'채택',rejected:'반려',withdrawn:'철회'})[x.status],createdAt:x.created_at}));
+  adminDiscussionPosts=posts.map(x=>({id:x.id,issueId:`topic-${x.topic_id}`,stance:x.stance,kind:x.kind,title:x.title,content:x.body,sourceUrl:x.source_url,author:x.author_nickname,createdAt:x.created_at,status:x.status==='published'?'공개':x.status==='hidden'?'숨김':'삭제됨'}));
+  const {data:talkComments}=await memberAuth.from('open_talk_comments').select('id,post_id,author_nickname,body,created_at').order('created_at');
+  for(const row of talkComments||[]){const post=adminOperations.openTalkPosts.find(x=>x.id===row.post_id);if(post)post.comments.push({id:row.id,author:row.author_nickname,text:row.body,createdAt:row.created_at});}
+  adminOperations.audit=audit.map(x=>({action:x.action,target:x.target,reason:x.reason,at:x.created_at,operator:'운영 관리자'}));
 }
 
 function saveEditorialState() {
   editorialState.activeIssueIds = activeIssueIds;
   localStorage.setItem(editorialStorageKey, JSON.stringify(editorialState));
+  if(isVerifiedAdmin&&memberSession?.user)memberAuth?.from('admin_site_state').upsert({state_key:'editorial',payload:editorialState,updated_by:memberSession.user.id,updated_at:new Date().toISOString()},{onConflict:'state_key'}).then(({error})=>{if(error)console.warn('편집 상태 서버 저장 실패:',error.message);});
 }
 
 function getIssueData(issueId) {
@@ -782,6 +873,7 @@ async function openIssue(issueId, historyMode = 'push') {
   openTalkView?.classList.add('hidden'); topicSuggestionsView?.classList.add('hidden');
   issueView.classList.remove('hidden');
   window.scrollTo({ top: 0, behavior: 'instant' });
+  await loadMemberIssueData(issueId);
   renderVoteState();
   resumePendingAuthVote();
 }
@@ -793,9 +885,50 @@ function openLogin(afterLogin = null) {
 }
 
 function castDemoVote(choice) {
-  localStorage.setItem(voteKey(), choice);
+  return castMemberVote(choice);
+}
+
+async function loadMemberIssueData(issueId) {
+  const topicId = getPersistedTopicUuid(issueId);
+  if (!topicId || !isMemberSignedIn() || !memberAuth) return;
+  const userId = memberSession.user.id;
+  const { data: ownVote, error: voteError } = await memberAuth.from('topic_votes').select('choice').eq('topic_id', topicId).eq('user_id', userId).maybeSingle();
+  if (voteError) console.warn('투표 여부를 불러오지 못했습니다:', voteError.message);
+  if (ownVote?.choice) memberVoteChoices.set(issueId, ownVote.choice); else memberVoteChoices.delete(issueId);
+  const choice = ownVote?.choice;
+  if (choice || activeIssueIsArchived) {
+    const { data: counts, error: resultError } = await memberAuth.rpc('get_topic_vote_results', { p_topic_id: topicId });
+    if (!resultError) memberVoteResults.set(issueId, counts || []);
+    else console.warn('투표 결과를 불러오지 못했습니다:', resultError.message);
+  }
+  if (choice || activeIssueIsArchived) {
+    const { data: posts, error: postError } = await memberAuth.from('issue_posts').select('id,topic_id,author_id,author_nickname,stance,kind,title,body,source_url,created_at').eq('topic_id', topicId).eq('status','published').order('created_at',{ascending:false});
+    if (postError) console.warn('토론 글을 불러오지 못했습니다:', postError.message);
+    const mapped = (posts || []).map((row) => ({ id: row.id, stance: row.stance, kind: row.kind, title: row.title, content: row.body, sourceUrl: row.source_url, author: row.author_nickname, createdAt: row.created_at }));
+    issuePostsCache.set(issueId, mapped);
+    const ids = (posts || []).map((row) => row.id);
+    issueCommentsCache.set(issueId, {});
+    if (ids.length) {
+      const { data: comments, error: commentError } = await memberAuth.from('issue_comments').select('id,post_id,author_nickname,body,created_at').in('post_id', ids).eq('status','published').order('created_at');
+      if (commentError) console.warn('댓글을 불러오지 못했습니다:', commentError.message);
+      for (const row of comments || []) (issueCommentsCache.get(issueId)[row.post_id] ||= []).push({ id: row.id, author: row.author_nickname, text: row.body, createdAt: row.created_at });
+    }
+  }
+  if (activeIssueId === issueId) renderVoteState();
+}
+
+async function castMemberVote(choice) {
+  const topicId = getPersistedTopicUuid(activeIssueId);
+  if (!memberAuth || !memberSession?.user || !topicId) { showUserActionToast('투표 서버 연결을 확인할 수 없습니다.'); return; }
+  const { error } = await memberAuth.from('topic_votes').insert({ topic_id: topicId, user_id: memberSession.user.id, choice });
+  if (error) {
+    showUserActionToast(error.code === '23505' ? '이미 이 안건에 투표했습니다.' : `투표를 저장하지 못했습니다: ${error.message}`);
+    await loadMemberIssueData(activeIssueId);
+    return;
+  }
+  memberVoteChoices.set(activeIssueId, choice);
   pendingVote = null;
-  renderVoteState();
+  await loadMemberIssueData(activeIssueId);
 }
 
 function stanceInfo(choice) {
@@ -868,10 +1001,10 @@ function createDiscussionPost(post) {
   const meta = document.createElement('p');
   meta.className = 'discussion-post-meta';
   const initialComments = (post.initialComments || []).map((text) => ({ author: '참여자', text }));
-  const savedComments = readLocalList(savedCommentsKey(activeIssueId, post.id));
+  const savedComments = issueCommentsCache.get(activeIssueId)?.[post.id] || [];
   const commentCount = initialComments.length + savedComments.length;
   meta.dataset.commentCount = String(commentCount);
-  meta.textContent = `${post.author || '시연 사용자'} · 댓글 ${commentCount} · 시연 글`;
+  meta.textContent = `${post.author || '참여자'} · 댓글 ${commentCount}`;
 
   const postTools = document.createElement('div');
   postTools.className = 'discussion-post-tools';
@@ -946,12 +1079,12 @@ function renderPrivateDiscussion() {
   if (!postList) return;
   postList.replaceChildren();
   const isMember = isMemberSignedIn();
-  const hasVoted = Boolean(localStorage.getItem(voteKey()));
+  const hasVoted = Boolean(memberVoteChoices.get(activeIssueId));
   if (!isMember || (!activeIssueIsArchived && !hasVoted)) return;
   const issue = getIssueData(activeIssueId);
   if (!issue) return;
   const unavailablePostIds = new Set([...adminOperations.reports.filter((report) => report.issueId === activeIssueId && report.postStatus !== '공개').map((report) => report.postId), ...adminOperations.hiddenDiscussionPosts]);
-  [...readLocalList(savedPostsKey(activeIssueId))]
+  [...(issuePostsCache.get(activeIssueId) || [])]
     .filter((post) => !unavailablePostIds.has(post.id))
     .forEach((post) => postList.append(createDiscussionPost(post)));
   applyDiscussionFilter('all');
@@ -982,7 +1115,7 @@ function renderVoteState() {
     writeButton.classList.add('hidden');
     return;
   }
-  const choice = localStorage.getItem(voteKey());
+  const choice = memberVoteChoices.get(activeIssueId);
   const canSeePrivate = Boolean(isMember && choice);
   const discussion = document.querySelector('#discussionSection');
   const message = document.querySelector('#voteMessage');
@@ -1002,7 +1135,7 @@ function renderVoteState() {
   });
   message.textContent = !isMember
     ? '로그인하면 투표할 수 있습니다. 안건과 양쪽 의견은 공개되어 있습니다.'
-    : choice ? `시연 투표 완료: ${choice}. 결과와 토론이 열렸습니다. 이 선택은 현재 브라우저에만 저장됩니다.` : '투표 후 결과와 토론이 열립니다.';
+    : choice ? `투표 완료: ${choice}. 결과와 토론이 열렸습니다.` : '투표 후 결과와 토론이 열립니다.';
   renderPrivateDiscussion();
 }
 
@@ -1011,9 +1144,12 @@ function renderDemoResults(visible) {
   target.replaceChildren();
   target.classList.toggle('hidden', !visible);
   if (!visible) return;
-  const issue = getIssueData(activeIssueId);
-  const [forPercent, againstPercent, holdPercent] = issue?.demoResults || [0, 0, 0];
-  target.innerHTML = `<div class="result-heading"><strong>시연 집계 (예시)</strong><span>실제 투표 데이터가 아닙니다</span></div><div class="result-bar"><i style="width:${forPercent}%"></i><i style="width:${againstPercent}%"></i><i style="width:${holdPercent}%"></i></div><div class="result-labels"><b>찬성 ${forPercent}%</b><b>반대 ${againstPercent}%</b><b>보류 ${holdPercent}%</b></div><small>실제 결과는 서버와 투표 데이터 연동 후 표시됩니다.</small>`;
+  const rows = memberVoteResults.get(activeIssueId) || [];
+  const counts = Object.fromEntries(rows.map((row) => [row.choice, Number(row.vote_count)]));
+  const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
+  const percent = (choice) => total ? Math.round((counts[choice] || 0) * 100 / total) : 0;
+  const forPercent = percent('찬성'); const againstPercent = percent('반대'); const holdPercent = total ? Math.max(0, 100 - forPercent - againstPercent) : 0;
+  target.innerHTML = `<div class="result-heading"><strong>현재 결과</strong><span>시선 참여자 ${total}명</span></div><div class="result-bar"><i style="width:${forPercent}%"></i><i style="width:${againstPercent}%"></i><i style="width:${holdPercent}%"></i></div><div class="result-labels"><b>찬성 ${forPercent}%</b><b>반대 ${againstPercent}%</b><b>보류 ${holdPercent}%</b></div><small>이 결과는 시선에 참여한 회원의 투표 집계입니다.</small>`;
 }
 
 function renderPollCards() {
@@ -1185,7 +1321,7 @@ function showAdminView(pushHistory = true) {
   openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden');
   adminView.classList.remove('hidden');
   currentAdminPage = 'overview';
-  renderAdminDashboard();
+  refreshAdminOperations().then(()=>{renderAdminDashboard();renderAdminPage(currentAdminPage);}).catch((error)=>{console.error('관리자 데이터를 불러오지 못했습니다:',error);showUserActionToast(`운영 데이터를 불러오지 못했습니다: ${error.message}`);renderAdminDashboard();});
   if (pushHistory) pushAppRoute('admin', { adminPage: 'overview' });
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
@@ -1337,7 +1473,7 @@ function renderMembersTable() {
   const query = document.querySelector('#memberSearch')?.value.trim().toLowerCase() || '';
   const status = document.querySelector('#memberStatusFilter')?.value || '전체';
   const members = adminOperations.members.filter((member) => (status === '전체' || member.status === status) && `${member.nickname} ${member.id}`.toLowerCase().includes(query));
-  body.innerHTML = members.map((member) => `<tr><td><strong>${escapeAdminHtml(member.nickname)}</strong><small>${escapeAdminHtml(member.id)}</small></td><td>${escapeAdminHtml(member.joined)}</td><td><span class="admin-status ${member.status === '정상' ? 'status-good' : member.status === '7일 정지' ? 'status-blocked' : 'status-warn'}">${escapeAdminHtml(member.status)}</span></td><td>${member.reports}건</td><td><select class="member-role-select" data-member-role="${escapeAdminHtml(member.id)}" aria-label="${escapeAdminHtml(member.nickname)} 권한"><option ${!member.role || member.role === '일반 회원' ? 'selected' : ''}>일반 회원</option><option ${member.role === '신뢰 회원' ? 'selected' : ''}>신뢰 회원</option><option ${member.role === '운영자' ? 'selected' : ''}>운영자</option></select></td><td class="row-actions"><button data-admin-action="warn-member" data-id="${member.id}">경고</button><button data-admin-action="suspend-member" data-id="${member.id}">7일 정지</button>${member.status === '7일 정지' ? `<button data-admin-action="restore-member" data-id="${member.id}">정지 해제</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="table-empty">검색 결과가 없습니다.</td></tr>';
+  body.innerHTML = members.map((member) => `<tr><td><strong>${escapeAdminHtml(member.nickname)}</strong><small>${escapeAdminHtml(member.id)}</small></td><td>${escapeAdminHtml(member.joined)}</td><td><span class="admin-status ${member.status === '정상' ? 'status-good' : member.status === '7일 정지' ? 'status-blocked' : 'status-warn'}">${escapeAdminHtml(member.status)}</span></td><td>${member.reports}건</td><td><select class="member-role-select" data-member-role="${escapeAdminHtml(member.id)}" aria-label="${escapeAdminHtml(member.nickname)} 권한"><option ${!member.role || member.role === '일반 회원' ? 'selected' : ''}>일반 회원</option><option ${member.role === '신뢰 회원' ? 'selected' : ''}>신뢰 회원</option></select></td><td class="row-actions"><button data-admin-action="warn-member" data-id="${member.id}">경고</button><button data-admin-action="suspend-member" data-id="${member.id}">7일 정지</button>${member.status === '7일 정지' ? `<button data-admin-action="restore-member" data-id="${member.id}">정지 해제</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="table-empty">검색 결과가 없습니다.</td></tr>';
 }
 
 function renderAdminPage(page = currentAdminPage) {
@@ -1372,7 +1508,7 @@ function renderAdminPage(page = currentAdminPage) {
     const openReports = adminOperations.reports.filter((item) => item.status === '미검토').length;
     const unanswered = adminOperations.inquiries.filter((item) => item.status === '미답변').length;
     const openPartners = adminOperations.partnerships.filter((item) => item.status !== '완료').length;
-    content.innerHTML = `${header('OPERATIONS OVERVIEW', '운영 대시보드', '오늘의 커뮤니티 현황과 우선 처리할 업무를 확인하세요.', '<span class="today-date">2026년 11월 21일 · 시연 현황</span>')}<div class="overview-metrics"><button class="overview-metric" data-admin-page="members"><span>총 회원수</span><strong>12,840<small>명</small></strong><em class="metric-up">지난달보다 +8.4%</em><i>회원 관리 →</i></button><button class="overview-metric" data-admin-page="polls"><span>진행 중인 투표</span><strong>${activeIssueIds.length}<small>건</small></strong><em>30일 운영 · 승인 시 30개 유지</em><i>투표 관리 →</i></button><button class="overview-metric attention" data-admin-page="reviews"><span>검토할 AI 안건</span><strong>${editorialState.pending.length}<small>건</small></strong><em>관리자 승인 전에는 공개되지 않음</em><i>안건 검토 →</i></button><button class="overview-metric" data-admin-page="inquiries"><span>회원 문의 접수</span><strong>${adminOperations.inquiries.length}<small>건</small></strong><em>미답변 ${unanswered}건</em><i>문의 확인 →</i></button><button class="overview-metric" data-admin-page="partnerships"><span>제휴 문의 접수</span><strong>${adminOperations.partnerships.length}<small>건</small></strong><em>미완료 ${openPartners}건</em><i>제휴 검토 →</i></button><button class="overview-metric attention" data-admin-page="reports"><span>미검토 신고</span><strong>${openReports}<small>건</small></strong><em>모욕·혐오 표현 신고 포함</em><i>신고 처리 →</i></button></div><div class="overview-columns"><section class="admin-card"><div class="admin-card-heading"><div><span class="section-kicker">NEEDS ATTENTION</span><h2>먼저 확인할 업무</h2></div></div><button class="priority-link" data-admin-page="reviews"><span class="priority-mark">✦</span><span><strong>AI 추천 안건 검토</strong><small>${editorialState.pending.length}건 · 출처와 양측 관점을 확인하고 승인</small></span><b>→</b></button><button class="priority-link" data-admin-page="reports"><span class="priority-mark danger">⚑</span><span><strong>회원 신고 검토</strong><small>${openReports}건 · 모욕·혐오·도배 신고 대기</small></span><b>→</b></button><button class="priority-link" data-admin-page="inquiries"><span class="priority-mark">✉</span><span><strong>미답변 문의</strong><small>${unanswered}건 · 접수 순으로 확인</small></span><b>→</b></button><button class="priority-link" data-admin-page="partnerships"><span class="priority-mark">◇</span><span><strong>제휴 문의 확인</strong><small>${openPartners}건 · 협력 제안 검토</small></span><b>→</b></button></section><section class="admin-card"><div class="admin-card-heading"><div><span class="section-kicker">RECENT ACTIVITY</span><h2>최근 운영 기록</h2></div><button data-admin-page="audit">전체 보기 →</button></div><div class="activity-list">${auditRows(latestAudit)}</div></section></div>`;
+    content.innerHTML = `${header('OPERATIONS OVERVIEW', '운영 대시보드', '오늘의 커뮤니티 현황과 우선 처리할 업무를 확인하세요.', '<span class="today-date">Supabase 운영 데이터</span>')}<div class="overview-metrics"><button class="overview-metric" data-admin-page="members"><span>총 회원수</span><strong>${memberTotalCount.toLocaleString('ko-KR')}<small>명</small></strong><em>인증 회원 프로필 집계</em><i>회원 관리 →</i></button><button class="overview-metric" data-admin-page="polls"><span>진행 중인 투표</span><strong>${activeIssueIds.length}<small>건</small></strong><em>30일 운영 · 승인 시 30개 유지</em><i>투표 관리 →</i></button><button class="overview-metric attention" data-admin-page="reviews"><span>검토할 AI 안건</span><strong>${editorialState.pending.length}<small>건</small></strong><em>관리자 승인 전에는 공개되지 않음</em><i>안건 검토 →</i></button><button class="overview-metric" data-admin-page="inquiries"><span>회원 문의 접수</span><strong>${adminOperations.inquiries.length}<small>건</small></strong><em>미답변 ${unanswered}건</em><i>문의 확인 →</i></button><button class="overview-metric" data-admin-page="partnerships"><span>제휴 문의 접수</span><strong>${adminOperations.partnerships.length}<small>건</small></strong><em>미완료 ${openPartners}건</em><i>제휴 검토 →</i></button><button class="overview-metric attention" data-admin-page="reports"><span>미검토 신고</span><strong>${openReports}<small>건</small></strong><em>모욕·혐오 표현 신고 포함</em><i>신고 처리 →</i></button></div><div class="overview-columns"><section class="admin-card"><div class="admin-card-heading"><div><span class="section-kicker">NEEDS ATTENTION</span><h2>먼저 확인할 업무</h2></div></div><button class="priority-link" data-admin-page="reviews"><span class="priority-mark">✦</span><span><strong>AI 추천 안건 검토</strong><small>${editorialState.pending.length}건 · 출처와 양측 관점을 확인하고 승인</small></span><b>→</b></button><button class="priority-link" data-admin-page="reports"><span class="priority-mark danger">⚑</span><span><strong>회원 신고 검토</strong><small>${openReports}건 · 모욕·혐오·도배 신고 대기</small></span><b>→</b></button><button class="priority-link" data-admin-page="inquiries"><span class="priority-mark">✉</span><span><strong>미답변 문의</strong><small>${unanswered}건 · 접수 순으로 확인</small></span><b>→</b></button><button class="priority-link" data-admin-page="partnerships"><span class="priority-mark">◇</span><span><strong>제휴 문의 확인</strong><small>${openPartners}건 · 협력 제안 검토</small></span><b>→</b></button></section><section class="admin-card"><div class="admin-card-heading"><div><span class="section-kicker">RECENT ACTIVITY</span><h2>최근 운영 기록</h2></div><button data-admin-page="audit">전체 보기 →</button></div><div class="activity-list">${auditRows(latestAudit)}</div></section></div>`;
   } else if (page === 'reviews') {
     document.querySelector('#adminPageContent').classList.add('hidden');
     renderReviewQueue();
@@ -1386,7 +1522,7 @@ function renderAdminPage(page = currentAdminPage) {
     if (adminList && archiveRows) adminList.replaceChildren(...[...archiveRows.children].map((row) => row.cloneNode(true)));
     if (adminList && !adminList.children.length) adminList.innerHTML = '<div class="community-empty">보관된 투표가 없습니다.</div>';
   } else if (page === 'members') {
-    content.innerHTML = `${header('COMMUNITY MEMBERS', '회원 관리', '회원별 신고 이력과 제재 상태를 살펴보고 필요한 조치를 기록합니다.')}<div class="member-summary"><span>회원 <b>12,840명</b></span><span>정상 <b>${adminOperations.members.filter((m) => m.status === '정상').length}명</b></span><span>주의·정지 <b>${adminOperations.members.filter((m) => m.status !== '정상').length}명</b></span></div><div class="table-toolbar"><input id="memberSearch" placeholder="닉네임 또는 회원 번호 검색" aria-label="회원 검색" /><select id="memberStatusFilter"><option>전체</option><option>정상</option><option>검토 중</option><option>주의</option><option>7일 정지</option></select></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>회원</th><th>가입일</th><th>상태</th><th>신고</th><th>권한</th><th>조치</th></tr></thead><tbody id="memberTableBody"></tbody></table></div><p class="admin-footnote">제재 조치에는 구체적인 운영 사유를 남기고, 회원에게 안내할 이의 제기 절차를 제공하세요.</p>`;
+    content.innerHTML = `${header('COMMUNITY MEMBERS', '회원 관리', '회원별 신고 이력과 제재 상태를 살펴보고 필요한 조치를 기록합니다.')}<div class="member-summary"><span>회원 <b>${memberTotalCount.toLocaleString('ko-KR')}명</b></span><span>정상 <b>${adminOperations.members.filter((m) => m.status === '정상').length}명</b></span><span>주의·정지 <b>${adminOperations.members.filter((m) => m.status !== '정상').length}명</b></span></div><div class="table-toolbar"><input id="memberSearch" placeholder="닉네임 또는 회원 번호 검색" aria-label="회원 검색" /><select id="memberStatusFilter"><option>전체</option><option>정상</option><option>검토 중</option><option>주의</option><option>7일 정지</option></select></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>회원</th><th>가입일</th><th>상태</th><th>신고</th><th>권한</th><th>조치</th></tr></thead><tbody id="memberTableBody"></tbody></table></div><p class="admin-footnote">제재 조치에는 구체적인 운영 사유를 남기고, 회원에게 안내할 이의 제기 절차를 제공하세요.</p>`;
     renderMembersTable();
   } else if (page === 'reports') {
     content.innerHTML = `${header('SAFETY & MODERATION', '신고·게시글 관리', '신고 맥락을 확인하고 게시글과 회원에 각각 비례한 조치를 적용하세요.')}<div class="moderation-guidance"><strong>검토 기준</strong><span>비판 의견과 인격 모독을 구분하고, 표현의 맥락·반복성·피해 정도를 살핀 뒤 사유를 기록합니다.</span></div><div class="report-list">${adminOperations.reports.map((report) => `<article class="report-card"><div class="report-card-top"><span class="report-reason">${escapeAdminHtml(report.reason)}</span><span class="admin-status ${report.status === '미검토' ? 'status-warn' : 'status-good'}">${escapeAdminHtml(report.status)}</span></div>${report.postTitle ? `<p class="reported-object">신고 대상 글: ${escapeAdminHtml(report.postTitle)}</p>` : ''}<h2>${escapeAdminHtml(report.summary)}</h2><p>${escapeAdminHtml(report.area)} · 작성자 ${escapeAdminHtml(report.nickname)} · 신고 ${report.count}건 · 게시글 ${escapeAdminHtml(report.postStatus)}</p><details class="report-detail"><summary>신고 맥락과 검토 안내</summary><p>신고된 원문은 시연 화면에서 일부 가려져 있습니다. 앞뒤 대화, 반복 여부, 대상이 된 회원의 설명과 기존 운영 기록을 함께 확인한 뒤 조치하세요. 이 예시 데이터에는 실제 회원 게시물이 포함되어 있지 않습니다.</p></details><div class="report-actions"><button data-admin-action="dismiss-report" data-id="${report.id}">위반 아님</button>${report.postStatus !== '공개' ? `<button data-admin-action="restore-post" data-id="${report.id}">게시글 복구</button>` : `<button data-admin-action="hide-post" data-id="${report.id}">게시글 숨김</button><button data-admin-action="delete-post" data-id="${report.id}">삭제 처리</button>`}<button class="danger-action" data-admin-action="suspend-member" data-id="${escapeAdminHtml(report.memberId)}">회원 제재 검토</button></div></article>`).join('')}</div>`;
@@ -1400,7 +1536,7 @@ function renderAdminPage(page = currentAdminPage) {
     const pending = adminOperations.topicSuggestions.filter((item) => item.status === '검토 대기');
     content.innerHTML = `${header('COMMUNITY EDITORIAL', '이용자 주제 제안', `검토 대기 ${pending.length}건 · 관심 수는 편집 판단의 참고 자료입니다.`)}<div class="moderation-guidance"><strong>검토 기준</strong><span>최신성·사실 확인 가능성·찬반 관점의 균형·선거 관련 여부를 확인한 뒤 편집 검토로 보냅니다. 관심 수만으로 자동 채택하지 않습니다.</span></div><div class="topic-admin-list">${adminOperations.topicSuggestions.map((item) => `<article class="topic-admin-card"><div class="topic-admin-top"><span class="announcement-category">${escapeAdminHtml(item.category)}</span><span class="admin-status ${item.status === '검토 대기' ? 'status-warn' : item.status === '편집 검토 중' ? 'status-good' : ''}">${escapeAdminHtml(item.status)}</span></div><h2>${escapeAdminHtml(item.title)}</h2><p>${escapeAdminHtml(item.rationale)}</p><div class="suggestion-balance"><p><b>찬성 관점</b>${escapeAdminHtml(item.forText)}</p><p><b>반대 관점</b>${escapeAdminHtml(item.againstText)}</p></div><small>제안 ${escapeAdminHtml(item.sender || '익명')} · 관심 ${item.interestCount}명 · ${new Date(item.createdAt).toLocaleString('ko-KR')}${safeHttpsUrl(item.sourceUrl) ? ` · <a href="${escapeAdminHtml(safeHttpsUrl(item.sourceUrl))}" target="_blank" rel="noopener noreferrer">출처 확인 ↗</a>` : ' · 참고 출처 없음'}</small>${item.reviewNote ? `<p>검토 메모: ${escapeAdminHtml(item.reviewNote)}</p>` : ''}${item.status === '검토 대기' ? `<div class="row-actions"><button data-topic-action="send-to-editorial" data-id="${escapeAdminHtml(item.id)}">편집 검토로 보내기</button><button data-topic-action="reject" data-id="${escapeAdminHtml(item.id)}">반려</button></div>` : ''}</article>`).join('') || '<div class="community-empty">등록된 제안이 없습니다.</div>'}</div>`;
   } else if (page === 'discussion-management') {
-    const submittedPosts = Object.entries(issues).flatMap(([issueId, issue]) => readLocalList(savedPostsKey(issueId)).map((post) => ({ ...post, issueId, issueTitle: issue.title })));
+    const submittedPosts = adminDiscussionPosts.map(item=>({...item,issueTitle:issues[item.issueId]?.title||'이슈 토론'}));
     content.innerHTML = `${header('DISCUSSION REVIEW', '이슈 토론 글', '이용자가 작성한 찬반 글·질문·자료·정정 요청을 확인하고 게시 상태를 관리합니다.')}<div class="moderation-guidance"><strong>검토 기준</strong><span>주장 비판은 허용하고 인격 공격·혐오·개인정보 노출은 제한합니다. 신고 여부와 별개로 조치 사유를 기록하고, 숨긴 글은 검토 후 복구할 수 있습니다.</span></div><div class="topic-admin-list">${submittedPosts.map((item) => { const hidden = adminOperations.hiddenDiscussionPosts.includes(item.id) || adminOperations.reports.some((report) => report.issueId === item.issueId && report.postId === item.id && report.postStatus !== '공개'); const kind = ({ opinion: '입장 글', question: '질문', source: '자료', correction: '정정 요청' })[item.kind || 'opinion']; return `<article class="topic-admin-card"><div class="topic-admin-top"><span class="announcement-category">${escapeAdminHtml(kind)}</span><span class="admin-status ${hidden ? 'status-warn' : 'status-good'}">${hidden ? '숨김' : '공개'}</span></div><small>${escapeAdminHtml(item.issueTitle)} · ${escapeAdminHtml(item.stance)} · ${escapeAdminHtml(item.author || '참여자')} · ${new Date(item.createdAt || Date.now()).toLocaleString('ko-KR')}</small><h2>${escapeAdminHtml(item.title)}</h2><p>${escapeAdminHtml(item.content)}</p>${safeHttpsUrl(item.sourceUrl) ? `<a class="candidate-source" href="${escapeAdminHtml(safeHttpsUrl(item.sourceUrl))}" target="_blank" rel="noopener noreferrer">참고 출처 ↗</a>` : ''}<div class="row-actions"><button data-discussion-action="${hidden ? 'restore' : 'hide'}" data-issue-id="${escapeAdminHtml(item.issueId)}" data-id="${escapeAdminHtml(item.id)}">${hidden ? '게시글 복구' : '게시글 숨김'}</button></div></article>`; }).join('') || '<div class="community-empty">아직 이용자가 작성한 이슈 토론 글이 없습니다.</div>'}</div>`;
   } else if (page === 'open-talk') {
     content.innerHTML = `${header('COMMUNITY MODERATION', '익명 자유토론 관리', '공개 상태와 신고 내역을 살펴보고 게시글 조치를 관리합니다. 익명 계정의 내부 연결값은 데모 환경에서만 사용됩니다.')}<div class="moderation-guidance"><strong>운영 기준</strong><span>이용자 투표로 제재하지 않습니다. 신고 맥락을 확인하고, 같은 기준으로 게시물 숨김·복구 여부를 결정합니다.</span></div><div class="topic-admin-list">${[...adminOperations.openTalkPosts].sort((a,b) => new Date(b.createdAt)-new Date(a.createdAt)).map((item) => `<article class="topic-admin-card"><div class="topic-admin-top"><span class="announcement-category">${escapeAdminHtml(item.category)}</span><span class="admin-status ${item.status === '공개' ? 'status-good' : 'status-warn'}">${escapeAdminHtml(item.status)}</span></div><h2>${escapeAdminHtml(item.title)}</h2><p>${escapeAdminHtml(item.body)}</p><small>${escapeAdminHtml(item.author)} · ${new Date(item.createdAt).toLocaleString('ko-KR')} · 댓글 ${(item.comments || []).length}개 · 신고 ${adminOperations.reports.filter((report) => report.issueId === 'open-talk' && report.postId === item.id).length}건</small><details class="report-detail"><summary>댓글 확인</summary>${(item.comments || []).map((comment) => `<p><b>${escapeAdminHtml(comment.author)}</b> ${escapeAdminHtml(comment.text)}</p>`).join('') || '<p>등록된 댓글이 없습니다.</p>'}</details><div class="row-actions"><button data-open-talk-action="${item.status === '공개' ? 'hide' : 'restore'}" data-id="${escapeAdminHtml(item.id)}">${item.status === '공개' ? '게시글 숨김' : '게시글 복구'}</button><button data-admin-page="reports">신고함 보기</button></div></article>`).join('') || '<div class="community-empty">아직 자유토론 글이 없습니다.</div>'}</div>`;
@@ -1420,18 +1556,20 @@ function saveCurrentDraft() {
   return draft;
 }
 
-function handleAdminAction(action, id) {
+async function handleAdminAction(action, id) {
   if (action === 'warn-member' || action === 'suspend-member') {
     const member = adminOperations.members.find((item) => item.id === id);
     if (!member) return;
     const reason = window.prompt(`${member.nickname} 회원 ${action === 'warn-member' ? '경고' : '7일 이용 정지'} 사유를 입력해 주세요.`);
     if (!reason?.trim()) return;
     member.status = action === 'warn-member' ? '주의' : '7일 정지';
+    await memberAuth.from('member_profiles').update({status:action==='warn-member'?'warned':'suspended'}).eq('user_id',member.id);
     logAdminAction(action === 'warn-member' ? '회원 경고' : '회원 7일 정지', member.nickname, reason.trim());
   } else if (action === 'restore-member') {
     const member = adminOperations.members.find((item) => item.id === id);
     if (!member || !window.confirm(`${member.nickname} 회원의 이용 정지를 해제할까요?`)) return;
     member.status = '정상';
+    await memberAuth.from('member_profiles').update({status:'active'}).eq('user_id',member.id);
     logAdminAction('회원 정지 해제', member.nickname, '운영자 확인');
   } else if (['hide-post', 'delete-post', 'restore-post', 'dismiss-report'].includes(action)) {
     const report = adminOperations.reports.find((item) => item.id === id);
@@ -1455,6 +1593,13 @@ function handleAdminAction(action, id) {
       if (action === 'hide-post' || action === 'delete-post') adminOperations.hiddenDiscussionPosts.push(report.postId);
     }
     if (action === 'dismiss-report') report.status = '위반 아님';
+    const dbStatus=action==='dismiss-report'?'dismissed':action==='restore-post'?'resolved':'resolved';
+    if(action!=='dismiss-report'){
+      const table=report.issueId==='open-talk'?'open_talk_posts':'issue_posts';
+      const status=action==='hide-post'?'hidden':action==='delete-post'?'removed':'published';
+      await memberAuth.from(table).update({status}).eq('id',report.postId);
+    }
+    await memberAuth.from('user_reports').update({status:dbStatus,reviewed_at:new Date().toISOString(),reviewed_by:memberSession.user.id}).eq('id',report.id);
     logAdminAction(actionLabel, `${report.nickname} · ${report.area}`, reason.trim());
   } else if (action.startsWith('progress-') || action.startsWith('complete-') || action.startsWith('reply-') || action.startsWith('note-')) {
     const collection = action.endsWith('inquiries') ? adminOperations.inquiries : adminOperations.partnerships;
@@ -1465,9 +1610,14 @@ function handleAdminAction(action, id) {
       if (!reply?.trim()) return;
       item.reply = reply.trim();
       item.status = action.startsWith('reply-') ? '답변 중' : '검토 중';
+      const table=action.endsWith('inquiries')?'user_inquiries':'partnership_inquiries';
+      await memberAuth.from(table).update({status:action.startsWith('reply-')?'answered':'reviewing',admin_note:item.reply}).eq('id',item.id);
       logAdminAction(action.startsWith('reply-') ? '문의 답변 초안 저장' : '제휴 검토 메모 저장', item.title, `${item.sender} · ${item.id}`);
     } else {
       item.status = action.startsWith('complete-') ? '완료' : (action.endsWith('inquiries') ? '답변 중' : '검토 중');
+      const table=action.endsWith('inquiries')?'user_inquiries':'partnership_inquiries';
+      const status=action.startsWith('complete-')?'closed':action.endsWith('inquiries')?'answered':'reviewing';
+      await memberAuth.from(table).update({status}).eq('id',item.id);
       logAdminAction(action.startsWith('complete-') ? '문의 완료 처리' : '문의 검토 시작', item.title, `${item.sender} · ${item.id}`);
     }
   }
@@ -1479,7 +1629,7 @@ document.querySelector('.admin-sidebar').addEventListener('click', (event) => {
   const button = event.target.closest('[data-admin-page]');
   if (button) { pushAppRoute('admin', { adminPage: button.dataset.adminPage }); renderAdminPage(button.dataset.adminPage); }
 });
-document.querySelector('#adminPageContent').addEventListener('click', (event) => {
+document.querySelector('#adminPageContent').addEventListener('click', async (event) => {
   const pollManagementButton = event.target.closest('[data-poll-management]');
   if (pollManagementButton) {
     managePollFromAdmin(pollManagementButton.dataset.id, pollManagementButton.dataset.pollManagement, pollManagementButton);
@@ -1529,11 +1679,14 @@ document.querySelector('#adminPageContent').addEventListener('click', (event) =>
     const reason = window.prompt(hidden ? '토론 글을 숨길 사유를 기록해 주세요.' : '토론 글 복구 사유를 기록해 주세요.');
     if (!reason?.trim()) return;
     const postId = discussionAction.dataset.id;
-    const post = readLocalList(savedPostsKey(discussionAction.dataset.issueId)).find((item) => item.id === postId);
+    const post = adminDiscussionPosts.find((item) => item.id === postId);
     if (!post) return;
     adminOperations.hiddenDiscussionPosts = adminOperations.hiddenDiscussionPosts.filter((id) => id !== postId);
     if (hidden) adminOperations.hiddenDiscussionPosts.push(postId);
     if (!hidden) adminOperations.reports.filter((report) => report.issueId === discussionAction.dataset.issueId && report.postId === postId && report.postStatus !== '공개').forEach((report) => { report.postStatus = '공개'; report.status = '재검토 완료'; });
+    const update=await memberAuth.from('issue_posts').update({status:hidden?'hidden':'published'}).eq('id',postId);
+    if(update.error){showUserActionToast(`게시물 상태를 저장하지 못했습니다: ${update.error.message}`);return;}
+    post.status=hidden?'숨김':'공개';
     logAdminAction(hidden ? '이슈 토론 글 숨김' : '이슈 토론 글 복구', post.title, reason.trim());
     saveAdminOperations(); renderAdminPage('discussion-management'); return;
   }
@@ -1545,12 +1698,14 @@ document.querySelector('#adminPageContent').addEventListener('click', (event) =>
       const draft = { id: `community-${suggestion.id}`, category: suggestion.category, title: suggestion.title, intro: suggestion.rationale, facts: ['이용자 제안 내용입니다. 공개 전 공식 자료와 최신 현황을 확인해 주세요.', '찬반 관점과 출처의 신뢰성을 편집자가 별도로 검토해야 합니다.'], source: suggestion.sourceUrl ? '제안자가 제출한 출처 · 편집자 확인 필요' : '출처 추가 필요', sourceUrl: suggestion.sourceUrl || '', forText: suggestion.forText, againstText: suggestion.againstText };
       if (!editorialState.pending.some((item) => item.id === draft.id)) editorialState.pending.unshift(draft);
       suggestion.status = '편집 검토 중'; activeDraftId = draft.id; saveEditorialState();
+      await memberAuth.from('topic_suggestions').update({status:'approved'}).eq('id',suggestion.id);
       logAdminAction('이용자 제안을 편집 검토로 전달', suggestion.title, `관심 ${suggestion.interestCount}명 · 수동 사실 확인 필요`);
       saveAdminOperations(); renderHomeCommunityBoard(); renderAdminPage('reviews'); return;
     }
     const reason = window.prompt('제안 반려 사유를 기록해 주세요.');
     if (!reason?.trim()) return;
     suggestion.status = '반려'; suggestion.reviewNote = reason.trim();
+    await memberAuth.from('topic_suggestions').update({status:'rejected'}).eq('id',suggestion.id);
     logAdminAction('이용자 주제 제안 반려', suggestion.title, reason.trim()); saveAdminOperations(); renderHomeCommunityBoard(); renderAdminPage('topic-suggestions'); return;
   }
   const talkAction = event.target.closest('[data-open-talk-action]');
@@ -1561,6 +1716,8 @@ document.querySelector('#adminPageContent').addEventListener('click', (event) =>
     const reason = window.prompt(hidden ? '익명 게시글을 숨길 사유를 기록해 주세요.' : '게시글 복구 사유를 기록해 주세요.');
     if (!reason?.trim()) return;
     post.status = hidden ? '숨김' : '공개';
+    const {error}=await memberAuth.from('open_talk_posts').update({status:hidden?'hidden':'published'}).eq('id',post.id);
+    if(error){showUserActionToast(`게시글 상태를 저장하지 못했습니다: ${error.message}`);return;}
     if (!hidden) adminOperations.reports.filter((report) => report.issueId === 'open-talk' && report.postId === post.id && report.postStatus !== '공개').forEach((report) => { report.postStatus = '공개'; report.status = '재검토 완료'; });
     logAdminAction(hidden ? '익명 자유토론 게시글 숨김' : '익명 자유토론 게시글 복구', post.title, reason.trim());
     saveAdminOperations(); renderAdminPage('open-talk'); renderOpenTalkList(); renderHomeCommunityBoard(); return;
@@ -1570,8 +1727,8 @@ document.querySelector('#adminPageContent').addEventListener('click', (event) =>
     const item = adminOperations.announcements.find((entry) => entry.id === announcementAction.dataset.id);
     if (announcementAction.dataset.announcementAction === 'cancel-edit') editingAnnouncementId = null;
     else if (item && announcementAction.dataset.announcementAction === 'edit') editingAnnouncementId = item.id;
-    else if (item && announcementAction.dataset.announcementAction === 'toggle-publish') { item.published = !item.published; logAdminAction(item.published ? '공지 게시' : '공지 게시 내림', item.title); }
-    else if (item && announcementAction.dataset.announcementAction === 'toggle-pin') { item.pinned = !item.pinned; logAdminAction(item.pinned ? '공지 상단 고정' : '공지 고정 해제', item.title); }
+    else if (item && announcementAction.dataset.announcementAction === 'toggle-publish') { item.published = !item.published; await memberAuth.from('announcements').update({published:item.published}).eq('id',item.id); logAdminAction(item.published ? '공지 게시' : '공지 게시 내림', item.title); }
+    else if (item && announcementAction.dataset.announcementAction === 'toggle-pin') { item.pinned = !item.pinned; await memberAuth.from('announcements').update({pinned:item.pinned}).eq('id',item.id); logAdminAction(item.pinned ? '공지 상단 고정' : '공지 고정 해제', item.title); }
     saveAdminOperations(); renderAnnouncementTicker(); renderAdminPage('announcements'); return;
   }
   const pageButton = event.target.closest('[data-admin-page]');
@@ -1589,13 +1746,18 @@ document.querySelector('#adminPageContent').addEventListener('click', (event) =>
   }
 });
 
-document.querySelector('#adminPageContent').addEventListener('submit', (event) => {
+document.querySelector('#adminPageContent').addEventListener('submit', async (event) => {
   if (event.target.id !== 'announcementEditor') return;
   event.preventDefault();
   const values = Object.fromEntries(new FormData(event.target).entries());
   const existing = adminOperations.announcements.find((item) => item.id === editingAnnouncementId);
-  const item = { id: existing?.id || `notice-${Date.now()}`, category: values.category, title: values.title.trim(), summary: values.summary.trim(), body: values.body.trim(), createdAt: existing?.createdAt || new Date().toISOString(), published: existing?.published ?? true, pinned: values.pinned === 'on' };
-  if (existing) Object.assign(existing, item); else adminOperations.announcements.unshift(item);
+  const payload={category:values.category,title:values.title.trim(),summary:values.summary.trim(),body:values.body.trim(),published:existing?.published??true,pinned:values.pinned==='on',created_by:memberSession?.user?.id||null};
+  let result;
+  if(existing) result=await memberAuth.from('announcements').update(payload).eq('id',existing.id).select('id,created_at').single();
+  else result=await memberAuth.from('announcements').insert(payload).select('id,created_at').single();
+  if(result.error){showUserActionToast(`공지를 저장하지 못했습니다: ${result.error.message}`);return;}
+  const item={id:result.data.id,...payload,createdAt:result.data.created_at};
+  if (existing) Object.assign(existing,item); else adminOperations.announcements.unshift(item);
   logAdminAction(existing ? '공지 수정' : '공지 작성·게시', item.title);
   editingAnnouncementId = null; saveAdminOperations(); renderAnnouncementTicker(); renderAdminPage('announcements');
 });
@@ -1614,13 +1776,15 @@ document.querySelector('#reviewCategoryFilter').addEventListener('change', (even
 document.querySelector('#adminPageContent').addEventListener('input', (event) => {
   if (event.target.id === 'memberSearch') renderMembersTable();
 });
-document.querySelector('#adminPageContent').addEventListener('change', (event) => {
+document.querySelector('#adminPageContent').addEventListener('change', async (event) => {
   if (event.target.id === 'memberStatusFilter') renderMembersTable();
   if (event.target.matches('[data-member-role]')) {
     const member = adminOperations.members.find((item) => item.id === event.target.dataset.memberRole);
     if (!member) return;
     const previousRole = member.role || '일반 회원';
     member.role = event.target.value;
+    const {error}=await memberAuth.from('member_profiles').update({trust_level:member.role==='신뢰 회원'?'trusted':'member'}).eq('user_id',member.id);
+    if(error){member.role=previousRole;showUserActionToast(`회원 권한을 저장하지 못했습니다: ${error.message}`);renderAdminPage('members');return;}
     logAdminAction('회원 권한 변경', member.nickname, `${previousRole} → ${member.role}`);
     renderAdminPage('members');
   }
@@ -1830,6 +1994,8 @@ document.querySelector('#nicknameForm').addEventListener('submit', async (event)
     message.textContent = `닉네임을 저장하지 못했습니다: ${error.message}`;
     return;
   }
+  const profileResult=await memberAuth.from('member_profiles').upsert({user_id:data.user.id,nickname},{onConflict:'user_id'});
+  if(profileResult.error){message.textContent=`닉네임 프로필 저장 실패: ${profileResult.error.message}`;return;}
   memberSession = { ...memberSession, user: data.user };
   syncMemberAuth(memberSession);
   nicknameDialog.close();
@@ -1868,7 +2034,7 @@ issueView.addEventListener('click', (event) => {
   }
   const voteButton = event.target.closest('[data-vote]');
   if (voteButton) {
-    const priorVote = localStorage.getItem(voteKey());
+    const priorVote = memberVoteChoices.get(activeIssueId);
     if (priorVote) return;
     pendingVote = voteButton.dataset.vote;
     if (isMemberSignedIn()) castDemoVote(pendingVote);
@@ -1877,7 +2043,7 @@ issueView.addEventListener('click', (event) => {
   }
   if (event.target.closest('#writeButton')) {
     if (!isMemberSignedIn()) return openLogin();
-    const choice = localStorage.getItem(voteKey()) || (activeIssueIsArchived ? '판단 보류' : null);
+    const choice = memberVoteChoices.get(activeIssueId) || (activeIssueIsArchived ? '판단 보류' : null);
     if (!choice) return;
     const stance = stanceInfo(choice);
     const preview = document.querySelector('#postStancePreview');
@@ -1887,25 +2053,26 @@ issueView.addEventListener('click', (event) => {
   }
 });
 
-issueView.addEventListener('submit', (event) => {
+issueView.addEventListener('submit', async (event) => {
   const form = event.target.closest('.comment-form');
   if (!form) return;
   event.preventDefault();
   const textarea = form.querySelector('textarea');
   const text = textarea.value.trim();
-  if (!text || !activeIssueId || (!activeIssueIsArchived && !localStorage.getItem(voteKey())) || activeIssueIsReadOnly) return;
+  if (!text || !activeIssueId || (!activeIssueIsArchived && !memberVoteChoices.get(activeIssueId)) || activeIssueIsReadOnly) return;
   const article = form.closest('.discussion-post');
   const commentList = article.querySelector('.comment-list');
-  const comment = { author: '시연 사용자', text };
-  const key = savedCommentsKey(activeIssueId, article.dataset.postId);
-  const savedComments = readLocalList(key);
-  savedComments.push(comment);
-  localStorage.setItem(key, JSON.stringify(savedComments));
+  const comment = { author: getMemberNickname(), text };
+  const { data, error } = await memberAuth.from('issue_comments').insert({ post_id: article.dataset.postId, author_id: memberSession.user.id, author_nickname: getMemberNickname(), body: text }).select('id,created_at').single();
+  if (error) { showUserActionToast(`댓글을 저장하지 못했습니다: ${error.message}`); return; }
+  comment.id = data.id; comment.createdAt = data.created_at;
+  const cached = issueCommentsCache.get(activeIssueId) || {};
+  (cached[article.dataset.postId] ||= []).push(comment); issueCommentsCache.set(activeIssueId,cached);
   appendCommentElement(commentList, comment);
   const meta = article.querySelector('.discussion-post-meta');
   const commentCount = Number(meta.dataset.commentCount || '0') + 1;
   meta.dataset.commentCount = String(commentCount);
-  meta.textContent = `${meta.textContent.split(' · 댓글 ')[0]} · 댓글 ${commentCount} · 시연 글`;
+  meta.textContent = `${meta.textContent.split(' · 댓글 ')[0]} · 댓글 ${commentCount}`;
   form.reset();
 });
 
@@ -1919,26 +2086,20 @@ function createOpinionTag(stance) {
   return tag;
 }
 
-document.querySelector('#postForm').addEventListener('submit', (event) => {
+document.querySelector('#postForm').addEventListener('submit', async (event) => {
   event.preventDefault();
-  const choice = activeIssueId && (localStorage.getItem(voteKey()) || (activeIssueIsArchived ? '판단 보류' : null));
+  const choice = activeIssueId && (memberVoteChoices.get(activeIssueId) || (activeIssueIsArchived ? '판단 보류' : null));
   if (!choice) return postDialog.close();
   const title = document.querySelector('#postTitle').value.trim();
   const content = document.querySelector('#postContent').value.trim();
   if (!title || !content) return;
-  const post = {
-    id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    stance: choice,
-    kind: document.querySelector('#postKind').value,
-    title,
-    content,
-    sourceUrl: safeHttpsUrl(document.querySelector('#postSourceUrl').value),
-    author: getMemberNickname(),
-    initialComments: []
-  };
-  const savedPosts = readLocalList(savedPostsKey(activeIssueId));
-  savedPosts.unshift(post);
-  localStorage.setItem(savedPostsKey(activeIssueId), JSON.stringify(savedPosts));
+  const topicId = getPersistedTopicUuid(activeIssueId);
+  if (!topicId || !memberSession?.user) { showUserActionToast('안건 데이터 연결을 확인할 수 없습니다.'); return; }
+  const payload = { topic_id: topicId, author_id: memberSession.user.id, author_nickname: getMemberNickname(), stance: choice, kind: document.querySelector('#postKind').value, title, body: content, source_url: safeHttpsUrl(document.querySelector('#postSourceUrl').value) };
+  const { data, error } = await memberAuth.from('issue_posts').insert(payload).select('id,created_at').single();
+  if (error) { showUserActionToast(`게시글을 저장하지 못했습니다: ${error.message}`); return; }
+  const post = { id: data.id, stance: choice, kind: payload.kind, title, content, sourceUrl: payload.source_url, author: getMemberNickname(), createdAt: data.created_at };
+  issuePostsCache.set(activeIssueId,[post,...(issuePostsCache.get(activeIssueId)||[])]);
   document.querySelector('#discussionPosts').prepend(createDiscussionPost(post));
   document.querySelector('#postForm').reset();
   postDialog.close();
@@ -1952,28 +2113,16 @@ function showUserActionToast(message) {
   showUserActionToast.timer = window.setTimeout(() => toast.classList.remove('visible'), 3200);
 }
 
-document.querySelector('#userReportForm').addEventListener('submit', (event) => {
+document.querySelector('#userReportForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (!pendingReportContext) return;
   const form = event.currentTarget;
   const reason = form.elements.reason.value;
   const details = form.elements.details.value.trim();
   const issue = getIssueData(pendingReportContext.issueId);
-  let member = adminOperations.members.find((item) => pendingReportContext.memberRef ? item.authRef === pendingReportContext.memberRef : item.nickname === pendingReportContext.author);
-  if (!member) {
-    const memberId = pendingReportContext.memberRef ? `m-${pendingReportContext.memberRef}` : `m-user-${Date.now()}`;
-    member = { id: memberId, authRef: pendingReportContext.memberRef || '', nickname: pendingReportContext.author, joined: new Date().toLocaleDateString('ko-KR'), status: '정상', reports: 0 };
-    adminOperations.members.unshift(member);
-  }
-  member.reports += 1;
-  const reportId = `r-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
-  adminOperations.reports.unshift({
-    id: reportId, memberId: member.id, nickname: pendingReportContext.author,
-    area: pendingReportContext.issueId === 'open-talk' ? '익명 자유토론장' : issue?.title || '토론 게시글', summary: details || `“${pendingReportContext.postTitle}” 게시글에 ${reason} 신고가 접수되었습니다.`,
-    reason, count: 1, status: '미검토', postStatus: '공개', postId: pendingReportContext.postId,
-    issueId: pendingReportContext.issueId, postTitle: pendingReportContext.postTitle, memberRef: pendingReportContext.memberRef || '', reportedAt: new Date().toISOString()
-  });
-  saveAdminOperations();
+  const targetType=pendingReportContext.issueId==='open-talk'?'open_talk_post':'issue_post';
+  const {error}=await memberAuth.from('user_reports').insert({reporter_id:memberSession?.user?.id||null,target_type:targetType,target_id:pendingReportContext.postId,reason,details:details||`“${pendingReportContext.postTitle}” 게시글 신고 · ${issue?.title||'익명 자유토론장'}`});
+  if(error){showUserActionToast(`신고를 접수하지 못했습니다: ${error.message}`);return;}
   document.querySelector('#userReportDialog').close();
   pendingReportContext = null;
   showUserActionToast('신고가 접수됐습니다. 운영자가 내용을 검토하겠습니다.');
@@ -1997,19 +2146,15 @@ document.querySelector('footer').addEventListener('click', (event) => {
   document.querySelector('#contactDialog').showModal();
 });
 
-document.querySelector('#contactForm').addEventListener('submit', (event) => {
+document.querySelector('#contactForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const values = Object.fromEntries(new FormData(form).entries());
   const isPartnership = activeContactMode === 'partnerships';
-  const collection = isPartnership ? adminOperations.partnerships : adminOperations.inquiries;
-  const id = `${isPartnership ? 'p' : 'q'}-${Date.now()}`;
-  collection.unshift({
-    id, type: values.type, title: values.title.trim(), sender: values.sender.trim(),
-    received: `오늘 ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`,
-    status: isPartnership ? '미확인' : '미답변', message: values.message.trim(), createdAt: new Date().toISOString()
-  });
-  saveAdminOperations();
+  const table=isPartnership?'partnership_inquiries':'user_inquiries';
+  const payload=isPartnership?{user_id:memberSession?.user?.id||null,category:values.type,title:values.title.trim(),organization:values.sender.trim(),message:values.message.trim()}:{user_id:memberSession?.user?.id||null,category:values.type,title:values.title.trim(),sender:values.sender.trim(),message:values.message.trim()};
+  const {error}=await memberAuth.from(table).insert(payload);
+  if(error){showUserActionToast(`접수하지 못했습니다: ${error.message}`);return;}
   document.querySelector('#contactDialog').close();
   form.reset();
   showUserActionToast(isPartnership ? '제휴 문의를 접수했습니다.' : '문의가 접수됐습니다. 운영팀이 확인하겠습니다.');
@@ -2045,6 +2190,8 @@ renderEditorialArchives();
 renderAnnouncementTicker();
 renderHomeCommunityBoard();
 renderCommunityAccess();
+refreshAnnouncementsFromSupabase(false);
+refreshCommunityFromSupabase();
 refreshMemberControls();
 syncPollCarousel();
 const initialIssueId = new URLSearchParams(window.location.search).get('issue');
