@@ -169,6 +169,7 @@ let activeIssueIds = Array.isArray(editorialState.activeIssueIds)
 let currentAdminPage = 'overview';
 let activeDraftId = editorialState.pending[0]?.id || null;
 let activeReviewCategory = '전체 분야';
+let scheduledTopicQueue = [];
 const adminOperationsKey = `${storagePrefix}admin-operations-demo`;
 const seedAdminOperations = {
   members: [
@@ -191,7 +192,7 @@ const seedAdminOperations = {
     { id: 'notice-respect', category: '운영 원칙', title: '시선은 사람보다 주장에 집중합니다', summary: '근거를 나누고 서로 다른 관점을 존중하는 대화를 지향합니다.', body: '시선은 찬반 의견을 같은 기준으로 소개하고, 참여자가 근거를 살펴볼 수 있도록 운영합니다.\n\n비판은 주장·자료·정책을 대상으로 해 주세요. 의견이 다르다는 이유만으로 상대를 공격하거나 조롱하지 말고, 사실과 해석을 구분해 주세요. 운영진은 양측 의견의 분량과 순서를 균형 있게 관리하고, 오류가 확인되면 정정 내역을 안내합니다.', createdAt: '2026-11-21T09:00:00.000Z', published: true, pinned: true },
     { id: 'notice-pseudonym', category: '이용 안내', title: '익명 닉네임을 사용해도 서로를 비방할 수는 없습니다', summary: '실명 대신 닉네임으로 참여할 수 있으며, 타인을 향한 모욕과 괴롭힘은 금지됩니다.', body: '시선에서는 실명 공개 없이 닉네임으로 투표와 토론에 참여할 수 있습니다. 다만 익명성은 다른 회원을 모욕하거나 괴롭힐 권리를 뜻하지 않습니다.\n\n특정 회원을 겨냥한 욕설·조롱·협박, 집단에 대한 혐오·차별 표현, 주소·연락처 등 개인정보 공개, 반복적인 도배와 광고는 허용되지 않습니다. 위반 게시물은 맥락과 피해 정도를 확인해 숨김 또는 삭제할 수 있습니다.', createdAt: '2026-11-20T09:00:00.000Z', published: true, pinned: false },
     { id: 'notice-sanctions', category: '신고와 제재', title: '신고 접수와 단계별 조치 기준을 안내합니다', summary: '신고 내용을 검토한 뒤 위반 정도와 반복 여부에 따라 조치합니다.', body: '문제가 있는 게시글의 신고하기를 눌러 사유와 필요한 설명을 보내 주세요. 신고자 정보는 신고 대상 회원에게 공개하지 않습니다. 신고만으로 자동 제재하지 않고, 게시글과 앞뒤 대화의 맥락을 운영자가 확인합니다.\n\n조치는 위반 아님 처리, 안내 또는 경고, 게시글 숨김·삭제, 반복적이거나 중대한 위반에 대한 일시 이용 정지 순으로 검토합니다. 협박, 개인정보 노출, 혐오·차별 등 피해가 큰 사안은 즉시 임시 제한할 수 있습니다. 조치 사유는 기록하며, 회원 문의를 통해 재검토를 요청할 수 있습니다.', createdAt: '2026-11-19T09:00:00.000Z', published: true, pinned: false },
-    { id: 'notice-voting', category: '투표 안내', title: '투표 결과는 투표한 뒤 확인할 수 있습니다', summary: '이슈마다 한 번 투표하고, 이후 결과와 토론을 확인할 수 있습니다.', body: '인증된 계정은 각 이슈에 한 번 투표할 수 있습니다. 투표 전에는 해당 이슈의 집계 결과를 볼 수 없고, 투표한 뒤 결과와 토론 글을 확인할 수 있습니다.\n\n각 투표는 30일간 진행된 뒤 지난 투표 보관함으로 이동합니다. 종료 후 6개월이 지나면 읽기 전용으로 전환되어 새 글과 댓글을 작성할 수 없습니다. 화면에 표시되는 투표 결과는 시선 참여자의 의견이며, 전체 국민의 여론이나 과학적 여론조사를 뜻하지 않습니다.', createdAt: '2026-11-18T09:00:00.000Z', published: true, pinned: false },
+    { id: 'notice-voting', category: '투표 안내', title: '투표 결과는 투표한 뒤 확인할 수 있습니다', summary: '이슈마다 한 번 투표하고, 이후 결과와 토론을 확인할 수 있습니다.', body: '인증된 계정은 각 이슈에 한 번 투표할 수 있습니다. 투표 전에는 해당 이슈의 집계 결과를 볼 수 없고, 투표한 뒤 결과와 토론 글을 확인할 수 있습니다.\n\n각 투표는 매일 오전 7시에 공개되고 30일차 마지막 날 자정 직전에 마감되어 지난 투표 보관함으로 이동합니다. 보관 후 90일 동안은 댓글을 작성할 수 있고, 그 이후에는 읽기 전용으로 전환됩니다. 화면에 표시되는 투표 결과는 시선 참여자의 의견이며, 전체 국민의 여론이나 과학적 여론조사를 뜻하지 않습니다.', createdAt: '2026-11-18T09:00:00.000Z', published: true, pinned: false },
     { id: 'notice-reporting', category: '안전과 개인정보', title: '안전한 토론을 위해 신고와 개인정보를 보호합니다', summary: '신고 내용은 운영 검토에만 사용하고 개인정보 노출 게시물은 신속히 처리합니다.', body: '다른 회원의 전화번호, 주소, 계정 정보 등 개인을 식별하거나 찾아낼 수 있는 정보를 허락 없이 게시하지 마세요. 개인정보가 노출된 게시물은 피해 확산을 막기 위해 우선 숨긴 뒤 검토할 수 있습니다.\n\n신고 내용과 신고자 정보는 운영 업무에 필요한 범위에서만 확인합니다. 계정 정보 처리와 보관에 관한 상세한 내용은 개인정보 처리방침에서 안내합니다. 긴급한 위협이나 안전 문제가 있으면 신고와 함께 회원 문의로 알려 주세요.', createdAt: '2026-11-17T09:00:00.000Z', published: true, pinned: false }
   ]
 };
@@ -515,7 +516,7 @@ function renderPollBoard() {
     row.className = 'archive-row poll-board-row'; row.href = `?issue=${encodeURIComponent(id)}`; row.dataset.openIssue = id;
     const main = document.createElement('div'); main.className = 'archive-main';
     const title = document.createElement('strong'); title.textContent = issue.title;
-    const meta = document.createElement('span'); meta.textContent = `${issue.category} · 진행 중인 투표 ${index + 1} / ${activeIssueIds.length} · 30일 투표`;
+    const meta = document.createElement('span'); meta.textContent = `${issue.category} · 진행 중인 투표 ${index + 1} / ${activeIssueIds.length} · ${formatPollDeadline(issue)} 마감`;
     const summary = document.createElement('small'); summary.textContent = issue.intro;
     main.append(title, meta, summary);
     const arrow = document.createElement('div'); arrow.className = 'archive-arrow'; arrow.textContent = '→';
@@ -649,7 +650,7 @@ function loadPublishedTopics() {
       const id = `topic-${row.id}`;
       return { id, category: row.category, title: row.title, intro: row.intro, facts: row.facts || [], source: row.source, sourceUrl: row.source_url,
         forArguments: [['주요 논거', row.for_text]], againstArguments: [['주요 논거', row.against_text]], cardFor: row.for_text, cardAgainst: row.against_text,
-        demoResults: [0, 0, 0], samplePosts: [], publishedAt: row.decided_at, topicUuid: row.id, status: row.status, archivedAt: row.archived_at };
+        demoResults: [0, 0, 0], samplePosts: [], publishedAt: row.published_at || row.decided_at, expiresAt: row.expires_at, topicUuid: row.id, status: row.status, archivedAt: row.archived_at };
     });
     publishedArchiveTopics = mapped.filter((item) => item.status === 'archived');
     return mapped;
@@ -674,7 +675,7 @@ async function openIssue(issueId, historyMode = 'push') {
   activeIssueId = issueId;
   activeIssueIsArchived = Boolean(archiveRecord);
   const readOnlyAt = archiveRecord?.archivedAt ? new Date(archiveRecord.archivedAt) : null;
-  if (readOnlyAt && !Number.isNaN(readOnlyAt.getTime())) readOnlyAt.setMonth(readOnlyAt.getMonth() + 6);
+  if (readOnlyAt && !Number.isNaN(readOnlyAt.getTime())) readOnlyAt.setTime(readOnlyAt.getTime() + 90 * 24 * 60 * 60 * 1000);
   activeIssueIsReadOnly = Boolean(readOnlyAt && Date.now() >= readOnlyAt.getTime());
   setTopNavActive('polls');
   syncSeoMetadata(issueId, historyMode);
@@ -832,7 +833,7 @@ function renderIssueContent() {
   const argumentCards = (items, side, title) => `<article class="argument-card ${side}"><h3><span>${side === 'for' ? '+' : '−'}</span> ${escapeHtml(title)}</h3><div class="argument-body">${items.map(([heading, text], index) => `<b>0${index + 1}. ${escapeHtml(heading)}</b><p>${escapeHtml(text)}</p>`).join('')}<small>각 항목은 토론용 관점이며 사실은 출처에서 확인해 주세요.</small></div></article>`;
   const detail = document.querySelector('#issueView .issue-content');
   detail.innerHTML = `
-    <div class="issue-meta"><span class="category">${escapeHtml(issue.category)}</span><span>${activeIssueIsArchived ? `${activeIssueIsReadOnly ? '지난 투표 · 읽기 전용' : '지난 투표 · 보관 중'}${archivedDate ? ` · 보관 ${archivedDate}` : ''}` : '30일 투표'}</span><span>·</span><span>읽는 시간 3분</span></div>
+    <div class="issue-meta"><span class="category">${escapeHtml(issue.category)}</span><span>${activeIssueIsArchived ? `${activeIssueIsReadOnly ? '지난 투표 · 읽기 전용' : '지난 투표 · 댓글 가능'}${archivedDate ? ` · 보관 ${archivedDate}` : ''}` : `투표 마감 ${formatPollDeadline(issue)}`}</span><span>·</span><span>읽는 시간 3분</span></div>
     <h1>${escapeHtml(issue.title)}</h1><p class="issue-intro">${escapeHtml(issue.intro)}</p>
     <section class="facts-card"><div class="card-eyebrow">먼저 확인된 사실</div><h2>공통으로 확인할 내용</h2><ul>${facts}</ul><p>확인 가능한 사실과 각 입장의 해석을 구분합니다. <a class="candidate-source" href="${escapeHtml(issue.sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(issue.source)} ↗</a></p></section>
     <h2 class="subhead">양쪽 주장을 비교해보세요</h2><div class="arguments">${argumentCards(issue.forArguments, 'for', '찬성 측 주장')}${argumentCards(issue.againstArguments, 'against', '반대 측 주장')}</div>
@@ -876,7 +877,7 @@ function renderVoteState() {
     document.querySelectorAll('#issueView .vote-options').forEach((options) => options.classList.add('hidden'));
     document.querySelector('#voteMessage').textContent = !isMember
       ? '로그인하면 지난 투표 결과와 토론을 확인할 수 있습니다.'
-      : activeIssueIsReadOnly ? '보관 후 6개월이 지나 읽기 전용으로 열람 중입니다.' : '투표가 종료된 주제입니다. 결과와 토론을 확인할 수 있습니다.';
+      : activeIssueIsReadOnly ? '보관 후 90일이 지나 읽기 전용으로 열람 중입니다.' : '투표가 종료된 주제입니다. 결과와 토론을 확인할 수 있습니다.';
     renderPrivateDiscussion();
     const writeButton = document.querySelector('#writeButton');
     writeButton.classList.toggle('hidden', !isMember || activeIssueIsReadOnly);
@@ -921,13 +922,53 @@ function renderPollCards() {
     const forText = issue.cardFor || issue.forArguments[0][1];
     const againstText = issue.cardAgainst || issue.againstArguments[0][1];
     card.className = 'poll-card';
-    card.innerHTML = `<div class="poll-top"><span class="live-label"><i></i> 진행 중인 투표 <b>${String(index + 1).padStart(2, '0')} / ${entries.length}</b></span><span class="deadline">30일 투표</span></div><div class="poll-body"><div class="poll-meta"><span class="category">${escapeHtml(issue.category)}</span><span>읽는 시간 3분</span></div><h3>${escapeHtml(issue.title)}</h3><p class="poll-summary">${escapeHtml(issue.intro)}</p><div class="stance-grid"><div class="stance for"><div class="stance-head"><span class="stance-symbol">+</span><b>찬성 의견</b></div><span>${escapeHtml(forText)}</span></div><div class="stance against"><div class="stance-head"><span class="stance-symbol">−</span><b>반대 의견</b></div><span>${escapeHtml(againstText)}</span></div></div><div class="poll-footer"><span class="participant-count">주제 출처 · ${escapeHtml(issue.source.split(' · ')[0])}</span><a class="primary-button" data-open-issue="${escapeHtml(id)}" href="?issue=${encodeURIComponent(id)}">투표하고 이야기 보기 <span>→</span></a></div></div>`;
+    card.innerHTML = `<div class="poll-top"><span class="live-label"><i></i> 진행 중인 투표 <b>${String(index + 1).padStart(2, '0')} / ${entries.length}</b></span><span class="deadline" data-poll-deadline="${escapeHtml(id)}">${formatPollDeadline(issue)}</span></div><div class="poll-body"><div class="poll-meta"><span class="category">${escapeHtml(issue.category)}</span><span>읽는 시간 3분</span></div><h3>${escapeHtml(issue.title)}</h3><p class="poll-summary">${escapeHtml(issue.intro)}</p><div class="stance-grid"><div class="stance for"><div class="stance-head"><span class="stance-symbol">+</span><b>찬성 의견</b></div><span>${escapeHtml(forText)}</span></div><div class="stance against"><div class="stance-head"><span class="stance-symbol">−</span><b>반대 의견</b></div><span>${escapeHtml(againstText)}</span></div></div><div class="poll-footer"><span class="participant-count">주제 출처 · ${escapeHtml(issue.source.split(' · ')[0])}</span><a class="primary-button" data-open-issue="${escapeHtml(id)}" href="?issue=${encodeURIComponent(id)}">투표하고 이야기 보기 <span>→</span></a></div></div>`;
     return card;
   }));
   if (countBadge) countBadge.textContent = `${entries.length}개`;
   list.scrollLeft = 0;
   syncPollCarousel();
 }
+
+function formatPollDeadline(issue) {
+  const expiresAt = issue?.expiresAt ? new Date(issue.expiresAt) : null;
+  if (!expiresAt || Number.isNaN(expiresAt.getTime())) return '마감일 확인 중';
+  const remaining = expiresAt.getTime() - Date.now();
+  if (remaining <= 0) return '투표 종료';
+  const day = 24 * 60 * 60 * 1000;
+  if (remaining < 60 * 60 * 1000) return `D-day · ${Math.max(1, Math.ceil(remaining / 60000))}분`;
+  if (remaining < day) return `D-day · ${Math.ceil(remaining / (60 * 60 * 1000))}시간`;
+  return `D-${Math.ceil(remaining / day)}`;
+}
+
+function refreshPollDeadlines() {
+  const expiredIds = activeIssueIds.filter((id) => {
+    const expiresAt = issues[id]?.expiresAt ? Date.parse(issues[id].expiresAt) : NaN;
+    return Number.isFinite(expiresAt) && expiresAt <= Date.now();
+  });
+  if (expiredIds.length) {
+    expiredIds.forEach((id) => {
+      const issue = issues[id];
+      const archivedAt = issue.expiresAt;
+      issues[id] = { ...issue, status: 'archived', archivedAt };
+      publishedArchiveTopics = [issues[id], ...publishedArchiveTopics.filter((item) => item.id !== id)];
+    });
+    activeIssueIds = activeIssueIds.filter((id) => !expiredIds.includes(id));
+    renderPollCards(); renderPollBoard(); renderEditorialArchives(); syncPollCarousel();
+    if (activeIssueId && expiredIds.includes(activeIssueId)) {
+      activeIssueIsArchived = true;
+      const readOnlyAt = new Date(issues[activeIssueId].archivedAt).getTime() + 90 * 24 * 60 * 60 * 1000;
+      activeIssueIsReadOnly = Date.now() >= readOnlyAt;
+      renderIssueContent(); renderVoteState();
+    }
+    return;
+  }
+  document.querySelectorAll('[data-poll-deadline]').forEach((element) => {
+    const issue = issues[element.dataset.pollDeadline];
+    if (issue) element.textContent = formatPollDeadline(issue);
+  });
+}
+window.setInterval(refreshPollDeadlines, 60 * 1000);
 
 function renderEditorialArchives() {
   const list = document.querySelector('#archive .archive-list');
@@ -1083,7 +1124,7 @@ function renderEditorialHistory() {
   }
   records.slice(0, 12).forEach((record) => {
     const row = document.createElement('article'); row.className = 'history-row';
-    const marker = document.createElement('span'); marker.className = `history-status ${record.status === '승인' ? 'approved' : 'rejected'}`; marker.textContent = record.status;
+    const marker = document.createElement('span'); marker.className = `history-status ${record.status.startsWith('승인') ? 'approved' : 'rejected'}`; marker.textContent = record.status;
     const details = document.createElement('div');
     const title = document.createElement('strong'); title.textContent = record.title;
     const meta = document.createElement('small'); meta.textContent = `${record.category} · ${new Date(record.at).toLocaleString('ko-KR')}${record.replacedTitle ? ` · 보관함 이동: ${record.replacedTitle}` : ''}`;
@@ -1115,7 +1156,7 @@ function renderReviewQueue() {
   document.querySelector('#pendingCount').textContent = String(editorialState.pending.length);
   document.querySelector('#navPendingCount').textContent = String(editorialState.pending.length);
   if (!visibleDrafts.some((draft) => draft.id === activeDraftId)) activeDraftId = visibleDrafts[0]?.id || null;
-  queue.innerHTML = visibleDrafts.map((draft) => {
+  const pendingMarkup = visibleDrafts.map((draft) => {
     const batch = draft.batchId ? editorialState.pending.filter((item) => item.batchId === draft.batchId) : [];
     const batchPosition = batch.findIndex((item) => item.id === draft.id) + 1;
     const batchLabel = batch.length ? `이번 생성 후보 ${batch.length}개 중 ${batchPosition}번` : 'AI 검토 안건';
@@ -1130,6 +1171,8 @@ function renderReviewQueue() {
     const bingEvidence = `${bingLinks ? `<small>${bingLinks}</small>` : ''}${primarySources ? `<small>사실·논거 확인 자료 · ${primarySources}</small>` : '<small>원자료 확인 · 등록된 검증 자료 없음 (승인 전 확인 필요)</small>'}${guidelineNote}${reviewNote ? `<details><summary>AI 편집 검토 의견</summary><p style="white-space:pre-wrap">${escapeAdminHtml(reviewNote)}</p></details>` : ''}`;
     return `<article class="review-queue-item ${draft.id === activeDraftId ? 'selected' : ''}"><div><span class="ai-recommend-tag">${batchLabel} · 운영자 검토 필요</span><strong>${escapeAdminHtml(draft.title)}</strong><small>${escapeAdminHtml(draft.category)} · 출처 ${escapeAdminHtml(draft.source)}</small>${selectedField}${recency}${bingSummary}${bingEvidence}</div><button type="button" data-review-draft="${escapeAdminHtml(draft.id)}">${draft.id === activeDraftId ? '검토 중' : '검토하기'} <span>→</span></button></article>`;
   }).join('') || `<div class="empty-draft">${editorialState.pending.length ? '선택한 분야의 검토 대기 안건이 없습니다.' : '검토 대기 안건이 없습니다.'}</div>`;
+  const scheduledMarkup = scheduledTopicQueue.length ? `<section class="scheduled-topic-queue"><h3>예약 공개 안건 ${scheduledTopicQueue.length}건</h3>${scheduledTopicQueue.map((topic) => `<article><strong>${escapeAdminHtml(topic.title)}</strong><span>${escapeAdminHtml(topic.category)} · ${new Date(topic.scheduled_for).toLocaleString('ko-KR')} 공개 예정</span></article>`).join('')}</section>` : '';
+  queue.innerHTML = `${pendingMarkup}${scheduledMarkup}`;
   const draft = visibleDrafts.find((item) => item.id === activeDraftId);
   if (draft && activeDraftId !== draft.id) activeDraftId = draft.id;
   document.querySelector('#adminReviewWorkflow').classList.toggle('hidden', currentAdminPage !== 'reviews');
@@ -1150,6 +1193,7 @@ function renderReviewQueue() {
 
 window.addEventListener('siseon-topic-candidates-loaded', (event) => {
   const candidates = Array.isArray(event.detail?.candidates) ? event.detail.candidates : [];
+  scheduledTopicQueue = Array.isArray(event.detail?.scheduled) ? event.detail.scheduled : [];
   editorialState.pending = candidates;
   const selectedDraftStillPending = candidates.some((draft) => draft.id === activeDraftId);
   activeDraftId = selectedDraftStillPending ? activeDraftId : (candidates[0]?.id || null);
@@ -1226,7 +1270,7 @@ function renderAdminPage(page = currentAdminPage) {
     renderReviewQueue();
     return;
   } else if (page === 'polls') {
-    content.innerHTML = `${header('POLL MANAGEMENT', '투표 관리', `진행 중인 안건 ${activeIssueIds.length}건 · 안건별로 보관 또는 삭제를 선택할 수 있습니다.`)}<div class="table-toolbar"><span>진행 중 <b>${activeIssueIds.length}</b>건</span><input id="pollSearch" placeholder="투표 제목 검색" aria-label="투표 검색" /></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>주제</th><th>분야</th><th>상태</th><th>출처</th><th>관리</th></tr></thead><tbody>${activeIssueIds.map((id) => { const item = issues[id]; return `<tr><td><strong>${escapeAdminHtml(item.title)}</strong><small>30일 투표 · 진행 중</small></td><td>${escapeAdminHtml(item.category)}</td><td><span class="admin-status status-good">진행 중</span></td><td>${escapeAdminHtml(item.source)}</td><td><div class="row-actions"><button data-poll-promo="${escapeAdminHtml(id)}" class="table-action">홍보 콘텐츠 만들기</button><button data-poll-management="archive" data-id="${escapeAdminHtml(id)}" class="table-action">지난 투표로 이동</button><button data-poll-management="delete" data-id="${escapeAdminHtml(id)}" class="table-action danger-action" style="color:#a74d3a;border-color:#ead1ca">삭제</button></div></td></tr>`; }).join('')}</tbody></table></div><p class="admin-footnote">‘지난 투표로 이동’은 공개 투표 목록에서 내리고 보관함에 남깁니다. ‘삭제’는 사용자 화면과 검색용 페이지에서 내립니다. 승인된 Supabase 안건은 서버에 저장되며, 서버 작업 시 운영 기록도 남습니다.</p>`;
+    content.innerHTML = `${header('POLL MANAGEMENT', '투표 관리', `진행 중인 안건 ${activeIssueIds.length}건 · 안건별로 보관 또는 삭제를 선택할 수 있습니다.`)}<div class="table-toolbar"><span>진행 중 <b>${activeIssueIds.length}</b>건</span><input id="pollSearch" placeholder="투표 제목 검색" aria-label="투표 검색" /></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>주제</th><th>분야</th><th>상태</th><th>출처</th><th>관리</th></tr></thead><tbody>${activeIssueIds.map((id) => { const item = issues[id]; return `<tr><td><strong>${escapeAdminHtml(item.title)}</strong><small>${formatPollDeadline(item)} 마감 · 진행 중</small></td><td>${escapeAdminHtml(item.category)}</td><td><span class="admin-status status-good">진행 중</span></td><td>${escapeAdminHtml(item.source)}</td><td><div class="row-actions"><button data-poll-promo="${escapeAdminHtml(id)}" class="table-action">홍보 콘텐츠 만들기</button><button data-poll-management="archive" data-id="${escapeAdminHtml(id)}" class="table-action">지난 투표로 이동</button><button data-poll-management="delete" data-id="${escapeAdminHtml(id)}" class="table-action danger-action" style="color:#a74d3a;border-color:#ead1ca">삭제</button></div></td></tr>`; }).join('')}</tbody></table></div><p class="admin-footnote">‘지난 투표로 이동’은 공개 투표 목록에서 내리고 보관함에 남깁니다. ‘삭제’는 사용자 화면과 검색용 페이지에서 내립니다. 승인된 Supabase 안건은 서버에 저장되며, 서버 작업 시 운영 기록도 남습니다.</p>`;
   } else if (page === 'archive') {
     content.innerHTML = `${header('PAST CONVERSATIONS', '지난 투표 보관함', '종료된 투표의 결과와 토론을 확인합니다. 보관 기간이 지난 투표는 읽기 전용으로 표시됩니다.')}<div class="archive-list admin-archive-list" id="adminArchiveList"></div>`;
     const adminList = document.querySelector('#adminArchiveList');
@@ -1563,52 +1607,27 @@ document.querySelector('#approveDraftButton').addEventListener('click', async (e
   const approveButton = document.querySelector('#approveDraftButton');
   approveButton.disabled = true;
   document.querySelector('#draftStatus').textContent = 'Supabase에 저장하고 승인하는 중입니다…';
+  let scheduledFor = null;
   try {
     await window.SISEON_TOPIC_ADMIN.save(draft);
-    await window.SISEON_TOPIC_ADMIN.review(draft.id, 'approve', '운영자 승인');
+    const reviewResult = await window.SISEON_TOPIC_ADMIN.review(draft.id, 'approve', '운영자 승인');
+    scheduledFor = reviewResult.scheduledFor;
   } catch (error) {
     document.querySelector('#draftStatus').textContent = `승인 실패: ${error.message}`;
     window.alert(`안건 승인이 완료되지 않았습니다.\n\n${error.message}`);
     approveButton.disabled = false;
     return;
   }
-  // The candidate UUID is the canonical published ID. Using a timestamp here
-  // created a second local poll next to the same Supabase-backed topic.
-  const id = `topic-${draft.id}`;
-  const issue = {
-    category: draft.category, title: draft.title, intro: draft.intro, facts: draft.facts,
-    source: draft.source, sourceUrl,
-    forArguments: [['찬성 측 주장', draft.forText]], againstArguments: [['반대 측 주장', draft.againstText]],
-    cardFor: draft.forText, cardAgainst: draft.againstText, demoResults: [0, 0, 0], topicUuid: draft.id, status: 'approved', samplePosts: []
-  };
-  let archivedIssue = null;
-  if (activeIssueIds.length >= 30) {
-    const oldestId = activeIssueIds[activeIssueIds.length - 1];
-    const oldestIssue = issues[oldestId];
-    const oldestUuid = getPersistedTopicUuid(oldestId);
-    if (oldestIssue && oldestUuid) {
-      try {
-        await window.SISEON_TOPIC_ADMIN.manage(oldestUuid, 'archive');
-        archivedIssue = { ...oldestIssue, id: oldestId, status: 'archived', archivedAt: new Date().toISOString() };
-        issues[oldestId] = archivedIssue;
-        publishedArchiveTopics = [archivedIssue, ...publishedArchiveTopics.filter((item) => item.id !== oldestId)];
-        editorialState.archived.unshift({ id: oldestId, title: oldestIssue.title, category: oldestIssue.category, archivedAt: archivedIssue.archivedAt });
-        activeIssueIds = activeIssueIds.filter((activeId) => activeId !== oldestId);
-      } catch (error) {
-        console.error('기존 투표 자동 보관 실패:', error);
-        window.alert('새 안건은 승인됐지만, 진행 투표가 30개여서 기존 투표를 자동 보관하지 못했습니다. 기존 투표를 유지했으며 투표 관리에서 직접 보관해 주세요.');
-      }
-    }
-  }
-  issues[id] = issue;
-  activeIssueIds = [id, ...activeIssueIds.filter((activeId) => activeId !== id)];
-  editorialState.approved.push({ id, issue });
-  editorialState.history.push({ status: '승인', draftId: draft.id, title: draft.title, category: draft.category, at: new Date().toISOString(), ...(archivedIssue ? { replacedTitle: archivedIssue.title } : {}) });
+  editorialState.history.push({ status: '승인 · 공개 예약', draftId: draft.id, title: draft.title, category: draft.category, at: new Date().toISOString(), scheduledFor });
   editorialState.pending = editorialState.pending.filter((item) => item.id !== draft.id && (!draft.batchId || item.batchId !== draft.batchId));
   batchAlternatives.forEach((alternative) => editorialState.history.push({ status: '미선택', draftId: alternative.id, title: alternative.title, category: alternative.category, at: new Date().toISOString(), selectedTitle: draft.title }));
   activeDraftId = editorialState.pending[0]?.id || null;
   saveEditorialState();
-  renderPollCards();
+  document.querySelector('#draftStatus').textContent = scheduledFor
+    ? `승인 완료 · ${new Date(scheduledFor).toLocaleString('ko-KR')}에 공개됩니다.`
+    : '승인 완료 · 공개 예약 시각을 표시하지 못했습니다. Supabase 예약 상태를 확인해 주세요.';
+  document.querySelector('#draftStatus').classList.remove('hidden');
+  if (scheduledFor) window.alert(`안건 승인과 공개 예약이 완료됐습니다.\n\n공개 예정: ${new Date(scheduledFor).toLocaleString('ko-KR')}`);
   renderEditorialArchives();
   renderAdminDashboard();
 });

@@ -140,11 +140,11 @@ async function init() {
     };
     window.SISEON_TOPIC_ADMIN = {
       async list() {
-        const { candidates, guidelines } = await call('topics-list');
+        const { candidates, scheduled, guidelines } = await call('topics-list');
         const guidelineView = document.querySelector('#topicGuidelinesText');
         if (guidelineView) guidelineView.textContent = guidelines?.text ? `적용 버전: ${guidelines.version}\n\n${guidelines.text}` : '서버에 새 작성 지침이 아직 배포되지 않았습니다. content-admin 함수를 업데이트해 주세요.';
         const mapped = (candidates || []).map(topicDraftFromRow);
-        window.dispatchEvent(new CustomEvent('siseon-topic-candidates-loaded', { detail: { candidates: mapped } }));
+        window.dispatchEvent(new CustomEvent('siseon-topic-candidates-loaded', { detail: { candidates: mapped, scheduled: scheduled || [] } }));
         return mapped;
       },
       async generate(payload) {
@@ -161,8 +161,9 @@ async function init() {
         return this.list();
       },
       async review(id, decision, note = '') {
-        await call('topics-review', { id, decision, note });
-        return this.list();
+        const result = await call('topics-review', { id, decision, note });
+        const candidates = await this.list();
+        return { ...result, candidates };
       },
       async manage(id, managementAction) {
         return call('topics-manage', { id, managementAction });
