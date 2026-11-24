@@ -332,6 +332,164 @@ async function audit(action: string, contentId: string, actor: string, details: 
   if (error) throw error;
 }
 
+const seoulDay = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+function shiftDay(day: string, amount: number) {
+  const date = new Date(`${day}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + amount);
+  return date.toISOString().slice(0, 10);
+}
+const seoulBoundary = (day: string) => new Date(`${day}T00:00:00+09:00`).toISOString();
+const normalizedTopicTitle = (title: string) => title.toLocaleLowerCase('ko-KR').replace(/[^\p{L}\p{N}]/gu, '');
+
+async function topicTitleAlreadyApproved(title: string, exceptId = '') {
+  const { data, error } = await service.from('topic_candidates').select('id,title').in('status', ['approved', 'archived']).limit(2000);
+  if (error) throw error;
+  const key = normalizedTopicTitle(title);
+  return (data || []).some((row: any) => row.id !== exceptId && normalizedTopicTitle(row.title) === key);
+}
+
+async function approveScheduledTopic(item: any, actorId: string, firstPublishDay: string, note: string, automatic = false) {
+  const { data, error } = await service.rpc('admin_approve_topic', {
+    p_topic_id: item.id, p_actor: actorId, p_first_publish_day: firstPublishDay, p_note: note, p_automatic: automatic
+  });
+  if (error) {
+    if (String(error.message).includes('duplicate_topic')) throw new Error('같은 제목의 안건이 이미 승인되었거나 진행·보관 중입니다. 중복 승인할 수 없습니다.');
+    if (String(error.message).includes('pending_topic_not_found')) throw new Error('검토 대기 안건을 찾지 못했습니다. 새로고침해 주세요.');
+    throw error;
+  }
+  const approved = Array.isArray(data) ? data[0] : data;
+  if (!approved) throw new Error('안건 승인 예약 결과를 받지 못했습니다.');
+  return approved;
+}
+
+async function markScheduleRun(slotKey: string, status: 'completed' | 'skipped' | 'failed', result: Record<string, unknown> = {}, errorMessage: string | null = null) {
+  const { error } = await service.from('topic_schedule_runs').update({
+    status, finished_at: new Date().toISOString(), result, error_message: errorMessage
+  }).eq('slot_key', slotKey);
+  if (error) throw error;
+}
+
+async function claimScheduleRun(slotKey: string) {
+  const { data, error } = await service.rpc('claim_topic_schedule_run', { p_slot_key: slotKey });
+  if (error) throw error;
+  return data === true;
+}
+
+async function runTopicSchedule() {
+  const now = new Date(); const nowIso = now.toISOString(); const today = seoulDay(now);
+  const tomorrow = shiftDay(today, 1); const yesterday = shiftDay(today, -1);
+  const timeParts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
+  const hour = Number(timeParts.find((part) => part.type === 'hour')?.value || 0);
+  const minute = Number(timeParts.find((part) => part.type === 'minute')?.value || 0);
+  const summary: Record<string, unknown> = { at: nowIso, seoulDate: today };
+
+  // Expire votes at the exact Seoul calendar boundary. The public route also filters
+  // by expires_at, so the client hides a poll even if this minute's cron is delayed.
+  const { data: expiredRows, error: expireReadError } = await service.from('topic_candidates').select('id,title,expires_at')
+    .eq('status', 'approved').lte('expires_at', nowIso).limit(100);
+  if (expireReadError) throw expireReadError;
+  let expiredCount = 0;
+  for (const row of expiredRows || []) {
+    const { data: archived, error } = await service.from('topic_candidates').update({ status: 'archived', archived_at: row.expires_at })
+      .eq('id', row.id).eq('status', 'approved').lte('expires_at', nowIso).select('id').maybeSingle();
+    if (error) throw error;
+    if (archived) {
+      expiredCount++;
+      await service.from('content_audit').insert({ action: 'topic_expired_archived', content_id: row.id, details: { title: row.title, archived_at: row.expires_at } });
+    }
+  }
+  summary.expired = expiredCount;
+
+  // Publish one scheduled topic at 07:00 KST, retrying during the 07:00 minute window.
+  if (hour === 7) {
+    const { data: alreadyPublished, error: publishedReadError } = await service.from('topic_candidates').select('id')
+      .eq('status', 'approved').gte('published_at', seoulBoundary(today)).lt('published_at', seoulBoundary(tomorrow)).limit(1);
+    if (publishedReadError) throw publishedReadError;
+    if (!alreadyPublished?.length) {
+      const { data: due, error: dueError } = await service.from('topic_candidates').select('id,title,category,scheduled_for')
+        .eq('status', 'approved').is('published_at', null).lte('scheduled_for', nowIso).order('scheduled_for').limit(1).maybeSingle();
+      if (dueError) throw dueError;
+      if (due) {
+        const publishedAt = new Date().toISOString();
+        const expiresAt = seoulBoundary(shiftDay(today, 30));
+        const { data: published, error } = await service.from('topic_candidates').update({ published_at: publishedAt, expires_at: expiresAt })
+          .eq('id', due.id).eq('status', 'approved').is('published_at', null).select('id').maybeSingle();
+        if (error) throw error;
+        if (published) {
+          summary.publishedTopic = due.id;
+          await service.from('content_audit').insert({ action: 'topic_published', content_id: due.id, details: { title: due.title, category: due.category, published_at: publishedAt, expires_at: expiresAt } });
+        }
+      }
+    }
+  }
+
+  // If today's candidates have not been generated, begin the fallback generation
+  // window at 23:01. Failed attempts are retried at most twice more, ten minutes apart.
+  if (hour === 23 && minute >= 1) {
+    const { data: generatedToday, error } = await service.from('topic_candidates').select('id')
+      .gte('created_at', seoulBoundary(today)).lt('created_at', seoulBoundary(tomorrow)).limit(1);
+    if (error) throw error;
+    if (!generatedToday?.length) {
+      const slotKey = `generate:${today}`;
+      if (await claimScheduleRun(slotKey)) {
+        try {
+          const { data: admins, error: adminError } = await service.from('user_roles').select('user_id').eq('role', 'admin').limit(1);
+          if (adminError || !admins?.[0]?.user_id) throw adminError || new Error('운영자 계정을 찾지 못했습니다.');
+          const { data: titles, error: titleError } = await service.from('topic_candidates').select('title').eq('status', 'approved').gt('expires_at', nowIso);
+          if (titleError) throw titleError;
+          const generated = await generateTopics({ topicField: '전체 분야', existingTitles: (titles || []).map((row: any) => row.title) }, admins[0].user_id);
+          summary.generatedCandidates = generated.candidates.length;
+          await markScheduleRun(slotKey, 'completed', { count: generated.candidates.length, batchId: generated.batchId });
+        } catch (error) {
+          await markScheduleRun(slotKey, 'failed', {}, clean((error as Error).message, 1000));
+          throw error;
+        }
+      }
+    }
+  }
+
+  // Start at 00:01 KST and allow the first ten minutes for transient retries.
+  // The slot claim keeps this once-per-day even when the cron invokes us every minute.
+  if (hour === 0 && minute >= 1 && minute <= 10) {
+    const slotKey = `approve:${today}`;
+    if (await claimScheduleRun(slotKey)) {
+      try {
+        const { data: scheduledToday, error: scheduledError } = await service.from('topic_candidates').select('id')
+          .eq('status', 'approved').gte('scheduled_for', seoulBoundary(today)).lt('scheduled_for', seoulBoundary(tomorrow)).limit(1);
+        if (scheduledError) throw scheduledError;
+        const { data: publishedToday, error: publishedError } = await service.from('topic_candidates').select('id')
+          .eq('status', 'approved').gte('published_at', seoulBoundary(today)).lt('published_at', seoulBoundary(tomorrow)).limit(1);
+        if (publishedError) throw publishedError;
+        if (scheduledToday?.length || publishedToday?.length) {
+          await markScheduleRun(slotKey, 'skipped', { reason: '오늘 공개 예약이 이미 있습니다.' });
+          summary.autoApproval = 'already-scheduled';
+        } else {
+          const { data: candidates, error: candidateError } = await service.from('topic_candidates').select('*').eq('status', 'pending')
+            .gte('created_at', seoulBoundary(yesterday)).lt('created_at', seoulBoundary(today)).limit(200);
+          if (candidateError) throw candidateError;
+          const eligible = [];
+          for (const item of candidates || []) if (!(await topicTitleAlreadyApproved(item.title))) eligible.push(item);
+          if (!eligible.length) {
+            await markScheduleRun(slotKey, 'skipped', { reason: candidates?.length ? '중복 안건을 제외하면 선택 가능한 후보가 없습니다.' : '전날 검토 대기 후보가 없습니다.' });
+            summary.autoApproval = 'no-eligible-candidate';
+          } else {
+            const item = eligible[Math.floor(Math.random() * eligible.length)];
+            const { data: admins, error: adminError } = await service.from('user_roles').select('user_id').eq('role', 'admin').limit(1);
+            if (adminError || !admins?.[0]?.user_id) throw adminError || new Error('운영자 계정을 찾지 못했습니다.');
+            const approved = await approveScheduledTopic(item, admins[0].user_id, today, '23:00까지 관리자 미선택 · 무작위 자동 승인', true);
+            await markScheduleRun(slotKey, 'completed', { candidateId: approved.id, scheduledFor: approved.scheduled_for });
+            summary.autoApproval = { candidateId: approved.id, scheduledFor: approved.scheduled_for };
+          }
+        }
+      } catch (error) {
+        await markScheduleRun(slotKey, 'failed', {}, clean((error as Error).message, 1000));
+        throw error;
+      }
+    }
+  }
+  return summary;
+}
+
 async function handle(request: Request) {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors });
   let body: Record<string, any>;
@@ -341,14 +499,20 @@ async function handle(request: Request) {
   // private editorial metadata, vote counts, discussion posts, or comments.
   if (action === 'topics-public') {
     try {
-      const { data, error } = await service.from('topic_candidates')
-        .select('id,category,title,intro,facts,source,source_date,source_url,for_text,against_text,decided_at,archived_at,status,data_signals')
-        .in('status', ['approved', 'archived']).order('decided_at', { ascending: false }).limit(100);
-      if (error) throw error;
-      const topics = (data || []).map((row: any) => ({
+      const now = new Date().toISOString();
+      const [{ data: live, error: liveError }, { data: archived, error: archiveError }] = await Promise.all([
+        service.from('topic_candidates').select('id,category,title,intro,facts,source,source_date,source_url,for_text,against_text,decided_at,scheduled_for,published_at,expires_at,archived_at,status,data_signals')
+          .eq('status', 'approved').lte('published_at', now).gt('expires_at', now).order('published_at', { ascending: false }).limit(100),
+        service.from('topic_candidates').select('id,category,title,intro,facts,source,source_date,source_url,for_text,against_text,decided_at,scheduled_for,published_at,expires_at,archived_at,status,data_signals')
+          .eq('status', 'archived').order('published_at', { ascending: false }).limit(100)
+      ]);
+      if (liveError || archiveError) throw liveError || archiveError;
+      const data = [...(live || []), ...(archived || [])];
+      const topics = data.map((row: any) => ({
         id: row.id, category: row.category, title: row.title, intro: row.intro, facts: row.facts,
         source: row.source, source_date: row.source_date, source_url: row.source_url,
-        for_text: row.for_text, against_text: row.against_text, decided_at: row.decided_at,
+        for_text: row.for_text, against_text: row.against_text, decided_at: row.decided_at, scheduled_for: row.scheduled_for,
+        published_at: row.published_at, expires_at: row.expires_at,
         status: row.status, archived_at: row.archived_at,
         coverage_sources: (Array.isArray(row.data_signals?.coverageSources) ? row.data_signals.coverageSources : []).filter((item: any) => item && /^https:\/\//i.test(item.url || '')).slice(0, 5).map((item: any) => ({ title: clean(item.title, 300), publisher: clean(item.source, 150), publishedAt: clean(item.publishedAt, 80), url: item.url })),
         fact_sources: (Array.isArray(row.data_signals?.primarySources) ? row.data_signals.primarySources : []).filter((item: any) => item && /^https:\/\//i.test(item.url || '')).slice(0, 5).map((item: any) => ({ title: clean(item.title, 300), publisher: clean(item.publisher, 150), supports: clean(item.supports, 500), url: item.url }))
@@ -359,13 +523,23 @@ async function handle(request: Request) {
       return fail('공개 안건을 불러오지 못했습니다.', 500);
     }
   }
+  if (action === 'topic-scheduler-tick') {
+    const expected = Deno.env.get('SCHEDULER_SECRET');
+    const provided = request.headers.get('x-scheduler-secret');
+    if (!expected || !provided || provided !== expected) return fail('예약 작업 인증에 실패했습니다.', 401);
+    try { return respond({ ok: true, ...await runTopicSchedule() }); }
+    catch (error) { console.error('topic scheduler error', (error as Error).message); return fail(clean((error as Error).message, 500), 500); }
+  }
   let actor: { id: string };
   try { actor = await requireAdmin(request); } catch (error) { return fail((error as Error).message, 403); }
   try {
     if (action === 'topics-list') {
       const { data, error } = await service.from('topic_candidates').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100);
       if (error) throw error;
-      return respond({ candidates: data || [], guidelines: { version: TOPIC_GUIDELINES_VERSION, text: TOPIC_GUIDELINES } });
+      const { data: scheduled, error: scheduledError } = await service.from('topic_candidates').select('id,title,category,scheduled_for')
+        .eq('status', 'approved').is('published_at', null).not('scheduled_for', 'is', null).order('scheduled_for').limit(100);
+      if (scheduledError) throw scheduledError;
+      return respond({ candidates: data || [], scheduled: scheduled || [], guidelines: { version: TOPIC_GUIDELINES_VERSION, text: TOPIC_GUIDELINES } });
     }
     if (action === 'topics-generate') {
       const result = await generateTopics(body, actor.id);
@@ -405,17 +579,24 @@ async function handle(request: Request) {
       const decision = body.decision === 'approve' ? 'approved' : body.decision === 'reject' ? 'rejected' : null;
       if (!decision) return fail('승인 또는 반려를 선택해 주세요.');
       const note = clean(body.note, 1000);
-      const { data: item, error } = await service.from('topic_candidates').update({ status: decision, decided_at: new Date().toISOString(), decision_note: note })
-        .eq('id', body.id).eq('status', 'pending').select('id,batch_id,title').maybeSingle();
-      if (error || !item) throw error || new Error('검토 대기 안건을 찾지 못했습니다.');
+      let item: any;
       if (decision === 'approved') {
-        const { error: siblingError } = await service.from('topic_candidates').update({ status: 'not_selected', decided_at: new Date().toISOString(), decision_note: '같은 묶음에서 다른 후보가 승인됨' })
-          .eq('batch_id', item.batch_id).eq('status', 'pending').neq('id', item.id);
-        if (siblingError) throw siblingError;
+        const { data: candidate, error: candidateError } = await service.from('topic_candidates').select('*').eq('id', body.id).eq('status', 'pending').maybeSingle();
+        if (candidateError || !candidate) throw candidateError || new Error('검토 대기 안건을 찾지 못했습니다.');
+        if (await topicTitleAlreadyApproved(candidate.title, candidate.id)) throw new Error('같은 제목의 안건이 이미 승인되었거나 진행·보관 중입니다. 중복 승인할 수 없습니다.');
+        const firstDay = shiftDay(seoulDay(new Date()), 1);
+        item = await approveScheduledTopic(candidate, actor.id, firstDay, note || '관리자 승인 · 다음 공개일 오전 07:00 예약');
+      } else {
+        const { data: rejected, error } = await service.from('topic_candidates').update({ status: decision, decided_at: new Date().toISOString(), decision_note: note })
+          .eq('id', body.id).eq('status', 'pending').select('id,batch_id,title').maybeSingle();
+        if (error || !rejected) throw error || new Error('검토 대기 안건을 찾지 못했습니다.');
+        item = rejected;
       }
-      const { error: auditError } = await service.from('content_audit').insert({ action: `topic_${decision}`, content_id: item.id, actor: actor.id, details: { title: item.title, note } });
-      if (auditError) throw auditError;
-      return respond({ ok: true });
+      if (decision === 'rejected') {
+        const { error: auditError } = await service.from('content_audit').insert({ action: 'topic_rejected', content_id: item.id, actor: actor.id, details: { title: item.title, note } });
+        if (auditError) throw auditError;
+      }
+      return respond({ ok: true, status: decision, scheduledFor: item.scheduled_for || null });
     }
     if (action === 'integrations-list') {
       const { data, error } = await service.from('integration_connections').select('provider,connection_group,status,account_label,last_tested_at,last_error,updated_at,cooldown_until,enabled').order('provider');
