@@ -17,6 +17,11 @@ previousStorageKeys.forEach((key) => {
   localStorage.removeItem(key);
 });
 const authKey = `${storagePrefix}demo-auth`;
+let pendingMemberAction = null;
+const isMemberSignedIn = () => localStorage.getItem(authKey) === 'true';
+function refreshMemberControls() {
+  if (loginButton) loginButton.textContent = isMemberSignedIn() ? '로그아웃' : '로그인';
+}
 let activeIssueId = null;
 let activeIssueIsArchived = false;
 let activeIssueIsReadOnly = false;
@@ -241,6 +246,7 @@ function renderOpenTalkList() {
 }
 
 function openOpenTalkDetail(id) {
+  if (!isMemberSignedIn()) { openLogin(() => openOpenTalkDetail(id)); return; }
   const post = boardOpenTalkPosts().find((item) => item.id === id);
   if (!post) return;
   document.querySelector('#openTalkBoardContent').classList.add('hidden');
@@ -259,6 +265,7 @@ function renderTopicSuggestions() {
 }
 
 function openTopicSuggestionDetail(id) {
+  if (!isMemberSignedIn()) { openLogin(() => openTopicSuggestionDetail(id)); return; }
   const item = boardTopicSuggestions().find((suggestion) => suggestion.id === id);
   if (!item) return;
   const interested = new Set(readLocalList(`${storagePrefix}topic-interests`));
@@ -269,6 +276,7 @@ function openTopicSuggestionDetail(id) {
 }
 
 function toggleTopicSuggestionInterest(id) {
+  if (!isMemberSignedIn()) { openLogin(() => toggleTopicSuggestionInterest(id)); return; }
   const item = adminOperations.topicSuggestions.find((suggestion) => suggestion.id === id);
   const interested = new Set(readLocalList(`${storagePrefix}topic-interests`));
   if (!item || item.status !== '검토 대기') return;
@@ -279,6 +287,19 @@ function toggleTopicSuggestionInterest(id) {
   renderHomeCommunityBoard();
   renderTopicSuggestions();
   if (!document.querySelector('#topicSuggestionDetail').classList.contains('hidden')) openTopicSuggestionDetail(id);
+}
+
+function renderCommunityAccess() {
+  const signedIn = isMemberSignedIn();
+  [
+    ['#openTalkForm', '#openTalkLoginButton'],
+    ['#topicSuggestionForm', '#topicSuggestionLoginButton']
+  ].forEach(([formSelector, buttonSelector]) => {
+    const form = document.querySelector(formSelector);
+    const button = document.querySelector(buttonSelector);
+    if (form) form.classList.toggle('hidden', !signedIn);
+    if (button) button.classList.toggle('hidden', signedIn);
+  });
 }
 
 const activeHomeBoardCategories = { 'open-talk': '전체', suggestions: '전체' };
@@ -376,6 +397,14 @@ document.querySelector('#openTalkForm').addEventListener('submit', (event) => {
   adminOperations.openTalkPosts.unshift({ id: `talk-${Date.now()}`, category: values.category, title: values.title.trim(), body: values.body.trim(), author: getDemoAnonymousAlias(), memberRef: 'demo-current-account', status: '공개', createdAt: new Date().toISOString(), comments: [] });
   saveAdminOperations(); form.reset(); renderOpenTalkList(); renderHomeCommunityBoard(); showUserActionToast('익명 글이 게시됐습니다.');
 });
+document.querySelector('#openTalkLoginButton').addEventListener('click', () => openLogin(() => {
+  renderCommunityAccess();
+  document.querySelector('#openTalkTitle').focus();
+}));
+document.querySelector('#topicSuggestionLoginButton').addEventListener('click', () => openLogin(() => {
+  renderCommunityAccess();
+  document.querySelector('#suggestionTitle').focus();
+}));
 
 document.querySelector('#openTalkList').addEventListener('submit', (event) => {
   const form = event.target.closest('.open-talk-comment-form'); if (!form) return;
@@ -672,6 +701,10 @@ async function openIssue(issueId, historyMode = 'push') {
   }
   if (!issue) return;
   const archiveRecord = getIssueArchiveRecord(issueId);
+  if (archiveRecord && !isMemberSignedIn()) {
+    openLogin(() => openIssue(issueId, historyMode));
+    return;
+  }
   activeIssueId = issueId;
   activeIssueIsArchived = Boolean(archiveRecord);
   const readOnlyAt = archiveRecord?.archivedAt ? new Date(archiveRecord.archivedAt) : null;
@@ -689,7 +722,8 @@ async function openIssue(issueId, historyMode = 'push') {
   renderVoteState();
 }
 
-function openLogin() {
+function openLogin(afterLogin = null) {
+  pendingMemberAction = typeof afterLogin === 'function' ? afterLogin : null;
   if (!loginDialog.open) loginDialog.showModal();
 }
 
@@ -880,8 +914,7 @@ function renderVoteState() {
       : activeIssueIsReadOnly ? '보관 후 90일이 지나 읽기 전용으로 열람 중입니다.' : '투표가 종료된 주제입니다. 결과와 토론을 확인할 수 있습니다.';
     renderPrivateDiscussion();
     const writeButton = document.querySelector('#writeButton');
-    writeButton.classList.toggle('hidden', !isMember || activeIssueIsReadOnly);
-    if (activeIssueIsReadOnly) writeButton.textContent = '읽기 전용 아카이브';
+    writeButton.classList.add('hidden');
     return;
   }
   const choice = localStorage.getItem(voteKey());
@@ -890,7 +923,14 @@ function renderVoteState() {
   const message = document.querySelector('#voteMessage');
   const voteButtons = [...document.querySelectorAll('#issueView [data-vote]')];
   renderDemoResults(canSeePrivate);
-  discussion.classList.toggle('hidden', !canSeePrivate);
+  discussion.classList.toggle('hidden', !isMember);
+  const discussionNote = discussion.querySelector('.discussion-demo-note');
+  if (discussionNote) discussionNote.textContent = !isMember
+    ? '로그인 후 투표하면 결과와 토론 글을 확인할 수 있습니다.'
+    : choice ? '입장 글과 질문·자료·정정 요청을 나누어 살펴보세요.' : '투표를 마치면 이곳에서 결과와 토론을 확인하고 의견을 남길 수 있습니다.';
+  discussion.querySelector('.tabs')?.classList.toggle('hidden', !canSeePrivate);
+  document.querySelector('#discussionPosts')?.classList.toggle('hidden', !canSeePrivate);
+  document.querySelector('#writeButton')?.classList.toggle('hidden', !canSeePrivate || activeIssueIsReadOnly);
   voteButtons.forEach((button) => {
     button.disabled = Boolean(choice);
     if (choice && button.dataset.vote === choice) button.setAttribute('aria-pressed', 'true');
@@ -988,6 +1028,9 @@ function renderEditorialArchives() {
     const number = document.createElement('div'); number.className = 'archive-icon'; number.textContent = String(index + 1).padStart(2, '0');
     row.append(number, main, arrow); list.append(row);
   });
+  if (!list.children.length) {
+    const empty = document.createElement('div'); empty.className = 'community-empty'; empty.textContent = '아직 보관된 투표가 없습니다.'; list.append(empty);
+  }
   const fullList = document.querySelector('#archivePageList');
   if (fullList) fullList.replaceChildren(...[...list.children].map((row) => row.cloneNode(true)));
 }
@@ -1634,7 +1677,22 @@ document.querySelector('#approveDraftButton').addEventListener('click', async (e
 document.querySelector('#backButton').addEventListener('click', () => {
   goBackWithinApp();
 });
-loginButton.addEventListener('click', openLogin);
+loginButton.addEventListener('click', () => {
+  if (!isMemberSignedIn()) { openLogin(); return; }
+  localStorage.removeItem(authKey);
+  pendingVote = null; pendingMemberAction = null;
+  refreshMemberControls(); renderCommunityAccess();
+  if (activeIssueIsArchived && !issueView.classList.contains('hidden')) {
+    showArchiveBoard(false); pushAppRoute('archive', {}, true);
+  } else if (!openTalkView.classList.contains('hidden') && !document.querySelector('#openTalkDetail').classList.contains('hidden')) {
+    showCommunitySubpage('open-talk', false);
+  } else if (!topicSuggestionsView.classList.contains('hidden') && !document.querySelector('#topicSuggestionDetail').classList.contains('hidden')) {
+    showCommunitySubpage('suggestions', false);
+  } else if (activeIssueId && !issueView.classList.contains('hidden')) {
+    renderVoteState();
+  }
+  showUserActionToast('시연 계정에서 로그아웃했습니다.');
+});
 document.querySelector('#menuButton').addEventListener('click', () => {
   const panel = document.querySelector('#siteMapPanel');
   const button = document.querySelector('#menuButton');
@@ -1649,15 +1707,23 @@ document.addEventListener('click', (event) => {
 });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeSiteMap(); });
 document.querySelector('.issue-nav .icon-button').addEventListener('click', openLogin);
-document.querySelector('.dialog-close').addEventListener('click', () => loginDialog.close());
+document.querySelector('.dialog-close').addEventListener('click', () => { pendingVote = null; pendingMemberAction = null; loginDialog.close(); });
 loginDialog.addEventListener('click', (event) => {
-  if (event.target === loginDialog) loginDialog.close();
+  if (event.target === loginDialog) { pendingVote = null; pendingMemberAction = null; loginDialog.close(); }
 });
+loginDialog.addEventListener('cancel', () => { pendingVote = null; pendingMemberAction = null; });
 document.querySelector('#demoLoginButton').addEventListener('click', () => {
   localStorage.setItem(authKey, 'true');
+  const resumeAction = pendingMemberAction;
+  pendingMemberAction = null;
+  const voteToCast = pendingVote;
+  pendingVote = null;
   loginDialog.close();
-  if (pendingVote) castDemoVote(pendingVote);
+  refreshMemberControls();
+  renderCommunityAccess();
+  if (voteToCast) castDemoVote(voteToCast);
   else renderVoteState();
+  if (resumeAction) resumeAction();
 });
 document.querySelector('#postDialogClose').addEventListener('click', () => postDialog.close());
 document.querySelector('#postCancel').addEventListener('click', () => postDialog.close());
@@ -1862,6 +1928,8 @@ renderPollCards();
 renderEditorialArchives();
 renderAnnouncementTicker();
 renderHomeCommunityBoard();
+renderCommunityAccess();
+refreshMemberControls();
 syncPollCarousel();
 const initialIssueId = new URLSearchParams(window.location.search).get('issue');
 const initialView = new URLSearchParams(window.location.search).get('view');
