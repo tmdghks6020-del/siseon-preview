@@ -1241,12 +1241,13 @@ function renderReviewQueue() {
     const batchLabel = batch.length ? `이번 생성 후보 ${batch.length}개 중 ${batchPosition}번` : 'AI 검토 안건';
     const recency = draft.trendingReason ? `<small>최근 이슈 근거 · ${escapeAdminHtml(draft.trendingReason)}</small>` : '';
     const selectedField = draft.selectedField ? `<small>후보 생성 분야 · ${escapeAdminHtml(draft.selectedField)}</small>` : '';
-    const headlines = draft.dataSignals?.relatedHeadlines || [];
-    const bingSummary = headlines.length ? `<small>생성 시점의 Bing News 주요 기사 ${headlines.length}건을 근거로 검토</small>` : '';
-    const bingLinks = headlines.slice(0, 2).map((article) => safeHttpsUrl(article.url) ? `<a href="${escapeAdminHtml(safeHttpsUrl(article.url))}" target="_blank" rel="noopener noreferrer">기사 확인 ↗</a>` : '').filter(Boolean).join(' · ');
+    const headlines = draft.dataSignals?.coverageSources || draft.dataSignals?.relatedHeadlines || [];
+    const bingSummary = headlines.length ? `<small>이슈 확인 보도 · ${headlines.length}건 (보도 수는 사실이나 여론의 증거가 아님)</small>` : '';
+    const bingLinks = headlines.slice(0, 5).map((article) => safeHttpsUrl(article.url) ? `<a href="${escapeAdminHtml(safeHttpsUrl(article.url))}" target="_blank" rel="noopener noreferrer">${escapeAdminHtml(article.source || '기사')} ↗</a>` : '').filter(Boolean).join(' · ');
+    const primarySources = (draft.dataSignals?.primarySources || []).map((source) => safeHttpsUrl(source.url) ? `<a href="${escapeAdminHtml(safeHttpsUrl(source.url))}" target="_blank" rel="noopener noreferrer">${escapeAdminHtml(source.publisher || '자료')}: ${escapeAdminHtml(source.title || '원자료')} ↗</a>` : '').filter(Boolean).join(' · ');
     const reviewNote = [draft.dataSignals?.aiProvider ? `생성 AI: ${draft.dataSignals.aiProvider} · ${draft.dataSignals.aiModel || ''}` : '', draft.dataSignals?.editorialReview].filter(Boolean).join('\n');
     const guidelineNote = draft.dataSignals?.guidelineVersion ? `<small>작성 지침 · ${escapeAdminHtml(draft.dataSignals.guidelineVersion)}</small>` : '<small>새 작성 지침 적용 전 후보</small>';
-    const bingEvidence = `${bingLinks ? `<small>${bingLinks}</small>` : ''}${guidelineNote}${reviewNote ? `<details><summary>AI 편집 검토 의견</summary><p style="white-space:pre-wrap">${escapeAdminHtml(reviewNote)}</p></details>` : ''}`;
+    const bingEvidence = `${bingLinks ? `<small>${bingLinks}</small>` : ''}${primarySources ? `<small>사실·논거 확인 자료 · ${primarySources}</small>` : '<small>원자료 확인 · 등록된 검증 자료 없음 (승인 전 확인 필요)</small>'}${guidelineNote}${reviewNote ? `<details><summary>AI 편집 검토 의견</summary><p style="white-space:pre-wrap">${escapeAdminHtml(reviewNote)}</p></details>` : ''}`;
     return `<article class="review-queue-item ${draft.id === activeDraftId ? 'selected' : ''}"><div><span class="ai-recommend-tag">${batchLabel} · 운영자 검토 필요</span><strong>${escapeAdminHtml(draft.title)}</strong><small>${escapeAdminHtml(draft.category)} · 출처 ${escapeAdminHtml(draft.source)}</small>${selectedField}${recency}${bingSummary}${bingEvidence}</div><button type="button" data-review-draft="${escapeAdminHtml(draft.id)}">${draft.id === activeDraftId ? '검토 중' : '검토하기'} <span>→</span></button></article>`;
   }).join('') || `<div class="empty-draft">${editorialState.pending.length ? '선택한 분야의 검토 대기 안건이 없습니다.' : '검토 대기 안건이 없습니다.'}</div>`;
   const draft = visibleDrafts.find((item) => item.id === activeDraftId);
