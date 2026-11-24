@@ -10,17 +10,67 @@ const postDialog = document.querySelector('#postDialog');
 const loginButton = document.querySelector('#loginButton');
 const previousStoragePrefix = 'dugyeon:';
 const storagePrefix = 'siseon:';
+localStorage.removeItem(`${storagePrefix}demo-auth`);
 const previousStorageKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)).filter((key) => key?.startsWith(previousStoragePrefix));
 previousStorageKeys.forEach((key) => {
   const migratedKey = `${storagePrefix}${key.slice(previousStoragePrefix.length)}`;
   if (localStorage.getItem(migratedKey) === null) localStorage.setItem(migratedKey, localStorage.getItem(key));
   localStorage.removeItem(key);
 });
-const authKey = `${storagePrefix}demo-auth`;
 let pendingMemberAction = null;
-const isMemberSignedIn = () => localStorage.getItem(authKey) === 'true';
+let memberSession = null;
+const authConfig = window.SISEON_SUPABASE_CONFIG;
+const memberAuth = window.supabase?.createClient && authConfig?.url && authConfig?.publishableKey
+  ? window.supabase.createClient(authConfig.url, authConfig.publishableKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
+  : null;
+const memberAppRootUrl = new URL('./', document.querySelector('script[src*="app.js"]')?.src || window.location.href).href;
+const isMemberSignedIn = () => Boolean(memberSession?.user);
 function refreshMemberControls() {
   if (loginButton) loginButton.textContent = isMemberSignedIn() ? '로그아웃' : '로그인';
+}
+function syncMemberAuth(session) {
+  memberSession = session;
+  refreshMemberControls();
+  renderCommunityAccess();
+  if (activeIssueId) renderVoteState();
+  if (session?.user) {
+    const returnPath = sessionStorage.getItem('siseon:auth-return-path');
+    if (returnPath) {
+      sessionStorage.removeItem('siseon:auth-return-path');
+      const returnUrl = new URL(returnPath, window.location.origin);
+      const appRootPath = new URL(memberAppRootUrl).pathname;
+      if (returnUrl.origin === window.location.origin && returnUrl.pathname.startsWith(appRootPath)) {
+        window.location.replace(returnUrl.href);
+        return;
+      }
+    }
+    if (loginDialog?.open) loginDialog.close();
+  }
+}
+
+function resumePendingAuthVote() {
+  const requestedVote = sessionStorage.getItem('siseon:pending-auth-vote');
+  if (!requestedVote || !isMemberSignedIn() || !activeIssueId) return;
+  sessionStorage.removeItem('siseon:pending-auth-vote');
+  if (!localStorage.getItem(voteKey())) castDemoVote(requestedVote);
+}
+if (memberAuth) {
+  memberAuth.auth.getSession().then(({ data, error }) => {
+    if (error) console.error('회원 인증 상태 확인 실패:', error.message);
+    syncMemberAuth(data?.session ?? null);
+  });
+  memberAuth.auth.onAuthStateChange((_event, session) => syncMemberAuth(session));
+} else {
+  console.error('회원 로그인을 시작할 수 없습니다. Supabase 설정 또는 supabase-js 로드를 확인해 주세요.');
+}
+const callbackQuery = new URLSearchParams(window.location.search);
+const callbackFragment = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+const authCallbackError = callbackQuery.get('error_description') || callbackFragment.get('error_description');
+if (authCallbackError) {
+  document.querySelector('#authDialogMessage').textContent = `카카오 인증에 실패했습니다: ${authCallbackError}`;
+  sessionStorage.removeItem('siseon:auth-return-path');
+  sessionStorage.removeItem('siseon:pending-auth-vote');
+  loginDialog.showModal();
 }
 let activeIssueId = null;
 let activeIssueIsArchived = false;
@@ -371,7 +421,7 @@ document.querySelector('#communityBoards').addEventListener('submit', (event) =>
   const form = event.target.closest('.open-talk-comment-form');
   if (!form) return;
   event.preventDefault();
-  if (localStorage.getItem(authKey) !== 'true') { openLogin(); return; }
+  if (!isMemberSignedIn()) { openLogin(); return; }
   const post = adminOperations.openTalkPosts.find((item) => item.id === form.closest('[data-open-talk-id]')?.dataset.openTalkId);
   const text = new FormData(form).get('comment')?.trim();
   if (!post || !text) return;
@@ -392,7 +442,7 @@ document.querySelectorAll('[data-community-home]').forEach((button) => button.ad
 }));
 document.querySelector('#openTalkForm').addEventListener('submit', (event) => {
   event.preventDefault();
-  if (localStorage.getItem(authKey) !== 'true') { openLogin(); return; }
+  if (!isMemberSignedIn()) { openLogin(); return; }
   const form = event.currentTarget; const values = Object.fromEntries(new FormData(form).entries());
   adminOperations.openTalkPosts.unshift({ id: `talk-${Date.now()}`, category: values.category, title: values.title.trim(), body: values.body.trim(), author: getDemoAnonymousAlias(), memberRef: 'demo-current-account', status: '공개', createdAt: new Date().toISOString(), comments: [] });
   saveAdminOperations(); form.reset(); renderOpenTalkList(); renderHomeCommunityBoard(); showUserActionToast('익명 글이 게시됐습니다.');
@@ -409,7 +459,7 @@ document.querySelector('#topicSuggestionLoginButton').addEventListener('click', 
 document.querySelector('#openTalkList').addEventListener('submit', (event) => {
   const form = event.target.closest('.open-talk-comment-form'); if (!form) return;
   event.preventDefault();
-  if (localStorage.getItem(authKey) !== 'true') { openLogin(); return; }
+  if (!isMemberSignedIn()) { openLogin(); return; }
   const card = form.closest('[data-open-talk-id]'); const post = adminOperations.openTalkPosts.find((item) => item.id === card.dataset.openTalkId);
   const text = new FormData(form).get('comment')?.trim(); if (!post || !text) return;
   post.comments ||= []; post.comments.push({ author: getDemoAnonymousAlias(), text }); saveAdminOperations(); renderOpenTalkList(); renderHomeCommunityBoard();
@@ -418,7 +468,7 @@ document.querySelector('#openTalkList').addEventListener('click', (event) => {
   const detailButton = event.target.closest('[data-open-talk-open]');
   if (detailButton) { openOpenTalkDetail(detailButton.dataset.openTalkOpen); window.scrollTo({ top: 0, behavior: 'instant' }); return; }
   if (event.target.closest('[data-open-talk-report]')) {
-    if (localStorage.getItem(authKey) !== 'true') { openLogin(); return; }
+    if (!isMemberSignedIn()) { openLogin(); return; }
     const card = event.target.closest('[data-open-talk-id]'); const post = adminOperations.openTalkPosts.find((item) => item.id === card.dataset.openTalkId);
     pendingReportContext = { issueId: 'open-talk', postId: post.id, postTitle: post.title, author: post.author, memberRef: post.memberRef };
     document.querySelector('#reportTargetTitle').textContent = `“${post.title}” · ${post.author}`; document.querySelector('#userReportForm').reset(); document.querySelector('#userReportDialog').showModal();
@@ -431,7 +481,7 @@ document.querySelector('#openTalkDetail').addEventListener('click', (event) => {
     return;
   }
   if (event.target.closest('[data-open-talk-report]')) {
-    if (localStorage.getItem(authKey) !== 'true') { openLogin(); return; }
+    if (!isMemberSignedIn()) { openLogin(); return; }
     const post = adminOperations.openTalkPosts.find((item) => item.id === document.querySelector('#openTalkDetail').dataset.openTalkId);
     if (!post) return;
     pendingReportContext = { issueId: 'open-talk', postId: post.id, postTitle: post.title, author: post.author, memberRef: post.memberRef };
@@ -442,7 +492,7 @@ document.querySelector('#openTalkDetail').addEventListener('submit', (event) => 
   const form = event.target.closest('.open-talk-comment-form');
   if (!form) return;
   event.preventDefault();
-  if (localStorage.getItem(authKey) !== 'true') { openLogin(); return; }
+  if (!isMemberSignedIn()) { openLogin(); return; }
   const post = adminOperations.openTalkPosts.find((item) => item.id === document.querySelector('#openTalkDetail').dataset.openTalkId);
   const text = new FormData(form).get('comment')?.trim();
   if (!post || !text) return;
@@ -469,7 +519,7 @@ document.querySelector('#topicSuggestionDetail').addEventListener('click', (even
 
 document.querySelector('#topicSuggestionForm').addEventListener('submit', (event) => {
   event.preventDefault();
-  if (localStorage.getItem(authKey) !== 'true') { openLogin(); return; }
+  if (!isMemberSignedIn()) { openLogin(); return; }
   const form = event.currentTarget; const values = Object.fromEntries(new FormData(form).entries());
   if (/(선거|대선|총선|지방선거|공천)/.test(values.title)) { showUserActionToast('선거 관련 주제는 제안 대상에서 제외됩니다.'); return; }
   adminOperations.topicSuggestions.unshift({ id: `suggestion-${Date.now()}`, category: values.category, title: values.title.trim(), rationale: values.rationale.trim(), forText: values.forText.trim(), againstText: values.againstText.trim(), sourceUrl: safeHttpsUrl(values.sourceUrl), sender: '익명 제안자', memberRef: 'demo-current-account', interestCount: 0, status: '검토 대기', createdAt: new Date().toISOString() });
@@ -720,6 +770,7 @@ async function openIssue(issueId, historyMode = 'push') {
   issueView.classList.remove('hidden');
   window.scrollTo({ top: 0, behavior: 'instant' });
   renderVoteState();
+  resumePendingAuthVote();
 }
 
 function openLogin(afterLogin = null) {
@@ -880,7 +931,7 @@ function renderPrivateDiscussion() {
   const postList = document.querySelector('#discussionPosts');
   if (!postList) return;
   postList.replaceChildren();
-  const isMember = localStorage.getItem(authKey) === 'true';
+  const isMember = isMemberSignedIn();
   const hasVoted = Boolean(localStorage.getItem(voteKey()));
   if (!isMember || (!activeIssueIsArchived && !hasVoted)) return;
   const issue = getIssueData(activeIssueId);
@@ -904,7 +955,7 @@ function applyDiscussionFilter(filter) {
 
 function renderVoteState() {
   if (!activeIssueId) return;
-  const isMember = localStorage.getItem(authKey) === 'true';
+  const isMember = isMemberSignedIn();
   if (activeIssueIsArchived) {
     renderDemoResults(isMember);
     document.querySelector('#discussionSection').classList.toggle('hidden', !isMember);
@@ -1679,19 +1730,21 @@ document.querySelector('#backButton').addEventListener('click', () => {
 });
 loginButton.addEventListener('click', () => {
   if (!isMemberSignedIn()) { openLogin(); return; }
-  localStorage.removeItem(authKey);
-  pendingVote = null; pendingMemberAction = null;
-  refreshMemberControls(); renderCommunityAccess();
-  if (activeIssueIsArchived && !issueView.classList.contains('hidden')) {
-    showArchiveBoard(false); pushAppRoute('archive', {}, true);
-  } else if (!openTalkView.classList.contains('hidden') && !document.querySelector('#openTalkDetail').classList.contains('hidden')) {
-    showCommunitySubpage('open-talk', false);
-  } else if (!topicSuggestionsView.classList.contains('hidden') && !document.querySelector('#topicSuggestionDetail').classList.contains('hidden')) {
-    showCommunitySubpage('suggestions', false);
-  } else if (activeIssueId && !issueView.classList.contains('hidden')) {
-    renderVoteState();
-  }
-  showUserActionToast('시연 계정에서 로그아웃했습니다.');
+  memberAuth?.auth.signOut().then(({ error }) => {
+    if (error) { showUserActionToast(`로그아웃하지 못했습니다: ${error.message}`); return; }
+    pendingVote = null; pendingMemberAction = null;
+    sessionStorage.removeItem('siseon:pending-auth-vote');
+    if (activeIssueIsArchived && !issueView.classList.contains('hidden')) {
+      showArchiveBoard(false); pushAppRoute('archive', {}, true);
+    } else if (!openTalkView.classList.contains('hidden') && !document.querySelector('#openTalkDetail').classList.contains('hidden')) {
+      showCommunitySubpage('open-talk', false);
+    } else if (!topicSuggestionsView.classList.contains('hidden') && !document.querySelector('#topicSuggestionDetail').classList.contains('hidden')) {
+      showCommunitySubpage('suggestions', false);
+    } else if (activeIssueId && !issueView.classList.contains('hidden')) {
+      renderVoteState();
+    }
+    showUserActionToast('로그아웃했습니다.');
+  });
 });
 document.querySelector('#menuButton').addEventListener('click', () => {
   const panel = document.querySelector('#siteMapPanel');
@@ -1712,18 +1765,29 @@ loginDialog.addEventListener('click', (event) => {
   if (event.target === loginDialog) { pendingVote = null; pendingMemberAction = null; loginDialog.close(); }
 });
 loginDialog.addEventListener('cancel', () => { pendingVote = null; pendingMemberAction = null; });
-document.querySelector('#demoLoginButton').addEventListener('click', () => {
-  localStorage.setItem(authKey, 'true');
-  const resumeAction = pendingMemberAction;
-  pendingMemberAction = null;
-  const voteToCast = pendingVote;
-  pendingVote = null;
-  loginDialog.close();
-  refreshMemberControls();
-  renderCommunityAccess();
-  if (voteToCast) castDemoVote(voteToCast);
-  else renderVoteState();
-  if (resumeAction) resumeAction();
+document.querySelector('#kakaoLoginButton').addEventListener('click', async (event) => {
+  if (!memberAuth) {
+    document.querySelector('#authDialogMessage').textContent = 'Supabase 설정을 확인할 수 없습니다. 페이지를 새로고침하거나 관리자에게 문의해 주세요.';
+    return;
+  }
+  const button = event.currentTarget;
+  const message = document.querySelector('#authDialogMessage');
+  button.disabled = true;
+  button.textContent = '카카오로 이동 중…';
+  message.textContent = '카카오 인증 화면으로 이동합니다.';
+  if (pendingVote) sessionStorage.setItem('siseon:pending-auth-vote', pendingVote);
+  sessionStorage.setItem('siseon:auth-return-path', `${window.location.pathname}${window.location.search}${window.location.hash}`);
+  const { error } = await memberAuth.auth.signInWithOAuth({
+    provider: 'kakao',
+    options: { redirectTo: memberAppRootUrl }
+  });
+  if (error) {
+    button.disabled = false;
+    button.textContent = '카카오로 계속하기';
+    message.textContent = `로그인을 시작하지 못했습니다: ${error.message}`;
+    sessionStorage.removeItem('siseon:pending-auth-vote');
+    sessionStorage.removeItem('siseon:auth-return-path');
+  }
 });
 document.querySelector('#postDialogClose').addEventListener('click', () => postDialog.close());
 document.querySelector('#postCancel').addEventListener('click', () => postDialog.close());
@@ -1733,7 +1797,7 @@ issueView.addEventListener('click', (event) => {
   if (filterButton) { applyDiscussionFilter(filterButton.dataset.discussionFilter); return; }
   const reportButton = event.target.closest('[data-report-post]');
   if (reportButton) {
-    if (localStorage.getItem(authKey) !== 'true') return openLogin();
+    if (!isMemberSignedIn()) return openLogin();
     const article = reportButton.closest('.discussion-post');
     pendingReportContext = { issueId: activeIssueId, postId: article.dataset.postId, postTitle: article.dataset.postTitle, author: article.dataset.postAuthor };
     document.querySelector('#reportTargetTitle').textContent = `“${pendingReportContext.postTitle}” · ${pendingReportContext.author}`;
@@ -1755,12 +1819,12 @@ issueView.addEventListener('click', (event) => {
     const priorVote = localStorage.getItem(voteKey());
     if (priorVote) return;
     pendingVote = voteButton.dataset.vote;
-    if (localStorage.getItem(authKey) === 'true') castDemoVote(pendingVote);
+    if (isMemberSignedIn()) castDemoVote(pendingVote);
     else openLogin();
     return;
   }
   if (event.target.closest('#writeButton')) {
-    if (localStorage.getItem(authKey) !== 'true') return openLogin();
+    if (!isMemberSignedIn()) return openLogin();
     const choice = localStorage.getItem(voteKey()) || (activeIssueIsArchived ? '판단 보류' : null);
     if (!choice) return;
     const stance = stanceInfo(choice);
