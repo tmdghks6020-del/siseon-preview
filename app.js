@@ -825,7 +825,17 @@ function getIssueArchiveRecord(issueId) {
     const archivedAt = ({ 'archive-public-bikes': '2026-10-31T23:59:59+09:00', 'archive-market-closure': '2026-10-15T23:59:59+09:00', 'archive-pet-registration': '2026-09-30T23:59:59+09:00' })[issueId];
     return { id: issueId, archivedAt };
   }
+  const publishedArchive = publishedArchiveTopics.find((topic) => topic.id === issueId);
+  if (publishedArchive) return { id: issueId, archivedAt: publishedArchive.archivedAt || publishedArchive.publishedAt };
   return editorialState.archived.find((record) => record.id === issueId) || null;
+}
+
+function getPersistedTopicUuid(issueId) {
+  const direct = String(issueId).match(/^topic-([0-9a-f-]{36})$/i);
+  if (direct) return direct[1];
+  const approved = editorialState.approved.find((entry) => entry.id === issueId);
+  const history = editorialState.history.find((entry) => entry.status === '승인' && entry.title === approved?.issue?.title);
+  return /^[0-9a-f-]{36}$/i.test(history?.draftId || '') ? history.draftId : null;
 }
 
 function voteKey(issueId = activeIssueId) {
@@ -859,6 +869,7 @@ function syncSeoMetadata(issueId = null, historyMode = 'none') {
 }
 
 let publishedTopicsPromise;
+let publishedArchiveTopics = [];
 function loadPublishedTopics() {
   if (!publishedTopicsPromise) publishedTopicsPromise = (async () => {
     const config = window.SISEON_SUPABASE_CONFIG;
@@ -869,12 +880,14 @@ function loadPublishedTopics() {
     });
     if (!response.ok) throw new Error('공개 안건을 불러오지 못했습니다.');
     const { topics = [] } = await response.json();
-    return topics.map((row) => {
+    const mapped = topics.map((row) => {
       const id = `topic-${row.id}`;
       return { id, category: row.category, title: row.title, intro: row.intro, facts: row.facts || [], source: row.source, sourceUrl: row.source_url,
         forArguments: [['주요 논거', row.for_text]], againstArguments: [['주요 논거', row.against_text]], cardFor: row.for_text, cardAgainst: row.against_text,
-        demoResults: [0, 0, 0], samplePosts: [], publishedAt: row.decided_at };
+        demoResults: [0, 0, 0], samplePosts: [], publishedAt: row.decided_at, topicUuid: row.id, status: row.status, archivedAt: row.archived_at };
     });
+    publishedArchiveTopics = mapped.filter((item) => item.status === 'archived');
+    return mapped;
   })();
   return publishedTopicsPromise;
 }
@@ -886,7 +899,7 @@ async function openIssue(issueId, historyMode = 'push') {
     issue = topics.find((item) => item.id === issueId);
     if (issue) {
       issues[issueId] = issue;
-      activeIssueIds = [issueId, ...activeIssueIds.filter((id) => id !== issueId)].slice(0, 30);
+      if (issue.status !== 'archived') activeIssueIds = [issueId, ...activeIssueIds.filter((id) => id !== issueId)].slice(0, 30);
       renderPollCards();
       syncPollCarousel();
     }
@@ -1164,6 +1177,7 @@ function renderEditorialArchives() {
     if (issueId) { row.dataset.openIssue = issueId; row.href = `?issue=${encodeURIComponent(issueId)}`; row.setAttribute('aria-label', `${archivedSampleIssues[issueId].title} 상세 보기`); }
   });
   list.querySelectorAll('[data-editorial-archive="true"]').forEach((row) => row.remove());
+  list.querySelectorAll('[data-server-archive="true"]').forEach((row) => row.remove());
   [...editorialState.archived].slice(0, 8).reverse().forEach((record) => {
     const row = document.createElement('a');
     row.className = 'archive-row'; row.href = `?issue=${encodeURIComponent(record.id)}`; row.dataset.openIssue = record.id; row.dataset.editorialArchive = 'true';
@@ -1175,8 +1189,72 @@ function renderEditorialArchives() {
     const arrow = document.createElement('div'); arrow.className = 'archive-arrow'; arrow.textContent = '↗';
     row.append(main, arrow); list.prepend(row);
   });
+  [...publishedArchiveTopics].slice(0, 100).forEach((issue) => {
+    const row = document.createElement('a');
+    row.className = 'archive-row'; row.href = `?issue=${encodeURIComponent(issue.id)}`; row.dataset.openIssue = issue.id; row.dataset.serverArchive = 'true';
+    const main = document.createElement('div'); main.className = 'archive-main';
+    const title = document.createElement('strong'); title.textContent = issue.title;
+    const meta = document.createElement('span'); meta.textContent = `보관함 이동 ${new Date(issue.archivedAt || issue.publishedAt || Date.now()).toLocaleDateString('ko-KR')} · ${issue.category}`;
+    const note = document.createElement('small'); note.textContent = '승인된 투표 · 보관 중';
+    main.append(title, meta, note);
+    const arrow = document.createElement('div'); arrow.className = 'archive-arrow'; arrow.textContent = '↗';
+    row.append(main, arrow); list.prepend(row);
+  });
   const fullList = document.querySelector('#archivePageList');
   if (fullList) fullList.replaceChildren(...[...list.children].map((row) => row.cloneNode(true)));
+}
+
+async function managePollFromAdmin(issueId, managementAction, button) {
+  const issue = getIssueData(issueId);
+  if (!issue || !isVerifiedAdmin) return;
+  const isArchive = managementAction === 'archive';
+  const label = isArchive ? '지난 투표 보관함으로 이동' : '삭제';
+  const confirmText = isArchive
+    ? `“${issue.title}”을(를) 진행 중인 투표에서 내리고 지난 투표 보관함으로 이동할까요?`
+    : `“${issue.title}”을(를) 삭제할까요? 삭제한 안건은 사용자 화면과 검색용 사이트맵에서 내려갑니다.`;
+  if (!window.confirm(confirmText)) return;
+  const uuid = getPersistedTopicUuid(issueId);
+  const originalText = button?.textContent;
+  if (button) { button.disabled = true; button.textContent = isArchive ? '이동 중…' : '삭제 중…'; }
+  try {
+    if (uuid) {
+      if (!window.SISEON_TOPIC_ADMIN?.manage) throw new Error('투표 관리 API가 없습니다. content-automation.js를 최신 버전으로 배포해 주세요.');
+      await window.SISEON_TOPIC_ADMIN.manage(uuid, managementAction);
+    }
+    const canonicalId = uuid ? `topic-${uuid}` : issueId;
+    if (uuid && canonicalId !== issueId) {
+      issues[canonicalId] = { ...issue, id: canonicalId, topicUuid: uuid };
+      delete issues[issueId];
+      editorialState.approved = editorialState.approved.filter((entry) => entry.id !== issueId);
+    }
+    activeIssueIds = activeIssueIds.filter((id) => id !== issueId && id !== canonicalId);
+    if (isArchive) {
+      const archivedAt = new Date().toISOString();
+      if (uuid) {
+        publishedArchiveTopics = [
+          { ...issues[canonicalId], id: canonicalId, topicUuid: uuid, status: 'archived', archivedAt },
+          ...publishedArchiveTopics.filter((entry) => entry.id !== canonicalId)
+        ];
+      } else {
+        editorialState.archived.unshift({ id: canonicalId, title: issue.title, category: issue.category, archivedAt });
+      }
+      editorialState.history.unshift({ status: '보관', draftId: uuid || canonicalId, title: issue.title, category: issue.category, at: archivedAt });
+    } else {
+      publishedArchiveTopics = publishedArchiveTopics.filter((entry) => entry.id !== canonicalId);
+      editorialState.archived = editorialState.archived.filter((entry) => entry.id !== canonicalId && entry.id !== issueId);
+      editorialState.approved = editorialState.approved.filter((entry) => entry.id !== canonicalId && entry.id !== issueId);
+      delete issues[canonicalId]; delete issues[issueId];
+      editorialState.history.unshift({ status: '삭제', draftId: uuid || canonicalId, title: issue.title, category: issue.category, at: new Date().toISOString() });
+    }
+    saveEditorialState();
+    logAdminAction(isArchive ? '투표를 지난 보관함으로 이동' : '투표 삭제', issue.title, `투표 ID: ${uuid || issueId}`);
+    renderPollCards(); renderPollBoard(); renderEditorialArchives();
+    renderAdminPage('polls');
+    renderAdminDashboard();
+  } catch (error) {
+    window.alert(`${label} 처리에 실패했습니다.\n\n${error.message || error}`);
+    if (button) { button.disabled = false; button.textContent = originalText; }
+  }
 }
 
 document.querySelector('#activePollList').addEventListener('click', (event) => {
@@ -1401,7 +1479,7 @@ function renderAdminPage(page = currentAdminPage) {
     renderReviewQueue();
     return;
   } else if (page === 'polls') {
-    content.innerHTML = `${header('POLL MANAGEMENT', '투표 관리', `진행 중인 안건 ${activeIssueIds.length}건 · 게시할 홍보 초안도 여기서 시작할 수 있습니다.`)}<div class="table-toolbar"><span>진행 중 <b>${activeIssueIds.length}</b>건</span><input id="pollSearch" placeholder="투표 제목 검색" aria-label="투표 검색" /></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>주제</th><th>분야</th><th>상태</th><th>출처</th><th>관리</th></tr></thead><tbody>${activeIssueIds.map((id) => { const item = issues[id]; return `<tr><td><strong>${escapeAdminHtml(item.title)}</strong><small>30일 투표 · 진행 중</small></td><td>${escapeAdminHtml(item.category)}</td><td><span class="admin-status status-good">진행 중</span></td><td>${escapeAdminHtml(item.source)}</td><td><button data-poll-promo="${escapeAdminHtml(id)}" class="table-action">홍보 콘텐츠 만들기</button></td></tr>`; }).join('')}</tbody></table></div><p class="admin-footnote">버튼은 연결된 플랫폼용 초안을 생성해 콘텐츠 자동화 검토 목록으로 보냅니다. 검토·승인 후에만 게시할 수 있습니다. 네이버 블로그는 게시 API가 없어 복사·수동 게시로 처리합니다.</p>`;
+    content.innerHTML = `${header('POLL MANAGEMENT', '투표 관리', `진행 중인 안건 ${activeIssueIds.length}건 · 안건별로 보관 또는 삭제를 선택할 수 있습니다.`)}<div class="table-toolbar"><span>진행 중 <b>${activeIssueIds.length}</b>건</span><input id="pollSearch" placeholder="투표 제목 검색" aria-label="투표 검색" /></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>주제</th><th>분야</th><th>상태</th><th>출처</th><th>관리</th></tr></thead><tbody>${activeIssueIds.map((id) => { const item = issues[id]; return `<tr><td><strong>${escapeAdminHtml(item.title)}</strong><small>30일 투표 · 진행 중</small></td><td>${escapeAdminHtml(item.category)}</td><td><span class="admin-status status-good">진행 중</span></td><td>${escapeAdminHtml(item.source)}</td><td><div class="row-actions"><button data-poll-promo="${escapeAdminHtml(id)}" class="table-action">홍보 콘텐츠 만들기</button><button data-poll-management="archive" data-id="${escapeAdminHtml(id)}" class="table-action">지난 투표로 이동</button><button data-poll-management="delete" data-id="${escapeAdminHtml(id)}" class="table-action danger-action" style="color:#a74d3a;border-color:#ead1ca">삭제</button></div></td></tr>`; }).join('')}</tbody></table></div><p class="admin-footnote">‘지난 투표로 이동’은 공개 투표 목록에서 내리고 보관함에 남깁니다. ‘삭제’는 사용자 화면과 검색용 페이지에서 내립니다. 승인된 Supabase 안건은 서버에 저장되며, 서버 작업 시 운영 기록도 남습니다.</p>`;
   } else if (page === 'archive') {
     content.innerHTML = `${header('PAST CONVERSATIONS', '지난 투표 보관함', '종료된 투표의 결과와 토론을 확인합니다. 보관 기간이 지난 투표는 읽기 전용으로 표시됩니다.')}<div class="archive-list admin-archive-list" id="adminArchiveList"></div>`;
     const adminList = document.querySelector('#adminArchiveList');
@@ -1503,6 +1581,11 @@ document.querySelector('.admin-sidebar').addEventListener('click', (event) => {
   if (button) { pushAppRoute('admin', { adminPage: button.dataset.adminPage }); renderAdminPage(button.dataset.adminPage); }
 });
 document.querySelector('#adminPageContent').addEventListener('click', (event) => {
+  const pollManagementButton = event.target.closest('[data-poll-management]');
+  if (pollManagementButton) {
+    managePollFromAdmin(pollManagementButton.dataset.id, pollManagementButton.dataset.pollManagement, pollManagementButton);
+    return;
+  }
   const pollPromoButton = event.target.closest('[data-poll-promo]');
   if (pollPromoButton) {
     const issueId = pollPromoButton.dataset.pollPromo; const issue = issues[issueId];
@@ -1742,12 +1825,14 @@ document.querySelector('#approveDraftButton').addEventListener('click', async (e
     approveButton.disabled = false;
     return;
   }
-  const id = `approved-${Date.now()}`;
+  // The candidate UUID is the canonical published ID. Using a timestamp here
+  // created a second local poll next to the same Supabase-backed topic.
+  const id = `topic-${draft.id}`;
   const issue = {
     category: draft.category, title: draft.title, intro: draft.intro, facts: draft.facts,
     source: draft.source, sourceUrl,
     forArguments: [['찬성 측 주장', draft.forText]], againstArguments: [['반대 측 주장', draft.againstText]],
-    cardFor: draft.forText, cardAgainst: draft.againstText, demoResults: [45, 40, 15],
+    cardFor: draft.forText, cardAgainst: draft.againstText, demoResults: [45, 40, 15], topicUuid: draft.id, status: 'approved',
     samplePosts: [
       { id: `${id}-for`, stance: '찬성', title: '촬영 표시가 사생활 보호에 도움이 됩니다', author: '생각나눔', content: draft.forText, initialComments: [] },
       { id: `${id}-against`, stance: '반대', title: '표시 의무의 기준과 실효성을 먼저 봐야 합니다', author: '차분한토론', content: draft.againstText, initialComments: [] }
@@ -2019,11 +2104,19 @@ else restoreHomeView();
 
 loadPublishedTopics().then((topics) => {
   topics.forEach((issue) => { issues[issue.id] = issue; });
-  if (topics.length) {
-    activeIssueIds = [...topics.map((issue) => issue.id), ...activeIssueIds.filter((id) => !topics.some((issue) => issue.id === id))].slice(0, 30);
-    renderPollCards();
-    syncPollCarousel();
+  const serverActive = topics.filter((issue) => issue.status === 'approved');
+  const serverTitles = new Set(serverActive.map((issue) => issue.title.trim().toLocaleLowerCase('ko-KR')));
+  const legacyDuplicateIds = editorialState.approved
+    .filter((entry) => serverTitles.has(String(entry.issue?.title || '').trim().toLocaleLowerCase('ko-KR')))
+    .map((entry) => entry.id);
+  if (legacyDuplicateIds.length) {
+    activeIssueIds = activeIssueIds.filter((id) => !legacyDuplicateIds.includes(id));
+    editorialState.approved = editorialState.approved.filter((entry) => !legacyDuplicateIds.includes(entry.id));
+    saveEditorialState();
   }
+  activeIssueIds = [...serverActive.map((issue) => issue.id), ...activeIssueIds.filter((id) => !serverActive.some((issue) => issue.id === id))].slice(0, 30);
+  renderPollCards(); renderPollBoard(); renderEditorialArchives(); syncPollCarousel();
+  if (currentAdminPage === 'archive' && isVerifiedAdmin) renderAdminPage('archive');
 }).catch((error) => console.warn('공개 안건 동기화 실패:', error.message));
 
 const exitConfirmDialog = document.querySelector('#exitConfirmDialog');

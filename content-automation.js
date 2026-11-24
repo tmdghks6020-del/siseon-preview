@@ -163,6 +163,9 @@ async function init() {
       async review(id, decision, note = '') {
         await call('topics-review', { id, decision, note });
         return this.list();
+      },
+      async manage(id, managementAction) {
+        return call('topics-manage', { id, managementAction });
       }
     };
     supabase.auth.onAuthStateChange((_event, session) => {
