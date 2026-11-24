@@ -836,7 +836,10 @@ function syncSeoMetadata(issueId = null, historyMode = 'none') {
   const issue = issueId ? getIssueData(issueId) : null;
   const normalizedPath = window.location.pathname.replace(/\/index\.html$/i, '/');
   const baseUrl = new URL(normalizedPath, window.location.origin);
-  if (issue) baseUrl.searchParams.set('issue', issueId);
+  if (issue && String(issueId).startsWith('topic-')) {
+    const slug = String(issue.title).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '').slice(0, 64).replace(/-$/g, '');
+    baseUrl.pathname = `${baseUrl.pathname.replace(/\/$/, '')}/topics/${encodeURIComponent(`${slug}-${String(issueId).slice(6)}`)}/`;
+  } else if (issue) baseUrl.searchParams.set('issue', issueId);
   const canonicalUrl = baseUrl.href;
   const title = issue ? `${issue.title} | 시선` : '시선 — 다른 관점이 모이는 곳';
   const description = (issue ? `${issue.intro} 여러 관점의 근거를 살펴보고 의견을 나눠보세요.` : '사회 쟁점을 여러 관점에서 살펴보고 근거와 함께 대화하는 커뮤니티, 시선.').slice(0, 160);
@@ -848,15 +851,46 @@ function syncSeoMetadata(issueId = null, historyMode = 'none') {
   document.querySelector('link[rel="canonical"]').href = canonicalUrl;
   const websiteUrl = `${window.location.origin}${window.location.pathname}`;
   const schema = issue
-    ? { '@context': 'https://schema.org', '@type': 'WebPage', name: issue.title, description, url: canonicalUrl, isPartOf: { '@type': 'WebSite', name: '시선', url: websiteUrl }, about: { '@type': 'Thing', name: issue.category } }
+    ? { '@context': 'https://schema.org', '@type': 'Article', headline: issue.title, description, articleSection: issue.category, articleBody: `${issue.intro} ${(issue.facts || []).join(' ')} ${(issue.cardFor || '')} ${(issue.cardAgainst || '')}`.slice(0, 5000), url: canonicalUrl, mainEntityOfPage: canonicalUrl, isPartOf: { '@type': 'WebSite', name: '시선', url: websiteUrl } }
     : { '@context': 'https://schema.org', '@type': 'WebSite', name: '시선', url: websiteUrl, description };
   document.querySelector('#seoStructuredData').textContent = JSON.stringify(schema);
   if (historyMode === 'push') window.history.pushState({ issueId, siseonRoute: 'issue' }, '', canonicalUrl);
   if (historyMode === 'replace') window.history.replaceState({ ...(window.history.state || {}), issueId, siseonRoute: issueId ? 'issue' : (window.history.state?.siseonRoute || 'home') }, '', canonicalUrl);
 }
 
-function openIssue(issueId, historyMode = 'push') {
-  const issue = getIssueData(issueId);
+let publishedTopicsPromise;
+function loadPublishedTopics() {
+  if (!publishedTopicsPromise) publishedTopicsPromise = (async () => {
+    const config = window.SISEON_SUPABASE_CONFIG;
+    if (!config?.url || !config?.publishableKey) return [];
+    const response = await fetch(`${config.url.replace(/\/$/, '')}/functions/v1/content-admin`, {
+      method: 'POST', headers: { apikey: config.publishableKey, 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'topics-public' })
+    });
+    if (!response.ok) throw new Error('공개 안건을 불러오지 못했습니다.');
+    const { topics = [] } = await response.json();
+    return topics.map((row) => {
+      const id = `topic-${row.id}`;
+      return { id, category: row.category, title: row.title, intro: row.intro, facts: row.facts || [], source: row.source, sourceUrl: row.source_url,
+        forArguments: [['주요 논거', row.for_text]], againstArguments: [['주요 논거', row.against_text]], cardFor: row.for_text, cardAgainst: row.against_text,
+        demoResults: [0, 0, 0], samplePosts: [], publishedAt: row.decided_at };
+    });
+  })();
+  return publishedTopicsPromise;
+}
+
+async function openIssue(issueId, historyMode = 'push') {
+  let issue = getIssueData(issueId);
+  if (!issue && String(issueId).startsWith('topic-')) {
+    const topics = await loadPublishedTopics();
+    issue = topics.find((item) => item.id === issueId);
+    if (issue) {
+      issues[issueId] = issue;
+      activeIssueIds = [issueId, ...activeIssueIds.filter((id) => id !== issueId)].slice(0, 30);
+      renderPollCards();
+      syncPollCarousel();
+    }
+  }
   if (!issue) return;
   const archiveRecord = getIssueArchiveRecord(issueId);
   activeIssueId = issueId;
@@ -1018,28 +1052,36 @@ function renderIssueContent() {
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
   const facts = issue.facts.map((fact) => `<li>${escapeHtml(fact)}</li>`).join('');
   const argumentCards = (items, side, title) => `<article class="argument-card ${side}"><h3><span>${side === 'for' ? '+' : '−'}</span> ${escapeHtml(title)}</h3><div class="argument-body">${items.map(([heading, text], index) => `<b>0${index + 1}. ${escapeHtml(heading)}</b><p>${escapeHtml(text)}</p>`).join('')}<small>각 항목은 토론용 관점이며 사실은 출처에서 확인해 주세요.</small></div></article>`;
-  const [forPercent, againstPercent, holdPercent] = issue.demoResults;
   const detail = document.querySelector('#issueView .issue-content');
   detail.innerHTML = `
     <div class="issue-meta"><span class="category">${escapeHtml(issue.category)}</span><span>${activeIssueIsArchived ? `${activeIssueIsReadOnly ? '지난 투표 · 읽기 전용' : '지난 투표 · 보관 중'}${archivedDate ? ` · 보관 ${archivedDate}` : ''}` : '30일 투표'}</span><span>·</span><span>읽는 시간 3분</span></div>
     <h1>${escapeHtml(issue.title)}</h1><p class="issue-intro">${escapeHtml(issue.intro)}</p>
     <section class="facts-card"><div class="card-eyebrow">먼저 확인된 사실</div><h2>공통으로 확인할 내용</h2><ul>${facts}</ul><p>확인 가능한 사실과 각 입장의 해석을 구분합니다. <a class="candidate-source" href="${escapeHtml(issue.sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(issue.source)} ↗</a></p></section>
     <h2 class="subhead">양쪽 주장을 비교해보세요</h2><div class="arguments">${argumentCards(issue.forArguments, 'for', '찬성 측 주장')}${argumentCards(issue.againstArguments, 'against', '반대 측 주장')}</div>
-    <section class="vote-card"><div class="card-eyebrow">${activeIssueIsArchived ? 'ARCHIVE RESULTS' : 'YOUR VOICE'}</div><h2>${activeIssueIsArchived ? '지난 투표 결과' : '당신의 생각은 어떤가요?'}</h2><p>${activeIssueIsArchived ? '투표가 종료된 주제의 결과와 토론 기록입니다.' : '이 이슈에 한 번 투표할 수 있어요. 투표 전에는 결과와 토론 글을 볼 수 없습니다.'}</p><div class="vote-options ${activeIssueIsArchived ? 'hidden' : ''}"><button data-vote="찬성" class="for"><span>+</span> 찬성</button><button data-vote="반대" class="against"><span>−</span> 반대</button><button data-vote="판단 보류" class="hold"><span>…</span> 판단 보류</button></div><div id="voteMessage" class="vote-message">${activeIssueIsArchived ? '지난 투표 결과와 토론을 보고 있습니다.' : '투표 후 결과와 토론이 열립니다.'}</div><div id="postVoteResults" class="${activeIssueIsArchived ? '' : 'hidden'}"><div class="result-heading"><strong>시연 집계 (예시)</strong><span>실제 투표 데이터가 아닙니다</span></div><div class="result-bar"><i style="width:${forPercent}%"></i><i style="width:${againstPercent}%"></i><i style="width:${holdPercent}%"></i></div><div class="result-labels"><b>찬성 ${forPercent}%</b><b>반대 ${againstPercent}%</b><b>보류 ${holdPercent}%</b></div><small>실제 결과는 서버와 투표 데이터 연동 후 표시됩니다.</small></div></section>
+    <section class="vote-card"><div class="card-eyebrow">${activeIssueIsArchived ? 'ARCHIVE RESULTS' : 'YOUR VOICE'}</div><h2>${activeIssueIsArchived ? '지난 투표 결과' : '당신의 생각은 어떤가요?'}</h2><p>${activeIssueIsArchived ? '투표가 종료된 주제의 결과와 토론 기록입니다.' : '이 이슈에 한 번 투표할 수 있어요. 투표 전에는 결과와 토론 글을 볼 수 없습니다.'}</p><div class="vote-options ${activeIssueIsArchived ? 'hidden' : ''}"><button data-vote="찬성" class="for"><span>+</span> 찬성</button><button data-vote="반대" class="against"><span>−</span> 반대</button><button data-vote="판단 보류" class="hold"><span>…</span> 판단 보류</button></div><div id="voteMessage" class="vote-message">${activeIssueIsArchived ? '지난 투표 결과와 토론을 보고 있습니다.' : '투표 후 결과와 토론이 열립니다.'}</div><div id="postVoteResults" class="hidden"></div></section>
     <section class="discussion hidden" id="discussionSection"><div class="discussion-title"><div class="card-eyebrow">COMMUNITY VOICES</div><h2>이 이슈의 토론</h2><p class="discussion-demo-note">입장 글과 질문·자료·정정 요청을 나누어 살펴보세요.</p></div><div class="tabs"><button class="active" data-discussion-filter="all">전체</button><button data-discussion-filter="for">찬성 입장</button><button data-discussion-filter="against">반대 입장</button><button data-discussion-filter="question">질문 · 자료</button><button data-discussion-filter="correction">정정 요청</button></div><div id="discussionPosts" class="discussion-post-list"></div><button class="primary-button write-button" id="writeButton">의견 남기기 <span>→</span></button></section>`;
+  renderPrivateDiscussion();
+}
+
+function renderPrivateDiscussion() {
   const postList = document.querySelector('#discussionPosts');
+  if (!postList) return;
+  postList.replaceChildren();
+  const isMember = localStorage.getItem(authKey) === 'true';
+  const hasVoted = Boolean(localStorage.getItem(voteKey()));
+  if (!isMember || (!activeIssueIsArchived && !hasVoted)) return;
+  const issue = getIssueData(activeIssueId);
+  if (!issue) return;
   const unavailablePostIds = new Set([...adminOperations.reports.filter((report) => report.issueId === activeIssueId && report.postStatus !== '공개').map((report) => report.postId), ...adminOperations.hiddenDiscussionPosts]);
   const extraCommunityPosts = [
     { id: `${activeIssueId}-sample-question`, stance: '판단 보류', kind: 'question', title: '이 주제에서 가장 먼저 확인해야 할 조건은 무엇인가요?', author: '오늘의질문', content: `${issue.intro}에서 빠뜨리기 쉬운 기준이나 궁금한 점을 함께 적어주세요.`, initialComments: [] },
     { id: `${activeIssueId}-sample-source`, stance: '판단 보류', kind: 'source', title: '주제와 관련된 원문 자료를 공유합니다', author: '자료찾는사람', content: `이 이슈의 공통 사실과 배경을 더 살펴볼 수 있는 참고 출처입니다.`, sourceUrl: issue.sourceUrl, initialComments: [] }
   ];
-  [...readLocalList(savedPostsKey(activeIssueId)), ...issue.samplePosts, ...extraCommunityPosts]
+  [...readLocalList(savedPostsKey(activeIssueId)), ...(issue.samplePosts || []), ...extraCommunityPosts]
     .filter((post) => !unavailablePostIds.has(post.id))
     .forEach((post) => postList.append(createDiscussionPost(post)));
   applyDiscussionFilter('all');
-  if (activeIssueIsReadOnly) {
-    document.querySelectorAll('#discussionPosts .comment-form').forEach((form) => form.classList.add('hidden'));
-  }
+  if (activeIssueIsReadOnly) document.querySelectorAll('#discussionPosts .comment-form').forEach((form) => form.classList.add('hidden'));
 }
 
 function applyDiscussionFilter(filter) {
@@ -1053,32 +1095,45 @@ function applyDiscussionFilter(filter) {
 
 function renderVoteState() {
   if (!activeIssueId) return;
+  const isMember = localStorage.getItem(authKey) === 'true';
   if (activeIssueIsArchived) {
-    document.querySelector('#postVoteResults').classList.remove('hidden');
-    document.querySelector('#discussionSection').classList.remove('hidden');
+    renderDemoResults(isMember);
+    document.querySelector('#discussionSection').classList.toggle('hidden', !isMember);
     document.querySelectorAll('#issueView .vote-options').forEach((options) => options.classList.add('hidden'));
-    document.querySelector('#voteMessage').textContent = activeIssueIsReadOnly
-      ? '보관 후 6개월이 지나 읽기 전용으로 열람 중입니다.'
-      : '투표가 종료된 주제입니다. 결과와 토론을 확인할 수 있습니다.';
+    document.querySelector('#voteMessage').textContent = !isMember
+      ? '로그인하면 지난 투표 결과와 토론을 확인할 수 있습니다.'
+      : activeIssueIsReadOnly ? '보관 후 6개월이 지나 읽기 전용으로 열람 중입니다.' : '투표가 종료된 주제입니다. 결과와 토론을 확인할 수 있습니다.';
+    renderPrivateDiscussion();
     const writeButton = document.querySelector('#writeButton');
-    writeButton.classList.toggle('hidden', activeIssueIsReadOnly);
+    writeButton.classList.toggle('hidden', !isMember || activeIssueIsReadOnly);
     if (activeIssueIsReadOnly) writeButton.textContent = '읽기 전용 아카이브';
     return;
   }
   const choice = localStorage.getItem(voteKey());
-  const results = document.querySelector('#postVoteResults');
+  const canSeePrivate = Boolean(isMember && choice);
   const discussion = document.querySelector('#discussionSection');
   const message = document.querySelector('#voteMessage');
   const voteButtons = [...document.querySelectorAll('#issueView [data-vote]')];
-  results.classList.toggle('hidden', !choice);
-  discussion.classList.toggle('hidden', !choice);
+  renderDemoResults(canSeePrivate);
+  discussion.classList.toggle('hidden', !canSeePrivate);
   voteButtons.forEach((button) => {
     button.disabled = Boolean(choice);
     if (choice && button.dataset.vote === choice) button.setAttribute('aria-pressed', 'true');
   });
-  message.textContent = choice
-    ? `시연 투표 완료: ${choice}. 결과와 토론이 열렸습니다. 이 선택은 현재 브라우저에만 저장됩니다.`
-    : '투표 후 결과와 토론이 열립니다.';
+  message.textContent = !isMember
+    ? '로그인하면 투표할 수 있습니다. 안건과 양쪽 의견은 공개되어 있습니다.'
+    : choice ? `시연 투표 완료: ${choice}. 결과와 토론이 열렸습니다. 이 선택은 현재 브라우저에만 저장됩니다.` : '투표 후 결과와 토론이 열립니다.';
+  renderPrivateDiscussion();
+}
+
+function renderDemoResults(visible) {
+  const target = document.querySelector('#postVoteResults');
+  target.replaceChildren();
+  target.classList.toggle('hidden', !visible);
+  if (!visible) return;
+  const issue = getIssueData(activeIssueId);
+  const [forPercent, againstPercent, holdPercent] = issue?.demoResults || [0, 0, 0];
+  target.innerHTML = `<div class="result-heading"><strong>시연 집계 (예시)</strong><span>실제 투표 데이터가 아닙니다</span></div><div class="result-bar"><i style="width:${forPercent}%"></i><i style="width:${againstPercent}%"></i><i style="width:${holdPercent}%"></i></div><div class="result-labels"><b>찬성 ${forPercent}%</b><b>반대 ${againstPercent}%</b><b>보류 ${holdPercent}%</b></div><small>실제 결과는 서버와 투표 데이터 연동 후 표시됩니다.</small>`;
 }
 
 function renderPollCards() {
@@ -1711,6 +1766,7 @@ document.querySelector('#demoLoginButton').addEventListener('click', () => {
   localStorage.setItem(authKey, 'true');
   loginDialog.close();
   if (pendingVote) castDemoVote(pendingVote);
+  else renderVoteState();
 });
 document.querySelector('#postDialogClose').addEventListener('click', () => postDialog.close());
 document.querySelector('#postCancel').addEventListener('click', () => postDialog.close());
@@ -1924,13 +1980,23 @@ const rootLocation = `${rootUrl.pathname}${rootUrl.search}${rootUrl.hash}`;
 window.history.replaceState({ siseonRoute: 'home', siseonRoot: true }, '', rootLocation);
 window.history.pushState({ siseonRoute: 'home', siseonExitGuard: true }, '', rootLocation);
 syncSeoMetadata(null, 'none');
-if (initialIssueId && getIssueData(initialIssueId)) openIssue(initialIssueId, 'push');
+if (initialIssueId && getIssueData(initialIssueId)) openIssue(initialIssueId, 'replace');
+else if (initialIssueId?.startsWith('topic-')) openIssue(initialIssueId, 'replace').catch(() => restoreHomeView());
 else if (initialView === 'poll-board') showPollBoard(false);
 else if (initialView === 'archive') showArchiveBoard(false);
 else if (initialView === 'open-talk' || initialView === 'suggestions') showCommunitySubpage(initialView, false);
 else if (initialView === 'announcements') openAnnouncements(null, false);
 else if (initialView === 'admin') showAdminView(false);
 else restoreHomeView();
+
+loadPublishedTopics().then((topics) => {
+  topics.forEach((issue) => { issues[issue.id] = issue; });
+  if (topics.length) {
+    activeIssueIds = [...topics.map((issue) => issue.id), ...activeIssueIds.filter((id) => !topics.some((issue) => issue.id === id))].slice(0, 30);
+    renderPollCards();
+    syncPollCarousel();
+  }
+}).catch((error) => console.warn('공개 안건 동기화 실패:', error.message));
 
 const exitConfirmDialog = document.querySelector('#exitConfirmDialog');
 document.querySelector('#stayOnSiteButton').addEventListener('click', () => exitConfirmDialog.close());
