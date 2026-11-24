@@ -1707,16 +1707,20 @@ document.querySelector('#rejectDraftButton').addEventListener('click', async () 
 document.querySelector('#approveDraftButton').addEventListener('click', async (event) => {
   event.preventDefault();
   document.querySelector('#draftStatus').textContent = '승인할 내용을 확인하고 있습니다…';
-  if (!editorialForm.reportValidity()) {
-    const invalid = [...editorialForm.elements].find((field) => field.willValidate && !field.checkValidity());
-    const label = invalid && (editorialForm.querySelector(`label[for="${invalid.id}"]`)?.textContent?.trim() || invalid.name);
-    if (label) document.querySelector('#draftStatus').textContent = `승인 전 확인: ${label}을(를) 입력하거나 형식을 확인해 주세요.`;
-    invalid?.focus();
-    return;
-  }
-  const draft = saveCurrentDraft();
-  if (!draft || !draft.facts.length || !/^https:\/\//i.test(draft.sourceUrl)) {
-    document.querySelector('#draftStatus').textContent = '사실과 https 출처를 확인해 주세요';
+  const draft = currentDraftFromForm();
+  const requiredFields = [
+    ['카테고리', draft.category], ['투표 제목', draft.title], ['주제 설명', draft.intro],
+    ['출처 이름과 날짜', draft.source], ['찬성 관점', draft.forText], ['반대 관점', draft.againstText]
+  ];
+  const missing = requiredFields.find(([, value]) => !String(value || '').trim());
+  const sourceUrl = safeHttpsUrl(draft.sourceUrl);
+  const factsValid = draft.facts.length >= 2 && draft.facts.length <= 3;
+  if (missing || !sourceUrl || !factsValid) {
+    const reason = missing ? `${missing[0]}을 입력해 주세요.` : !factsValid ? '확인된 사실을 2~3개 입력해 주세요.' : '출처 링크는 https:// 주소여야 합니다.';
+    document.querySelector('#draftStatus').textContent = `승인 전 확인: ${reason}`;
+    window.alert(`안건을 승인하기 전에 확인해 주세요.\n\n${reason}`);
+    const focusName = missing ? ({ '카테고리': 'category', '투표 제목': 'title', '주제 설명': 'intro', '출처 이름과 날짜': 'source', '찬성 관점': 'forText', '반대 관점': 'againstText' })[missing[0]] : (!factsValid ? 'facts' : 'sourceUrl');
+    editorialForm.elements.namedItem(focusName)?.focus();
     return;
   }
   const batchAlternatives = draft.batchId ? editorialState.pending.filter((item) => item.batchId === draft.batchId && item.id !== draft.id) : [];
@@ -1741,7 +1745,7 @@ document.querySelector('#approveDraftButton').addEventListener('click', async (e
   const id = `approved-${Date.now()}`;
   const issue = {
     category: draft.category, title: draft.title, intro: draft.intro, facts: draft.facts,
-    source: draft.source, sourceUrl: draft.sourceUrl,
+    source: draft.source, sourceUrl,
     forArguments: [['찬성 측 주장', draft.forText]], againstArguments: [['반대 측 주장', draft.againstText]],
     cardFor: draft.forText, cardAgainst: draft.againstText, demoResults: [45, 40, 15],
     samplePosts: [

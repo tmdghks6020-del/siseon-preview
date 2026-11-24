@@ -136,13 +136,13 @@
                 <div id="emptyDraftState" class="empty-draft hidden">현재 승인 대기 중인 안건이 없습니다.</div>
                 <form id="editorialForm" class="editorial-form">
                   <label for="draftCategory">카테고리</label><input id="draftCategory" name="category" required />
-                  <label for="draftTitle">투표 제목</label><input id="draftTitle" name="title" maxlength="100" required />
-                  <label for="draftIntro">주제 설명</label><textarea id="draftIntro" name="intro" rows="3" maxlength="400" required></textarea>
+                  <label for="draftTitle">투표 제목</label><input id="draftTitle" name="title" maxlength="240" required />
+                  <label for="draftIntro">주제 설명</label><textarea id="draftIntro" name="intro" rows="3" maxlength="3000" required></textarea>
                   <label for="draftFacts">확인된 사실 <small>한 줄에 한 항목</small></label><textarea id="draftFacts" name="facts" rows="4" required></textarea>
                   <label for="draftSource">출처 이름과 날짜</label><input id="draftSource" name="source" required />
                   <label for="draftSourceUrl">출처 링크</label><input id="draftSourceUrl" name="sourceUrl" type="url" required />
-                  <label for="draftFor">찬성 관점</label><textarea id="draftFor" name="forText" rows="3" maxlength="500" required></textarea>
-                  <label for="draftAgainst">반대 관점</label><textarea id="draftAgainst" name="againstText" rows="3" maxlength="500" required></textarea>
+                  <label for="draftFor">찬성 관점</label><textarea id="draftFor" name="forText" rows="3" maxlength="1400" required></textarea>
+                  <label for="draftAgainst">반대 관점</label><textarea id="draftAgainst" name="againstText" rows="3" maxlength="1400" required></textarea>
                   <div class="admin-actions"><button type="button" class="admin-secondary" id="rejectDraftButton">반려</button><button type="button" class="admin-secondary" id="saveDraftButton">수정 저장</button><button type="button" class="admin-approve" id="approveDraftButton">안건 승인 <span>→</span></button></div>
                 </form>
               </div>
@@ -305,8 +305,8 @@
   </style>
   <script src="ai-candidates.js"></script>
   <script src="supabase-config.js"></script>
-  <script src="app.js?v=approval-fix-20261124"></script>
-  <script type="module" src="content-automation.js?v=approval-fix-20261124"></script>
+  <script src="app.js?v=approval-validation-20261124"></script>
+  <script type="module" src="content-automation.js?v=approval-validation-20261124"></script>
 </body>
 </html>
 
