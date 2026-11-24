@@ -1674,6 +1674,14 @@ document.querySelector('#adminBackButton').addEventListener('click', () => {
   goBackWithinApp();
 });
 editorialForm.addEventListener('input', updateAdminPreview);
+document.querySelector('#approveDraftButton')?.addEventListener('click', () => {
+  const invalid = [...editorialForm.elements].find((field) => field.willValidate && !field.checkValidity());
+  if (invalid) {
+    const label = editorialForm.querySelector(`label[for="${invalid.id}"]`)?.textContent?.trim() || invalid.name || '필수 입력 항목';
+    document.querySelector('#draftStatus').textContent = `승인 전 확인: ${label}을(를) 입력하거나 형식을 확인해 주세요.`;
+    invalid.focus();
+  }
+});
 document.querySelector('#saveDraftButton').addEventListener('click', async () => {
   const draft = saveCurrentDraft();
   if (!draft) return;
@@ -1705,15 +1713,25 @@ editorialForm.addEventListener('submit', async (event) => {
     document.querySelector('#draftStatus').textContent = '사실과 https 출처를 확인해 주세요';
     return;
   }
-  const replacementTitle = issues[activeIssueIds[activeIssueIds.length - 1]]?.title || '기존 투표';
   const batchAlternatives = draft.batchId ? editorialState.pending.filter((item) => item.batchId === draft.batchId && item.id !== draft.id) : [];
   const siblingNote = batchAlternatives.length ? ` 같은 배포의 나머지 후보 ${batchAlternatives.length}개는 미선택 처리됩니다.` : '';
-  if (!window.confirm(`이 안건을 승인해 Supabase 안건 기록에 등록할까요? 화면의 진행 투표 반영과 보관함 이동은 현재 브라우저 시연 데이터로만 적용됩니다. 마지막 투표 “${replacementTitle}”이 이 브라우저에서 보관함으로 이동합니다.${siblingNote}`)) return;
+  if (!window.confirm(`이 안건을 승인해 Supabase 안건 기록에 등록할까요? 승인이 끝나면 승인 상태로 공개 안건 목록에 등록됩니다. 같은 묶음의 나머지 후보는 미선택 처리됩니다.${siblingNote}`)) {
+    document.querySelector('#draftStatus').textContent = '승인이 취소됐습니다.';
+    return;
+  }
   if (!window.SISEON_TOPIC_ADMIN) { document.querySelector('#draftStatus').textContent = 'Supabase 안건 검토 연결을 확인해 주세요.'; return; }
+  const approveButton = document.querySelector('#approveDraftButton');
+  approveButton.disabled = true;
+  document.querySelector('#draftStatus').textContent = 'Supabase에 저장하고 승인하는 중입니다…';
   try {
     await window.SISEON_TOPIC_ADMIN.save(draft);
     await window.SISEON_TOPIC_ADMIN.review(draft.id, 'approve', '운영자 승인');
-  } catch (error) { document.querySelector('#draftStatus').textContent = `승인 실패: ${error.message}`; return; }
+  } catch (error) {
+    document.querySelector('#draftStatus').textContent = `승인 실패: ${error.message}`;
+    window.alert(`안건 승인이 완료되지 않았습니다.\n\n${error.message}`);
+    approveButton.disabled = false;
+    return;
+  }
   const id = `approved-${Date.now()}`;
   const issue = {
     category: draft.category, title: draft.title, intro: draft.intro, facts: draft.facts,

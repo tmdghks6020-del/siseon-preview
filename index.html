@@ -143,7 +143,7 @@
                   <label for="draftSourceUrl">출처 링크</label><input id="draftSourceUrl" name="sourceUrl" type="url" required />
                   <label for="draftFor">찬성 관점</label><textarea id="draftFor" name="forText" rows="3" maxlength="500" required></textarea>
                   <label for="draftAgainst">반대 관점</label><textarea id="draftAgainst" name="againstText" rows="3" maxlength="500" required></textarea>
-                  <div class="admin-actions"><button type="button" class="admin-secondary" id="rejectDraftButton">반려</button><button type="button" class="admin-secondary" id="saveDraftButton">수정 저장</button><button type="submit" class="admin-approve">안건 승인 <span>→</span></button></div>
+                  <div class="admin-actions"><button type="button" class="admin-secondary" id="rejectDraftButton">반려</button><button type="button" class="admin-secondary" id="saveDraftButton">수정 저장</button><button type="submit" class="admin-approve" id="approveDraftButton">안건 승인 <span>→</span></button></div>
                 </form>
               </div>
               <aside class="admin-preview-panel"><span class="section-kicker">PUBLIC PREVIEW</span><h2>이용자 화면 미리보기</h2><article class="admin-preview-card"><span class="category" id="previewCategory"></span><h3 id="previewTitle"></h3><p id="previewIntro"></p><div class="preview-fact"><strong>먼저 확인된 사실</strong><ul id="previewFacts"></ul><a id="previewSource" target="_blank" rel="noopener noreferrer"></a></div><div class="preview-stance for"><strong>찬성 관점</strong><p id="previewFor"></p></div><div class="preview-stance against"><strong>반대 관점</strong><p id="previewAgainst"></p></div></article><p class="preview-guidance">출처를 확인하고 양쪽 주장이 비슷한 수준으로 정리됐는지 살핀 뒤 승인해 주세요.</p><p class="preview-recency" id="previewRecency"></p></aside>
@@ -305,8 +305,8 @@
   </style>
   <script src="ai-candidates.js"></script>
   <script src="supabase-config.js"></script>
-  <script src="app.js?v=topic-seo-20261124"></script>
-  <script type="module" src="content-automation.js?v=topic-seo-20261124"></script>
+  <script src="app.js?v=approval-feedback-20261124"></script>
+  <script type="module" src="content-automation.js?v=approval-feedback-20261124"></script>
 </body>
 </html>
 
