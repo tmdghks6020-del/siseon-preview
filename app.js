@@ -1930,6 +1930,53 @@ document.querySelector('#approveDraftButton').addEventListener('click', async (e
   renderEditorialArchives();
   renderAdminDashboard();
 });
+document.querySelector('#publishDraftNowButton').addEventListener('click', async () => {
+  const draft = currentDraftFromForm();
+  const requiredFields = [
+    ['카테고리', draft.category], ['투표 제목', draft.title], ['주제 설명', draft.intro],
+    ['출처 이름과 날짜', draft.source], ['찬성 관점', draft.forText], ['반대 관점', draft.againstText]
+  ];
+  const missing = requiredFields.find(([, value]) => !String(value || '').trim());
+  const sourceUrl = safeHttpsUrl(draft.sourceUrl);
+  const factsValid = draft.facts.length >= 2 && draft.facts.length <= 3;
+  if (missing || !sourceUrl || !factsValid) {
+    const reason = missing ? `${missing[0]}을 입력해 주세요.` : !factsValid ? '확인된 사실을 2~3개 입력해 주세요.' : '출처 링크는 https:// 주소여야 합니다.';
+    document.querySelector('#draftStatus').textContent = `즉시 등록 전 확인: ${reason}`;
+    window.alert(`안건을 즉시 등록하기 전에 확인해 주세요.\n\n${reason}`);
+    const focusName = missing ? ({ '카테고리': 'category', '투표 제목': 'title', '주제 설명': 'intro', '출처 이름과 날짜': 'source', '찬성 관점': 'forText', '반대 관점': 'againstText' })[missing[0]] : (!factsValid ? 'facts' : 'sourceUrl');
+    editorialForm.elements.namedItem(focusName)?.focus();
+    return;
+  }
+  if (!window.SISEON_TOPIC_ADMIN?.publishNow) {
+    document.querySelector('#draftStatus').textContent = '즉시 등록 기능을 사용하려면 GitHub와 content-admin 함수를 최신 버전으로 배포해 주세요.';
+    return;
+  }
+  if (!window.confirm(`“${draft.title}” 안건을 지금 공개할까요?\n\n이 후보만 즉시 등록되며, 같은 생성 묶음의 다른 후보는 삭제하거나 미선택 처리하지 않고 검토 대기 상태로 남습니다. 즉시 공개 후 30일이 지나면 보관함으로 이동합니다.`)) {
+    document.querySelector('#draftStatus').textContent = '즉시 등록이 취소됐습니다.';
+    return;
+  }
+  const button = document.querySelector('#publishDraftNowButton');
+  button.disabled = true;
+  document.querySelector('#draftStatus').textContent = '안건을 즉시 공개하는 중입니다…';
+  try {
+    await window.SISEON_TOPIC_ADMIN.save(draft);
+    await window.SISEON_TOPIC_ADMIN.publishNow(draft.id);
+    editorialState.history.push({ status: '즉시 등록', draftId: draft.id, title: draft.title, category: draft.category, at: new Date().toISOString() });
+    saveEditorialState();
+    publishedTopicsPromise = null;
+    const topics = await loadPublishedTopics();
+    topics.forEach((issue) => { issues[issue.id] = issue; });
+    activeIssueIds = topics.filter((issue) => issue.status === 'approved').map((issue) => issue.id).slice(0, 30);
+    renderPollCards(); renderPollBoard(); renderEditorialArchives(); syncPollCarousel();
+    document.querySelector('#draftStatus').textContent = `즉시 등록 완료 · “${draft.title}”이 지금 공개되었습니다. 같은 묶음의 다른 후보는 검토 대기에 남아 있습니다.`;
+    document.querySelector('#draftStatus').classList.remove('hidden');
+    window.alert(`안건이 즉시 등록되었습니다.\n\n${draft.title}\n\n같은 묶음의 다른 후보는 삭제되지 않았으며, 검토 대기 상태로 남아 있습니다.`);
+    renderAdminDashboard();
+  } catch (error) {
+    document.querySelector('#draftStatus').textContent = `즉시 등록 실패: ${error.message}`;
+    window.alert(`안건을 즉시 등록하지 못했습니다.\n\n${error.message}`);
+  } finally { button.disabled = false; }
+});
 document.querySelector('#backButton').addEventListener('click', () => {
   goBackWithinApp();
 });

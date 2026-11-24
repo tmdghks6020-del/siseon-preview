@@ -165,6 +165,11 @@ async function init() {
         const candidates = await this.list();
         return { ...result, candidates };
       },
+      async publishNow(id) {
+        const result = await call('topics-publish-now', { id });
+        await this.list();
+        return result;
+      },
       async manage(id, managementAction) {
         return call('topics-manage', { id, managementAction });
       }
