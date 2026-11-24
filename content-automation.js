@@ -75,7 +75,10 @@ function renderContent(item) {
     ${imagePreview}<p class="admin-footnote">출처: ${sourceLinks}</p>${scheduleLabel}${jobState}${publishedLink}<div class="content-auto-actions">${buttons}</div></article>`;
 }
 const integrationMeta = {
-  openai: { title: 'OpenAI', group: 'site', description: 'AI 안건 후보와 플랫폼별 홍보 초안을 생성합니다.', fields: [{ name: 'apiKey', label: 'OpenAI API 키', type: 'password', placeholder: '새 키를 입력하세요. 저장한 키는 다시 표시되지 않습니다.' }] },
+  openai: { title: '1. OpenAI', group: 'site', description: '첫 번째 생성 서비스 · 한도나 장애 발생 시 Gemini로 전환합니다.', fields: [{ name: 'apiKey', label: 'OpenAI API 키', type: 'password', placeholder: '저장한 키는 다시 표시되지 않습니다.' },{name:'model',label:'텍스트 모델 (선택)',type:'text',placeholder:'gpt-6.2-astra'}] },
+  gemini: { title: '2. Google Gemini', group: 'site', description: 'AI Studio 키로 연결합니다. 무료 사용 가능 여부와 한도는 계정·모델별로 다릅니다.', fields: [{name:'apiKey',label:'Gemini API 키',type:'password',placeholder:'Google AI Studio에서 발급한 키'},{name:'model',label:'모델 (선택)',type:'text',placeholder:'gemini-3.5-flash-lite'}] },
+  groq: { title: '3. Groq', group: 'site', description: '제공된 뉴스 자료를 바탕으로 초안을 만듭니다. 이 연결에서는 웹 검색을 수행하지 않습니다.', fields: [{name:'apiKey',label:'Groq API 키',type:'password',placeholder:'Groq Console에서 발급한 키'},{name:'model',label:'모델 (선택)',type:'text',placeholder:'openai/gpt-oss-120b'}] },
+  cloudflare: { title: '4. Cloudflare Workers AI', group: 'site', description: '마지막 텍스트 생성 서비스입니다. Workers AI 권한 토큰과 Account ID가 필요합니다.', fields: [{name:'apiKey',label:'Cloudflare API 토큰',type:'password',placeholder:'Workers AI 사용 권한이 있는 토큰'},{name:'accountId',label:'Cloudflare Account ID',type:'text',placeholder:'32자리 Account ID'},{name:'model',label:'텍스트 모델 (선택)',type:'text',placeholder:'@cf/meta/llama-3.3-70b-instruct-fp8-fast'}] },
   instagram: { title: 'Instagram', group: 'marketing', description: '비즈니스/크리에이터 계정의 게시 권한 토큰과 계정 ID를 연결합니다.', fields: [{ name: 'accessToken', label: '액세스 토큰', type: 'password', placeholder: 'Meta에서 발급한 액세스 토큰' }, { name: 'accountId', label: 'Instagram 계정 ID', type: 'text', placeholder: 'Instagram professional account ID' }] },
   threads: { title: 'Threads', group: 'marketing', description: 'Threads 게시 권한 토큰을 연결합니다. 사용자 ID는 연결 테스트에서 자동으로 확인합니다.', fields: [{ name: 'accessToken', label: '액세스 토큰', type: 'password', placeholder: 'Threads API 액세스 토큰' }, { name: 'accountId', label: 'Threads 사용자 ID (선택)', type: 'text', placeholder: '모르면 비워두세요. 연결 테스트 때 자동 확인합니다.' }] },
   facebook: { title: 'Facebook 페이지', group: 'marketing', description: '게시 권한이 있는 Facebook 페이지 토큰과 페이지 ID를 연결합니다.', fields: [{ name: 'accessToken', label: '페이지 액세스 토큰', type: 'password', placeholder: 'Meta에서 발급한 페이지 액세스 토큰' }, { name: 'accountId', label: 'Facebook 페이지 ID', type: 'text', placeholder: 'Facebook Page ID' }] }
@@ -94,12 +97,12 @@ async function renderApiSettings() {
     const rows = await getIntegrations(); const statusMap = new Map(rows.map((row) => [row.provider, row]));
     const card = (provider) => {
       const meta = integrationMeta[provider]; const row = statusMap.get(provider); const active = row?.status === 'connected';
-      const fields = meta.fields.map((field) => `<label>${esc(field.label)}<input name="${field.name}" type="${field.type}" ${field.name === 'apiKey' ? 'autocomplete="new-password"' : ''} placeholder="${esc(field.placeholder)}" ${provider === 'openai' && field.name === 'apiKey' || provider === 'threads' && field.name === 'accountId' ? '' : 'required'}></label>`).join('');
-      const tested = row?.last_tested_at ? `마지막 확인 ${esc(new Date(row.last_tested_at).toLocaleString('ko-KR'))}` : '아직 연결 테스트를 하지 않았습니다.';
+      const fields = meta.fields.map((field) => `<label>${esc(field.label)}<input name="${field.name}" type="${field.type}" ${field.name === 'apiKey' ? 'autocomplete="new-password"' : ''} placeholder="${esc(field.placeholder)}" ${field.name === 'model' || provider === 'threads' && field.name === 'accountId' ? '' : 'required'}></label>`).join('');
+      const tested = (row?.last_tested_at ? `마지막 확인 ${esc(new Date(row.last_tested_at).toLocaleString('ko-KR'))}` : '아직 연결 테스트를 하지 않았습니다.') + (row?.cooldown_until && Date.parse(row.cooldown_until)>Date.now() ? ` · ${esc(new Date(row.cooldown_until).toLocaleTimeString('ko-KR'))} 이후 재시도` : '');
       const error = row?.status === 'error' && row.last_error ? `<p class="integration-error">${esc(row.last_error)}</p>` : '';
       return `<article class="integration-card"><div class="integration-card-head"><div>${connectionLight(row?.status)}<h3>${esc(meta.title)}</h3></div><span class="integration-state ${active ? 'active' : 'inactive'}">${active ? '활성' : '비활성'}</span></div><p>${esc(meta.description)}</p>${active ? `<small class="integration-account">연결 계정 · ${esc(row.account_label || '연결됨')} · ${tested}</small>` : `<small class="integration-account">${tested}</small>`}${error}<form data-integration-form="${provider}">${fields}<div class="integration-actions"><button class="primary-button" type="submit">저장하고 연결 테스트</button><button type="button" class="table-action" data-integration-action="test" data-provider="${provider}">저장된 정보 테스트</button>${row ? `<button type="button" class="table-action" data-integration-action="disconnect" data-provider="${provider}">연결 해제</button>` : ''}</div><p class="admin-footnote" data-integration-message="${provider}" aria-live="polite"></p></form></article>`;
     };
-    target.innerHTML = `<section class="integration-group"><div class="integration-group-heading"><div><span class="section-kicker">SITE BASICS</span><h2>사이트 기본 설정</h2><p>사이트 데이터 연결과 AI 기능을 관리합니다.</p></div><span class="integration-summary"><i class="connection-light is-on"></i>Supabase 서버 연결됨</span></div>${card('openai')}</section><section class="integration-group"><div class="integration-group-heading"><div><span class="section-kicker">MARKETING & ADS</span><h2>마케팅·광고 채널</h2><p>연결된 채널만 투표 관리에서 홍보 초안 생성 대상으로 선택할 수 있습니다.</p></div></div><div class="integration-grid">${card('instagram')}${card('threads')}${card('facebook')}<article class="integration-card integration-manual"><div class="integration-card-head"><div><span class="connection-light is-manual"></span><h3>네이버 블로그</h3></div><span class="integration-state manual">수동 게시</span></div><p>네이버 공식 블로그 글쓰기 API는 종료되어 직접 자동 게시 연결을 제공할 수 없습니다.</p><small class="integration-account">콘텐츠 자동화에서 원고를 복사해 블로그에 직접 게시할 수 있습니다.</small></article></div></section><p class="integration-security-note">API 키와 액세스 토큰은 Supabase Vault에 암호화해 저장합니다. 이 화면은 저장된 비밀값을 다시 표시하지 않습니다. 연결 테스트는 인증/계정 접근만 확인하며, 실제 게시 권한과 요금·사용 한도는 별도로 적용됩니다.</p>`;
+    target.innerHTML = `<section class="integration-group"><div class="integration-group-heading"><div><span class="section-kicker">SITE BASICS</span><h2>사이트 기본 설정</h2><p>사이트 데이터 연결과 AI 기능을 관리합니다.</p></div><span class="integration-summary"><i class="connection-light is-on"></i>Supabase 서버 연결됨</span></div><p>텍스트 자동 전환: OpenAI → Gemini → Groq → Cloudflare. 미연결 서비스는 건너뛰며, 한도·장애 발생 시 잠시 대기 후 우선순위대로 다시 시도합니다. 이미지 생성은 OpenAI 전용입니다.</p><button type="button" class="table-action" data-integration-action="fallback-test">자동 전환 경로 테스트</button><p id="aiFallbackTestResult" aria-live="polite"></p><div class="integration-grid">${card('openai')}${card('gemini')}${card('groq')}${card('cloudflare')}</div></section><section class="integration-group"><div class="integration-group-heading"><div><span class="section-kicker">MARKETING & ADS</span><h2>마케팅·광고 채널</h2><p>연결된 채널만 투표 관리에서 홍보 초안 생성 대상으로 선택할 수 있습니다.</p></div></div><div class="integration-grid">${card('instagram')}${card('threads')}${card('facebook')}<article class="integration-card integration-manual"><div class="integration-card-head"><div><span class="connection-light is-manual"></span><h3>네이버 블로그</h3></div><span class="integration-state manual">수동 게시</span></div><p>네이버 공식 블로그 글쓰기 API는 종료되어 직접 자동 게시 연결을 제공할 수 없습니다.</p><small class="integration-account">콘텐츠 자동화에서 원고를 복사해 블로그에 직접 게시할 수 있습니다.</small></article></div></section><p class="integration-security-note">API 키와 액세스 토큰은 Supabase Vault에 암호화해 저장합니다. 이 화면은 저장된 비밀값을 다시 표시하지 않습니다. AI 연결 테스트는 짧은 실제 생성 요청이며 사용량이 소모될 수 있습니다. 초록색은 마지막 테스트 성공을 뜻하며 무료 한도나 잔액을 보장하지 않습니다. 마케팅 채널 테스트는 계정 접근만 확인합니다.</p>`;
   } catch (error) { target.innerHTML = `<div class="moderation-guidance"><strong>연결 확인 실패</strong><span>${esc(error.message)}. 새 API 설정 데이터베이스 구조가 아직 배포되지 않았는지 확인해 주세요.</span></div>`; }
 }
 async function loadContents() {
@@ -233,8 +236,8 @@ document.querySelector('#adminPageContent')?.addEventListener('submit', async (e
   if (integrationForm) {
     event.preventDefault();
     const provider = integrationForm.dataset.integrationForm; const formData = new FormData(integrationForm);
-    const credentials = provider === 'openai'
-      ? { apiKey: formData.get('apiKey') }
+    const credentials = ['openai','gemini','groq','cloudflare'].includes(provider)
+      ? { apiKey: formData.get('apiKey'), model: formData.get('model'), accountId: formData.get('accountId') }
       : { accessToken: formData.get('accessToken'), accountId: formData.get('accountId') };
     const status = document.querySelector(`[data-integration-message="${CSS.escape(provider)}"]`);
     const button = event.submitter; button.disabled = true; if (status) status.textContent = '암호화 저장 후 연결을 확인하고 있습니다.';
@@ -272,6 +275,21 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
   if (integrationButton) {
     const { integrationAction: action, provider } = integrationButton.dataset;
     integrationButton.disabled = true;
+    if(action==='fallback-test') {
+      const output=document.querySelector('#aiFallbackTestResult');
+      if(output) output.textContent='연결된 AI를 우선순위대로 실제 호출하고 있습니다…';
+      try {
+        const result=await call('ai-fallback-test');
+        await renderApiSettings();
+        const refreshed=document.querySelector('#aiFallbackTestResult');
+        if(refreshed) refreshed.textContent=`성공: ${result.provider} (${result.model}) · ${result.attempts.map(item=>`${item.provider}: ${item.status}`).join(' → ')}`;
+      } catch(error) {
+        await renderApiSettings();
+        const refreshed=document.querySelector('#aiFallbackTestResult');
+        if(refreshed) refreshed.textContent=error.message;
+      } finally {integrationButton.disabled=false;}
+      return;
+    }
     try {
       if (action === 'disconnect') {
         if (!window.confirm(`${integrationMeta[provider]?.title || provider} 연결을 해제할까요? 저장된 토큰도 삭제됩니다.`)) return;
