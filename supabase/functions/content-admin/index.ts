@@ -313,12 +313,15 @@ async function generateTopics(input: Record<string, any>, actorId: string) {
       created_by: actorId
     };
   });
-  // A successful regeneration replaces the entire candidate table; previous review history
-  // remains in content_audit. Do this only after the new set passed validation.
-  const { error: clearError } = await service.from('topic_candidates').delete().gte('created_at', '1970-01-01T00:00:00.000Z');
-  if (clearError) throw clearError;
+  // Insert the validated batch first so an insert failure cannot erase the existing queue.
   const { data: inserted, error } = await service.from('topic_candidates').insert(rows).select('*');
   if (error) throw error;
+  // Regeneration replaces only older, still-pending drafts. Approved topics and all
+  // archived/previously reviewed records must remain available to the site and archive.
+  const { error: clearError } = await service.from('topic_candidates').delete()
+    .eq('status', 'pending')
+    .neq('batch_id', batchId);
+  if (clearError) throw clearError;
   const { error: auditError } = await service.from('content_audit').insert({ action: 'topic_candidates_generated', content_id: inserted?.[0]?.id || null, actor: actorId, details: { batch_id: batchId, count: inserted?.length || 0, selected_field: selectedField } });
   if (auditError) throw auditError;
   return { candidates: inserted || [], batchId, aiProvider:generation.provider, attempts:generation.attempts, newsSource: 'Bing News RSS', selectionBasis: '생성 시점의 Bing News 주요 기사 페이지 스냅샷' };
