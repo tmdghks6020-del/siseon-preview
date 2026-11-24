@@ -6,6 +6,7 @@ const archiveView = document.querySelector('#archiveView');
 const openTalkView = document.querySelector('#openTalkView');
 const topicSuggestionsView = document.querySelector('#topicSuggestionsView');
 const loginDialog = document.querySelector('#loginDialog');
+const nicknameDialog = document.querySelector('#nicknameDialog');
 const postDialog = document.querySelector('#postDialog');
 const loginButton = document.querySelector('#loginButton');
 const previousStoragePrefix = 'dugyeon:';
@@ -24,9 +25,13 @@ const memberAuth = window.supabase?.createClient && authConfig?.url && authConfi
   ? window.supabase.createClient(authConfig.url, authConfig.publishableKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
 const memberAppRootUrl = new URL('./', document.querySelector('script[src*="app.js"]')?.src || window.location.href).href;
-const isMemberSignedIn = () => Boolean(memberSession?.user);
+const getMemberNickname = () => String(memberSession?.user?.user_metadata?.nickname || '').trim();
+const isMemberSignedIn = () => Boolean(memberSession?.user && getMemberNickname());
 function refreshMemberControls() {
-  if (loginButton) loginButton.textContent = isMemberSignedIn() ? '로그아웃' : '로그인';
+  if (loginButton) loginButton.textContent = isMemberSignedIn() ? '로그아웃' : memberSession?.user ? '닉네임 설정' : '로그인';
+}
+function openNicknameSetup() {
+  if (nicknameDialog && !nicknameDialog.open) nicknameDialog.showModal();
 }
 function syncMemberAuth(session) {
   memberSession = session;
@@ -34,6 +39,12 @@ function syncMemberAuth(session) {
   renderCommunityAccess();
   if (activeIssueId) renderVoteState();
   if (session?.user) {
+    if (loginDialog?.open) loginDialog.close();
+    if (!getMemberNickname()) {
+      openNicknameSetup();
+      return;
+    }
+    if (nicknameDialog?.open) nicknameDialog.close();
     const returnPath = sessionStorage.getItem('siseon:auth-return-path');
     if (returnPath) {
       sessionStorage.removeItem('siseon:auth-return-path');
@@ -44,14 +55,16 @@ function syncMemberAuth(session) {
         return;
       }
     }
-    if (loginDialog?.open) loginDialog.close();
+  } else if (nicknameDialog?.open) {
+    nicknameDialog.close();
   }
 }
 
 function resumePendingAuthVote() {
-  const requestedVote = sessionStorage.getItem('siseon:pending-auth-vote');
+  const requestedVote = sessionStorage.getItem('siseon:pending-auth-vote') || pendingVote;
   if (!requestedVote || !isMemberSignedIn() || !activeIssueId) return;
   sessionStorage.removeItem('siseon:pending-auth-vote');
+  pendingVote = null;
   if (!localStorage.getItem(voteKey())) castDemoVote(requestedVote);
 }
 if (memberAuth) {
@@ -775,6 +788,7 @@ async function openIssue(issueId, historyMode = 'push') {
 
 function openLogin(afterLogin = null) {
   pendingMemberAction = typeof afterLogin === 'function' ? afterLogin : null;
+  if (memberSession?.user && !isMemberSignedIn()) { openNicknameSetup(); return; }
   if (!loginDialog.open) loginDialog.showModal();
 }
 
@@ -1729,7 +1743,11 @@ document.querySelector('#backButton').addEventListener('click', () => {
   goBackWithinApp();
 });
 loginButton.addEventListener('click', () => {
-  if (!isMemberSignedIn()) { openLogin(); return; }
+  if (!isMemberSignedIn()) {
+    if (memberSession?.user) openNicknameSetup();
+    else openLogin();
+    return;
+  }
   memberAuth?.auth.signOut().then(({ error }) => {
     if (error) { showUserActionToast(`로그아웃하지 못했습니다: ${error.message}`); return; }
     pendingVote = null; pendingMemberAction = null;
@@ -1788,6 +1806,40 @@ document.querySelector('#kakaoLoginButton').addEventListener('click', async (eve
     sessionStorage.removeItem('siseon:pending-auth-vote');
     sessionStorage.removeItem('siseon:auth-return-path');
   }
+});
+document.querySelector('#nicknameDialogClose').addEventListener('click', () => nicknameDialog.close());
+document.querySelector('#nicknameForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const input = document.querySelector('#memberNickname');
+  const message = document.querySelector('#nicknameMessage');
+  const button = event.currentTarget.querySelector('[type="submit"]');
+  const nickname = input.value.normalize('NFC').trim();
+  if ([...nickname].length < 2 || [...nickname].length > 16 || /[\u0000-\u001f\u007f]/.test(nickname)) {
+    message.textContent = '닉네임은 공백을 제외하고 2~16자로 입력해 주세요.';
+    return;
+  }
+  if (!memberAuth || !memberSession?.user) {
+    message.textContent = '로그인 상태를 확인할 수 없습니다. 카카오 로그인을 다시 해주세요.';
+    return;
+  }
+  button.disabled = true;
+  message.textContent = '저장하고 있습니다.';
+  const { data, error } = await memberAuth.auth.updateUser({ data: { nickname } });
+  button.disabled = false;
+  if (error) {
+    message.textContent = `닉네임을 저장하지 못했습니다: ${error.message}`;
+    return;
+  }
+  memberSession = { ...memberSession, user: data.user };
+  syncMemberAuth(memberSession);
+  nicknameDialog.close();
+  refreshMemberControls();
+  renderCommunityAccess();
+  if (activeIssueId) renderVoteState();
+  if (isMemberSignedIn() && activeIssueId) resumePendingAuthVote();
+  const resumeAction = pendingMemberAction;
+  pendingMemberAction = null;
+  if (resumeAction) resumeAction();
 });
 document.querySelector('#postDialogClose').addEventListener('click', () => postDialog.close());
 document.querySelector('#postCancel').addEventListener('click', () => postDialog.close());
@@ -1881,7 +1933,7 @@ document.querySelector('#postForm').addEventListener('submit', (event) => {
     title,
     content,
     sourceUrl: safeHttpsUrl(document.querySelector('#postSourceUrl').value),
-    author: '시연 사용자',
+    author: getMemberNickname(),
     initialComments: []
   };
   const savedPosts = readLocalList(savedPostsKey(activeIssueId));
