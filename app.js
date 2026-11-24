@@ -107,6 +107,33 @@ let activeIssueIsReadOnly = false;
 let pendingVote = null;
 let pendingReportContext = null;
 
+function escapeSiteText(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+}
+
+function splitReadablePoints(value) {
+  const normalized = String(value ?? '').replace(/\r/g, '').trim();
+  if (!normalized) return [];
+  const marked = normalized.replace(/(^|\s)([①②③④⑤⑥⑦⑧⑨⑩]|\d{1,2}[.)、])\s*/gu, '\n$2 ');
+  const lines = marked.split(/\n+/).map((line) => line.trim().replace(/^(?:[①②③④⑤⑥⑦⑧⑨⑩]|\d{1,2}[.)、]|[-•])\s*/u, '').trim()).filter(Boolean);
+  return lines.length ? lines : [normalized];
+}
+
+function renderReadablePoints(value, className = 'readable-points') {
+  const points = splitReadablePoints(value);
+  if (!points.length) return '';
+  return `<ul class="${className}">${points.map((point) => `<li>${escapeSiteText(point)}</li>`).join('')}</ul>`;
+}
+
+function renderReadableParagraphs(value, className) {
+  const text = String(value ?? '').replace(/\r/g, '').trim();
+  if (!text) return `<div class="${className}"></div>`;
+  const chunks = text.includes('\n')
+    ? text.split(/\n+/).map((part) => part.trim()).filter(Boolean)
+    : text.split(/(?<=[.!?])\s+(?=[가-힣A-Z0-9“"'‘(])/u).map((part) => part.trim()).filter(Boolean);
+  return `<div class="${className}">${chunks.map((part) => `<p>${escapeSiteText(part)}</p>`).join('')}</div>`;
+}
+
 function routeUrl(route, params = {}) {
   const url = new URL(window.location.href);
   url.searchParams.delete('issue');
@@ -1062,11 +1089,11 @@ function renderIssueContent() {
   const archivedDate = archiveRecord?.archivedAt ? new Date(archiveRecord.archivedAt).toLocaleDateString('ko-KR') : '';
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
   const facts = issue.facts.map((fact) => `<li>${escapeHtml(fact)}</li>`).join('');
-  const argumentCards = (items, side, title) => `<article class="argument-card ${side}"><h3><span>${side === 'for' ? '+' : '−'}</span> ${escapeHtml(title)}</h3><div class="argument-body">${items.map(([heading, text], index) => `<b>0${index + 1}. ${escapeHtml(heading)}</b><p>${escapeHtml(text)}</p>`).join('')}<small>각 항목은 토론용 관점이며 사실은 출처에서 확인해 주세요.</small></div></article>`;
+  const argumentCards = (items, side, title) => `<article class="argument-card ${side}"><h3><span>${side === 'for' ? '+' : '−'}</span> ${escapeHtml(title)}</h3><div class="argument-body"><ol class="argument-points">${items.flatMap(([heading, text]) => splitReadablePoints(text).map((point) => ({ heading, point }))).map(({ heading, point }) => `<li>${heading && heading !== '주요 논거' ? `<b>${escapeHtml(heading)}</b>` : ''}<p>${escapeHtml(point)}</p></li>`).join('')}</ol><small>각 항목은 토론용 관점이며, 사실은 출처에서 확인해 주세요.</small></div></article>`;
   const detail = document.querySelector('#issueView .issue-content');
   detail.innerHTML = `
     <div class="issue-meta"><span class="category">${escapeHtml(issue.category)}</span><span>${activeIssueIsArchived ? `${activeIssueIsReadOnly ? '지난 투표 · 읽기 전용' : '지난 투표 · 댓글 가능'}${archivedDate ? ` · 보관 ${archivedDate}` : ''}` : `투표 마감 ${formatPollDeadline(issue)}`}</span><span>·</span><span>읽는 시간 3분</span></div>
-    <h1>${escapeHtml(issue.title)}</h1><p class="issue-intro">${escapeHtml(issue.intro)}</p>
+    <h1>${escapeHtml(issue.title)}</h1>${renderReadableParagraphs(issue.intro, 'issue-intro')}
     <section class="facts-card"><div class="card-eyebrow">먼저 확인된 사실</div><h2>공통으로 확인할 내용</h2><ul>${facts}</ul><p>확인 가능한 사실과 각 입장의 해석을 구분합니다. <a class="candidate-source" href="${escapeHtml(issue.sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(issue.source)} ↗</a></p></section>
     <h2 class="subhead">양쪽 주장을 비교해보세요</h2><div class="arguments">${argumentCards(issue.forArguments, 'for', '찬성 측 주장')}${argumentCards(issue.againstArguments, 'against', '반대 측 주장')}</div>
     <section class="vote-card"><div class="card-eyebrow">${activeIssueIsArchived ? 'ARCHIVE RESULTS' : 'YOUR VOICE'}</div><h2>${activeIssueIsArchived ? '지난 투표 결과' : '당신의 생각은 어떤가요?'}</h2><p>${activeIssueIsArchived ? '투표가 종료된 주제의 결과와 토론 기록입니다.' : '이 이슈에 한 번 투표할 수 있어요. 투표 전에는 결과와 토론 글을 볼 수 없습니다.'}</p><div class="vote-options ${activeIssueIsArchived ? 'hidden' : ''}"><button data-vote="찬성" class="for"><span>+</span> 찬성</button><button data-vote="반대" class="against"><span>−</span> 반대</button><button data-vote="판단 보류" class="hold"><span>…</span> 판단 보류</button></div><div id="voteMessage" class="vote-message">${activeIssueIsArchived ? '지난 투표 결과와 토론을 보고 있습니다.' : '투표 후 결과와 토론이 열립니다.'}</div><div id="postVoteResults" class="hidden"></div></section>
@@ -1160,10 +1187,10 @@ function renderPollCards() {
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
   list.replaceChildren(...entries.map(([id, issue], index) => {
     const card = document.createElement('article');
-    const forText = issue.cardFor || issue.forArguments[0][1];
-    const againstText = issue.cardAgainst || issue.againstArguments[0][1];
+    const forText = issue.cardFor || issue.forArguments.map((item) => item[1]).join('\n');
+    const againstText = issue.cardAgainst || issue.againstArguments.map((item) => item[1]).join('\n');
     card.className = 'poll-card';
-    card.innerHTML = `<div class="poll-top"><span class="live-label"><i></i> 진행 중인 투표 <b>${String(index + 1).padStart(2, '0')} / ${entries.length}</b></span><span class="deadline" data-poll-deadline="${escapeHtml(id)}">${formatPollDeadline(issue)}</span></div><div class="poll-body"><div class="poll-meta"><span class="category">${escapeHtml(issue.category)}</span><span>읽는 시간 3분</span></div><h3>${escapeHtml(issue.title)}</h3><p class="poll-summary">${escapeHtml(issue.intro)}</p><div class="stance-grid"><div class="stance for"><div class="stance-head"><span class="stance-symbol">+</span><b>찬성 의견</b></div><span>${escapeHtml(forText)}</span></div><div class="stance against"><div class="stance-head"><span class="stance-symbol">−</span><b>반대 의견</b></div><span>${escapeHtml(againstText)}</span></div></div><div class="poll-footer"><span class="participant-count">주제 출처 · ${escapeHtml(issue.source.split(' · ')[0])}</span><a class="primary-button" data-open-issue="${escapeHtml(id)}" href="?issue=${encodeURIComponent(id)}">투표하고 이야기 보기 <span>→</span></a></div></div>`;
+    card.innerHTML = `<div class="poll-top"><span class="live-label"><i></i> 진행 중인 투표 <b>${String(index + 1).padStart(2, '0')} / ${entries.length}</b></span><span class="deadline" data-poll-deadline="${escapeHtml(id)}">${formatPollDeadline(issue)}</span></div><div class="poll-body"><div class="poll-meta"><span class="category">${escapeHtml(issue.category)}</span><span>읽는 시간 3분</span></div><h3>${escapeHtml(issue.title)}</h3>${renderReadableParagraphs(issue.intro, 'poll-summary')}<div class="stance-grid"><div class="stance for"><div class="stance-head"><span class="stance-symbol">+</span><b>찬성 의견</b></div>${renderReadablePoints(forText, 'stance-points')}</div><div class="stance against"><div class="stance-head"><span class="stance-symbol">−</span><b>반대 의견</b></div>${renderReadablePoints(againstText, 'stance-points')}</div></div><div class="poll-footer"><span class="participant-count">주제 출처 · ${escapeHtml(issue.source.split(' · ')[0])}</span><a class="primary-button" data-open-issue="${escapeHtml(id)}" href="?issue=${encodeURIComponent(id)}">투표하고 이야기 보기 <span>→</span></a></div></div>`;
     return card;
   }));
   if (countBadge) countBadge.textContent = `${entries.length}개`;
