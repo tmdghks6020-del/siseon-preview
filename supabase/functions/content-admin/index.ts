@@ -134,6 +134,80 @@ function xmlValue(item: string, tag: string) {
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
 }
 
+function isBingHost(hostname: string) {
+  const host = hostname.toLowerCase().replace(/\.$/, '');
+  return host === 'bing.com' || host.endsWith('.bing.com');
+}
+
+function parsePublisherHttps(value: string, base?: URL) {
+  try {
+    const url = new URL(value, base);
+    const host = url.hostname.toLowerCase().replace(/\.$/, '');
+    // Keep only public HTTPS publisher domains. Reject Bing's own click-through,
+    // IP-literal and local-network targets instead of storing a tracking URL.
+    if (url.protocol !== 'https:' || isBingHost(host) || !host.includes('.') || host.includes(':')
+      || /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host)
+      || /^(localhost|.*\.localhost|.*\.local|.*\.internal|.*\.test)$/.test(host)) return '';
+    url.hash = '';
+    return url.href;
+  } catch { return ''; }
+}
+
+function publisherFromBingParams(url: URL) {
+  for (const key of ['url', 'u', 'target', 'r', 'redirect']) {
+    const candidate = url.searchParams.get(key);
+    if (!candidate) continue;
+    const resolved = parsePublisherHttps(candidate);
+    if (resolved) return resolved;
+  }
+  return '';
+}
+
+async function resolveNewsPublisherUrl(raw: string) {
+  let current: URL;
+  try { current = new URL(raw); } catch { return ''; }
+  if (current.protocol === 'https:' && !isBingHost(current.hostname)) return parsePublisherHttps(current.href);
+  if (!isBingHost(current.hostname)) return '';
+  if (current.protocol === 'http:') current.protocol = 'https:';
+
+  for (let hop = 0; hop < 5; hop++) {
+    const fromParams = publisherFromBingParams(current);
+    if (fromParams) return fromParams;
+    let response: Response;
+    try {
+      response = await fetch(current, {
+        method: 'GET', redirect: 'manual',
+        headers: { accept: 'text/html,application/xhtml+xml,*/*;q=0.8', range: 'bytes=0-0', 'user-agent': 'Mozilla/5.0 (compatible; SiseonNewsLinkResolver/1.0)' },
+        signal: AbortSignal.timeout(5000)
+      });
+    } catch { return ''; }
+    const location = response.headers.get('location');
+    try { await response.body?.cancel(); } catch { /* response may already be closed */ }
+    if (!location) return '';
+    let next: URL;
+    try { next = new URL(location, current); } catch { return ''; }
+    const publisherUrl = parsePublisherHttps(next.href);
+    if (publisherUrl) return publisherUrl;
+    if (!isBingHost(next.hostname) || !['http:', 'https:'].includes(next.protocol)) return '';
+    if (next.protocol === 'http:') next.protocol = 'https:';
+    current = next;
+  }
+  return '';
+}
+
+async function resolveHeadlinePublisherUrls(articles: Array<{ title: string; url: string; publishedAt: string; source: string; description: string }>) {
+  const resolved: typeof articles = [];
+  // Keep network pressure on Bing modest; feed entries that cannot be resolved
+  // to an HTTPS publisher URL are excluded from the editorial input.
+  for (let start = 0; start < articles.length; start += 6) {
+    const chunk = await Promise.all(articles.slice(start, start + 6).map(async (article) => ({
+      ...article, url: await resolveNewsPublisherUrl(article.url)
+    })));
+    resolved.push(...chunk.filter((article) => Boolean(article.url)));
+  }
+  return resolved;
+}
+
 async function bingNewsFeed(query: string, topStories = false) {
   const makeUrl = (useTopCategory: boolean) => {
     const url = new URL('https://www.bing.com/news/search');
@@ -175,8 +249,9 @@ async function generateTopics(input: Record<string, any>, actorId: string) {
   const selectedField = clean(input.topicField || '전체 분야', 60);
   if (selectedField !== '전체 분야' && !topicFields.includes(selectedField)) throw new Error('선택한 분야가 올바르지 않습니다.');
   const existingTitles = (Array.isArray(input.existingTitles) ? input.existingTitles : []).map((title: unknown) => clean(title, 160)).filter(Boolean).slice(0, 80);
-  const headlines = await bingNewsFeed('주요 기사', true);
-  if (!headlines.length) throw new Error('생성 시점의 Bing News 주요 기사 페이지에서 기사를 찾지 못했습니다. 잠시 후 다시 시도해 주세요.');
+  const feedHeadlines = await bingNewsFeed('주요 기사', true);
+  const headlines = await resolveHeadlinePublisherUrls(feedHeadlines);
+  if (!headlines.length) throw new Error('Bing 뉴스 링크를 실제 언론사 HTTPS 주소로 확인하지 못했습니다. 후보를 저장하지 않았습니다. 잠시 후 다시 시도해 주세요.');
   // Treat the feed as a snapshot of the page at click time. Bing may include
   // rolling top stories whose publication dates are not all from today.
   const headlineBrief = headlines.slice(0, 30).map((article, index) => ({ id: index + 1, title: article.title, source: article.source, publishedAt: article.publishedAt, url: article.url, description: article.description }));
