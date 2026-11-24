@@ -269,11 +269,13 @@ async function generateTopics(input: Record<string, any>, actorId: string) {
 - 인물 비방, 확인되지 않은 루머, 개인 의료·법률 조언, 투자 매수·매도 조언은 제외한다.
 - 서로 다른 분야와 쟁점을 우선하고, 기존 공개 제목과 중복하지 않는다: ${JSON.stringify(existingTitles)}
 - 후보마다 사실 2~3개를 작성한다. 후보별 출처 이름·날짜·URL은 headlineRefs의 첫 기사를 서버가 입력 메타데이터에서 채우므로 JSON에서 만들지 않는다. 확인 불가능한 정보와 숫자는 제외한다.
-- 찬성·반대는 각각 같은 개수의 핵심 논거와 비슷한 구체성·길이로 쓴다. 한쪽을 약하게 만들거나 AI가 결론을 정하지 않는다.
+- 제목은 한 문장으로 짧고 구체적으로 쓴다. intro는 배경과 실제 쟁점을 쉬운 말로 2~3문장 안에 정리하고, 한 문장을 길게 이어 쓰지 않는다.
+- forText와 againstText는 각각 핵심 논거 2~3개를 문자열 안에서 줄바꿈으로 구분한다. 각 줄은 '- '로 시작하고 논거 하나만 담으며, 항목당 1~2문장으로 쓴다. '① … ② … ③ …'처럼 한 문단에 항목을 이어 붙이지 않는다.
+- 찬성·반대는 항목 수, 구체성, 길이를 비슷하게 맞춘다. 한쪽을 약하게 만들거나 AI가 결론을 정하지 않는다. 전문용어는 쉬운 말로 풀어 쓴다.
 - trendingReason에는 생성 시점에 이 이슈를 주요 기사로 다룬 근거를 기사 제목과 연결해 적는다.
 
 다음 형식의 JSON 객체만 반환한다. candidates는 1개 이상 5개 이하다:
-{"candidates":[{"category":"분야","title":"토론 질문형 제목","intro":"쟁점 설명","trendingReason":"오늘 주목되는 근거","facts":["확인된 사실"],"forText":"찬성 논거","againstText":"반대 논거","headlineRefs":[1,2],"primarySources":[{"title":"자료 제목","publisher":"기관·저널","url":"입력 자료나 실제 검색 인용에서 확인한 HTTPS URL","supports":"확인할 사실 또는 논거"}]}]}`;
+{"candidates":[{"category":"분야","title":"짧고 구체적인 토론 질문형 제목","intro":"쟁점 배경을 1~2문장으로 소개하고, 다음 문장에서 토론할 질문을 분명히 적는다.","trendingReason":"생성 시점 주요 기사와 연결된 주목 근거","facts":["확인된 사실"],"forText":"- 찬성 논거 하나를 설명한다.\n- 다른 찬성 논거를 설명한다.","againstText":"- 반대 논거 하나를 설명한다.\n- 다른 반대 논거를 설명한다.","headlineRefs":[1,2],"primarySources":[{"title":"자료 제목","publisher":"기관·저널","url":"입력 자료나 실제 검색 인용에서 확인한 HTTPS URL","supports":"확인할 사실 또는 논거"}]}]}`;
   const generation = await runAi({prompt, instructions: `${TOPIC_GUIDELINES}\n추가 반환 항목: 각 candidates 항목에 isHypothetical(boolean), editorialReview(string)를 반드시 포함한다.`,search:true,maxTokens:10000}, (value:any)=>{
     if(!Array.isArray(value.candidates) || value.candidates.length<1 || value.candidates.length>5) throw new Error('후보 개수 오류');
     for(const item of value.candidates) {
