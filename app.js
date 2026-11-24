@@ -1167,7 +1167,7 @@ document.querySelector('#generateTopicCandidatesButton')?.addEventListener('clic
   const status = document.querySelector('#topicGenerationStatus');
   const api = window.SISEON_TOPIC_ADMIN;
   if (!api) { status.textContent = '관리자 Supabase 연결을 먼저 확인해 주세요.'; return; }
-  if (!window.confirm('현재 AI 안건 후보 표를 비우고 새 후보를 생성할까요? 근거가 충분한 후보 1~5개를 만들며, 생성 성공 시 기존 후보 행은 실제 생성된 후보로 교체됩니다. 이전 승인·반려 감사 기록은 별도 운영 기록에 남습니다.')) return;
+  if (!window.confirm('새 AI 안건 후보 1~5개를 생성할까요? 새 후보 생성 후 기존 검토 대기 후보만 정리됩니다. 이미 승인되었거나 보관된 투표는 유지됩니다.')) return;
   const topicField = document.querySelector('#topicGenerationField').value;
   button.disabled = true; status.textContent = '생성 시점의 Bing News 주요 기사 페이지를 확인해 근거가 충분한 후보를 만들고 있습니다.';
   try {
@@ -1581,13 +1581,29 @@ document.querySelector('#approveDraftButton').addEventListener('click', async (e
     forArguments: [['찬성 측 주장', draft.forText]], againstArguments: [['반대 측 주장', draft.againstText]],
     cardFor: draft.forText, cardAgainst: draft.againstText, demoResults: [0, 0, 0], topicUuid: draft.id, status: 'approved', samplePosts: []
   };
-  const replacedId = activeIssueIds.pop();
-  const replacedIssue = issues[replacedId];
-  editorialState.archived.unshift({ id: replacedId, title: replacedIssue.title, category: replacedIssue.category, archivedAt: new Date().toISOString() });
+  let archivedIssue = null;
+  if (activeIssueIds.length >= 30) {
+    const oldestId = activeIssueIds[activeIssueIds.length - 1];
+    const oldestIssue = issues[oldestId];
+    const oldestUuid = getPersistedTopicUuid(oldestId);
+    if (oldestIssue && oldestUuid) {
+      try {
+        await window.SISEON_TOPIC_ADMIN.manage(oldestUuid, 'archive');
+        archivedIssue = { ...oldestIssue, id: oldestId, status: 'archived', archivedAt: new Date().toISOString() };
+        issues[oldestId] = archivedIssue;
+        publishedArchiveTopics = [archivedIssue, ...publishedArchiveTopics.filter((item) => item.id !== oldestId)];
+        editorialState.archived.unshift({ id: oldestId, title: oldestIssue.title, category: oldestIssue.category, archivedAt: archivedIssue.archivedAt });
+        activeIssueIds = activeIssueIds.filter((activeId) => activeId !== oldestId);
+      } catch (error) {
+        console.error('기존 투표 자동 보관 실패:', error);
+        window.alert('새 안건은 승인됐지만, 진행 투표가 30개여서 기존 투표를 자동 보관하지 못했습니다. 기존 투표를 유지했으며 투표 관리에서 직접 보관해 주세요.');
+      }
+    }
+  }
   issues[id] = issue;
-  activeIssueIds.unshift(id);
+  activeIssueIds = [id, ...activeIssueIds.filter((activeId) => activeId !== id)];
   editorialState.approved.push({ id, issue });
-  editorialState.history.push({ status: '승인', draftId: draft.id, title: draft.title, category: draft.category, at: new Date().toISOString(), replacedTitle: replacedIssue.title });
+  editorialState.history.push({ status: '승인', draftId: draft.id, title: draft.title, category: draft.category, at: new Date().toISOString(), ...(archivedIssue ? { replacedTitle: archivedIssue.title } : {}) });
   editorialState.pending = editorialState.pending.filter((item) => item.id !== draft.id && (!draft.batchId || item.batchId !== draft.batchId));
   batchAlternatives.forEach((alternative) => editorialState.history.push({ status: '미선택', draftId: alternative.id, title: alternative.title, category: alternative.category, at: new Date().toISOString(), selectedTitle: draft.title }));
   activeDraftId = editorialState.pending[0]?.id || null;
