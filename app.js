@@ -1326,7 +1326,8 @@ function renderReviewQueue() {
 window.addEventListener('siseon-topic-candidates-loaded', (event) => {
   const candidates = Array.isArray(event.detail?.candidates) ? event.detail.candidates : [];
   editorialState.pending = candidates;
-  activeDraftId = candidates[0]?.id || null;
+  const selectedDraftStillPending = candidates.some((draft) => draft.id === activeDraftId);
+  activeDraftId = selectedDraftStillPending ? activeDraftId : (candidates[0]?.id || null);
   saveEditorialState();
   if (currentAdminPage === 'reviews') renderReviewQueue();
 });
@@ -1674,22 +1675,20 @@ document.querySelector('#adminBackButton').addEventListener('click', () => {
   goBackWithinApp();
 });
 editorialForm.addEventListener('input', updateAdminPreview);
-document.querySelector('#approveDraftButton')?.addEventListener('click', () => {
-  const invalid = [...editorialForm.elements].find((field) => field.willValidate && !field.checkValidity());
-  if (invalid) {
-    const label = editorialForm.querySelector(`label[for="${invalid.id}"]`)?.textContent?.trim() || invalid.name || '필수 입력 항목';
-    document.querySelector('#draftStatus').textContent = `승인 전 확인: ${label}을(를) 입력하거나 형식을 확인해 주세요.`;
-    invalid.focus();
-  }
-});
 document.querySelector('#saveDraftButton').addEventListener('click', async () => {
   const draft = saveCurrentDraft();
   if (!draft) return;
   if (!window.SISEON_TOPIC_ADMIN) { document.querySelector('#draftStatus').textContent = 'Supabase 안건 검토 연결을 확인해 주세요.'; return; }
+  const saveButton = document.querySelector('#saveDraftButton');
+  saveButton.disabled = true;
+  document.querySelector('#draftStatus').textContent = '수정 내용을 Supabase에 저장하고 있습니다…';
   try {
     await window.SISEON_TOPIC_ADMIN.save(draft);
     document.querySelector('#draftStatus').textContent = '수정 내용이 Supabase에 저장됐습니다.';
-  } catch (error) { document.querySelector('#draftStatus').textContent = `저장 실패: ${error.message}`; }
+  } catch (error) {
+    document.querySelector('#draftStatus').textContent = `저장 실패: ${error.message}`;
+    window.alert(`안건 수정 내용을 저장하지 못했습니다.\n\n${error.message}`);
+  } finally { saveButton.disabled = false; }
 });
 document.querySelector('#rejectDraftButton').addEventListener('click', async () => {
   const draft = saveCurrentDraft();
@@ -1705,9 +1704,16 @@ document.querySelector('#rejectDraftButton').addEventListener('click', async () 
   saveEditorialState();
   renderAdminDashboard();
 });
-editorialForm.addEventListener('submit', async (event) => {
+document.querySelector('#approveDraftButton').addEventListener('click', async (event) => {
   event.preventDefault();
-  if (!editorialForm.reportValidity()) return;
+  document.querySelector('#draftStatus').textContent = '승인할 내용을 확인하고 있습니다…';
+  if (!editorialForm.reportValidity()) {
+    const invalid = [...editorialForm.elements].find((field) => field.willValidate && !field.checkValidity());
+    const label = invalid && (editorialForm.querySelector(`label[for="${invalid.id}"]`)?.textContent?.trim() || invalid.name);
+    if (label) document.querySelector('#draftStatus').textContent = `승인 전 확인: ${label}을(를) 입력하거나 형식을 확인해 주세요.`;
+    invalid?.focus();
+    return;
+  }
   const draft = saveCurrentDraft();
   if (!draft || !draft.facts.length || !/^https:\/\//i.test(draft.sourceUrl)) {
     document.querySelector('#draftStatus').textContent = '사실과 https 출처를 확인해 주세요';
