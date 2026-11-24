@@ -264,13 +264,14 @@ async function handle(request: Request) {
   if (action === 'topics-public') {
     try {
       const { data, error } = await service.from('topic_candidates')
-        .select('id,category,title,intro,facts,source,source_date,source_url,for_text,against_text,decided_at,data_signals')
-        .eq('status', 'approved').order('decided_at', { ascending: false }).limit(100);
+        .select('id,category,title,intro,facts,source,source_date,source_url,for_text,against_text,decided_at,archived_at,status,data_signals')
+        .in('status', ['approved', 'archived']).order('decided_at', { ascending: false }).limit(100);
       if (error) throw error;
       const topics = (data || []).map((row: any) => ({
         id: row.id, category: row.category, title: row.title, intro: row.intro, facts: row.facts,
         source: row.source, source_date: row.source_date, source_url: row.source_url,
         for_text: row.for_text, against_text: row.against_text, decided_at: row.decided_at,
+        status: row.status, archived_at: row.archived_at,
         coverage_sources: (Array.isArray(row.data_signals?.coverageSources) ? row.data_signals.coverageSources : []).filter((item: any) => item && /^https:\/\//i.test(item.url || '')).slice(0, 5).map((item: any) => ({ title: clean(item.title, 300), publisher: clean(item.source, 150), publishedAt: clean(item.publishedAt, 80), url: item.url })),
         fact_sources: (Array.isArray(row.data_signals?.primarySources) ? row.data_signals.primarySources : []).filter((item: any) => item && /^https:\/\//i.test(item.url || '')).slice(0, 5).map((item: any) => ({ title: clean(item.title, 300), publisher: clean(item.publisher, 150), supports: clean(item.supports, 500), url: item.url }))
       }));
@@ -301,6 +302,26 @@ async function handle(request: Request) {
       }).eq('id', body.id).eq('status', 'pending').select('id').maybeSingle();
       if (error || !data) throw error || new Error('검토 대기 안건을 찾지 못했습니다.');
       return respond({ ok: true });
+    }
+    if (action === 'topics-manage') {
+      const id = clean(body.id, 64);
+      const managementAction = body.managementAction === 'archive' || body.managementAction === 'delete' ? body.managementAction : null;
+      if (!/^[0-9a-f-]{36}$/i.test(id)) return fail('안건 식별자가 올바르지 않습니다.');
+      if (!managementAction) return fail('보관 또는 삭제를 선택해 주세요.');
+      const now = new Date().toISOString();
+      const nextStatus = managementAction === 'archive' ? 'archived' : 'deleted';
+      const update = managementAction === 'archive'
+        ? { status: nextStatus, archived_at: now }
+        : { status: nextStatus, archived_at: null };
+      const { data, error } = await service.from('topic_candidates').update(update)
+        .eq('id', id).eq('status', 'approved').select('id,title,category').maybeSingle();
+      if (error || !data) throw error || new Error('현재 공개 중인 안건을 찾지 못했습니다. 이미 처리된 안건인지 새로고침해 주세요.');
+      const { error: auditError } = await service.from('content_audit').insert({
+        action: managementAction === 'archive' ? 'topic_archived' : 'topic_deleted',
+        content_id: data.id, actor: actor.id, details: { title: data.title, category: data.category }
+      });
+      if (auditError) throw auditError;
+      return respond({ ok: true, status: nextStatus });
     }
     if (action === 'topics-review') {
       const decision = body.decision === 'approve' ? 'approved' : body.decision === 'reject' ? 'rejected' : null;
