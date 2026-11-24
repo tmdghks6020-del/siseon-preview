@@ -1,0 +1,5 @@
+[functions.content-admin]
+verify_jwt = false
+
+[functions.publish-scheduled]
+verify_jwt = false
