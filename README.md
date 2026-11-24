@@ -9,11 +9,11 @@
 ## 들어 있는 동작
 
 - 진행 중 투표와 지난 투표 아카이브 화면
-- 여러 분야의 진행 중 투표 30개와 개별 상세 화면
+- 매일 오전 07:00 공개되고 30일 뒤 보관되는 안건 투표와 개별 상세 화면
 - 좌우 화살표로 넘기는 투표 캐러셀 (넓은 화면 2개, 모바일 1개씩)
 - 후보 등록 단계 없이 편집팀이 선정한 30개 주제 바로 편성
 - 관리자 편성 화면에서 안건 검토·수정·미리보기·승인·반려
-- 승인 시 새 투표를 바로 공개하고 현재 목록의 마지막 투표를 시연 보관 처리해 30개 유지
+- 승인 안건을 다음 공개일 오전 07:00에 예약 공개하고, 기존 안건은 30일 만료 뒤 보관
 - 승인·반려 기록을 관리자 화면에 표시
 - 관리자 대시보드와 투표·회원·신고·문의·제휴·운영 기록 상세 메뉴
 - 회원 검색, 역할 변경, 경고·7일 정지·정지 해제와 게시글 숨김·삭제·복구 시연
@@ -32,15 +32,15 @@
 - 투표별 토론을 찬성·반대 글, 질문·자료, 정정 요청으로 분류하고 자료 링크 표시
 - 관리자에서 제안 검토, 익명 자유토론 글과 투표별 이용자 작성 글을 별도 관리
 
-시연 로그인, 관리자 모드, 안건 승인·공지·제재 기록, 신고·문의·제휴 접수, 익명 게시물·댓글·주제 제안, 관심 표시와 투표 선택은 브라우저 저장소에만 기록되고 서버로 전송되지 않습니다. 익명 별칭은 이 브라우저에서만 계정 시연값과 연결되며 실제 인증이나 신뢰할 수 있는 제재 식별 수단이 아닙니다. 관리자 회원·신고·문의 수치는 예시 데이터이며 실제 이용자 데이터가 아닙니다. 관리자 시연 진입은 실제 인증이 아니므로 공개 서비스의 권한 보호로 사용할 수 없습니다. 실제 서비스에는 서버 기반 관리자 인증·역할 권한·감사 이력, 1인 1표, 게시물·댓글 저장, 접수 알림, 예약 발행, 30일 후 자동 보관, 6개월 후 읽기 전용 전환이 필요합니다.
+시연 로그인, 회원·신고·문의 관리 예시, 투표와 글·댓글 일부는 브라우저 저장소 기반입니다. 익명 별칭과 로컬 저장값은 실제 인증이나 신뢰할 수 있는 제재·중복 투표 방지 수단이 아닙니다. AI 안건 후보와 공개 안건의 승인·예약·보관 정보는 Supabase에서 관리하도록 구성되어 있지만, 실제 운영 전에는 회원 투표와 게시물·댓글도 서버 저장·권한 검사로 전환해야 합니다.
 
 주제 편성 기준과 이슈 수명 주기는 [CONTENT_GOVERNANCE.md](CONTENT_GOVERNANCE.md)에 정리했습니다.
 
 ## AI 안건 검토와 생성
 
-AI 안건은 사이트 배포 때 자동 생성되지 않습니다. 관리자가 **AI 안건 검토 → 최신 이슈 후보 1~5개 생성**을 누르면, 그 시점에 Bing News 주요 기사 RSS에서 읽힌 기사 목록을 바탕으로 근거가 충분한 찬반 토론 후보를 1~5개 만듭니다. 게시일을 오늘로 한정하거나 최근 7일만 조회하지 않습니다. 각 후보는 현재 페이지 기사 ID를 근거로 연결하고, 사실·출처와 찬반 균형을 운영자가 확인합니다. 선거 관련 주제는 제외하지만 선거와 무관한 정책·정치 토론은 다룰 수 있습니다. 생성 성공 시 `topic_candidates` 행을 실제 생성된 후보 수만큼 새 후보로 교체합니다. Bing RSS는 별도 키가 필요 없는 비공식 피드이므로 차단되거나 형식이 바뀌면 생성이 실패할 수 있습니다.
+AI 안건은 사이트 배포 때 자동 생성되지 않습니다. 관리자가 **AI 안건 검토 → 최신 이슈 후보 1~5개 생성**을 누르면, 그 시점에 Bing News 주요 기사 RSS에서 읽힌 기사 목록을 바탕으로 근거가 충분한 찬반 토론 후보를 1~5개 만듭니다. 게시일을 오늘로 한정하거나 최근 7일만 조회하지 않습니다. 각 후보는 현재 페이지 기사 ID를 근거로 연결하고, 사실·출처와 찬반 균형을 운영자가 확인합니다. 선거 관련 주제는 제외하지만 선거와 무관한 정책·정치 토론은 다룰 수 있습니다. 새 생성은 이전의 미승인 대기 후보를 교체하고, 승인·보관된 안건은 보존합니다. Bing RSS는 별도 키가 필요 없는 비공식 피드이므로 차단되거나 형식이 바뀌면 생성이 실패할 수 있습니다.
 
-Supabase SQL Editor에서 `supabase/migrations/202611230002_topic_candidate_review.sql`과 `supabase/migrations/202611230003_api_integrations.sql`을 한 번 실행하고, `content-admin` Edge Function을 배포해야 합니다. OpenAI 키는 기존 Edge Function Secret `OPENAI_API_KEY` 또는 관리자 페이지의 **API 설정**에서 연결할 수 있습니다. 별도 네이버 API나 Bing API 키는 요구하지 않습니다. Bing RSS는 비공식 피드이므로 접근 차단이나 응답 형식 변경이 발생하면 생성이 실패할 수 있습니다. 이 경우 관리자 화면에 HTTP 상태, 응답 형식, 읽은 기사 항목 수가 표시됩니다.
+Supabase SQL Editor에는 `supabase/migrations/`의 후보 검토, API 연동, AI 전환, 투표 관리, 주제 생명주기 마이그레이션을 순서대로 한 번 적용해야 합니다. 그 뒤 `content-admin` Edge Function을 배포합니다. OpenAI 키는 기존 Edge Function Secret `OPENAI_API_KEY` 또는 관리자 페이지의 **API 설정**에서 연결할 수 있습니다. 별도 네이버 API나 Bing API 키는 요구하지 않습니다. Bing RSS는 비공식 피드이므로 접근 차단이나 응답 형식 변경이 발생하면 생성이 실패할 수 있습니다. 이 경우 관리자 화면에 HTTP 상태, 응답 형식, 읽은 기사 항목 수가 표시됩니다.
 
 네이버 크리에이터 어드바이저의 채널별 유입 검색어는 이 기능에서 사용하지 않습니다. 공개 투표 게시판은 아직 정적 사이트의 브라우저 시연 데이터이므로, 승인 기록은 Supabase에 남지만 실제 모든 방문자에게 같은 투표로 게시되지는 않습니다.
 ## AI 홍보 콘텐츠와 외부 채널 발행
@@ -53,9 +53,18 @@ Supabase SQL Editor에서 `supabase/migrations/202611230002_topic_candidate_revi
 2. `supabase-config.js`에 Project URL과 **publishable key**를 입력합니다. 이 값은 브라우저 공개용입니다. `secret` 키나 예전 `service_role` 키를 이 파일에 넣으면 안 됩니다.
 3. Supabase CLI에서 `supabase login`과 `supabase link --project-ref YOUR_PROJECT_REF`를 실행하고 `supabase db push`로 `supabase/migrations/`의 테이블, RLS, 승인 검증 함수를 적용합니다.
 4. Supabase Authentication에서 `user_roles` 테이블에 운영자 사용자 UID와 `admin` 역할을 SQL Editor로 등록합니다: `insert into public.user_roles(user_id, role) values ('AUTH_USER_UUID', 'admin');` 이 표는 브라우저에서 읽거나 수정할 수 없고 Edge Function만 관리자 역할을 확인합니다.
-5. 예약 게시를 사용하는 경우 `SISEON_SITE_URL`, `META_GRAPH_VERSION`, `SCHEDULER_SECRET`을 Supabase Edge Function secrets에 등록하고, `publish-scheduled` 함수를 배포합니다. Meta 채널별 액세스 토큰·계정 ID와 OpenAI API 키는 운영자 로그인 후 **API 설정**에서 등록할 수 있습니다. `OPENAI_API_KEY`는 화면 연결 전의 대체 설정으로 계속 읽을 수 있습니다. Supabase server secret key는 런타임 기본 변수로 읽으며 공개 파일이나 GitHub Pages에 올리지 않습니다.
-6. `supabase functions deploy content-admin`과 `supabase functions deploy publish-scheduled`로 함수를 배포합니다. `publish-scheduled`는 사용자 JWT 대신 `SCHEDULER_SECRET`을 검사하도록 설정되어 있습니다.
-7. Supabase Database의 `pg_cron`, `pg_net`, `supabase_vault` 확장을 켜고 [cron.sql](supabase/cron.sql)의 프로젝트 URL·키·스케줄 비밀값을 Vault에 저장한 뒤 5분 예약 작업을 등록합니다. GitHub Pages는 `index.html`, `app.js`, `content-automation.js`, `supabase-config.js`, `styles.css`, `assets/`를 포함해 갱신합니다. Pages와 Supabase 함수는 각각 배포해야 합니다.
+5. 예약 작업이 필요하면 `SCHEDULER_SECRET`을 Supabase Edge Function secrets에 등록합니다. Meta 채널별 액세스 토큰·계정 ID와 AI API 키는 운영자 로그인 후 **API 설정**에 저장할 수 있습니다. Supabase server secret key는 런타임에서만 읽고 공개 파일이나 GitHub Pages에 올리지 않습니다.
+6. `supabase functions deploy content-admin`과 필요한 경우 `supabase functions deploy publish-scheduled`로 함수를 배포합니다. `content-admin`과 `publish-scheduled`는 `SCHEDULER_SECRET`을 검사합니다.
+7. Supabase Database의 `pg_cron`, `pg_net`, `supabase_vault` 확장을 켭니다. [cron.sql](supabase/cron.sql)은 외부 채널 예약 게시를 5분 간격으로 실행하고, [topic-lifecycle-cron.sql](supabase/topic-lifecycle-cron.sql)은 투표 주제 생명주기를 매분 점검합니다. 두 작업은 Vault의 `siseon_project_url`, `siseon_publishable_key`, `siseon_scheduler_secret` 값과 Edge Function Secret `SCHEDULER_SECRET`을 사용합니다.
+8. GitHub Pages에는 `index.html`, `app.js`, `content-automation.js`, `supabase-config.js`, `styles.css`, `scripts/generate-seo-files.mjs`, `assets/`를 반영합니다. Pages, Supabase 함수, SQL 예약 설정은 각각 적용해야 합니다.
+
+### 투표 안건 일일 예약 흐름
+
+- 관리자가 승인하면 다음 공개 가능 날짜 오전 07:00에 공개되도록 예약합니다. 같은 제목의 승인·보관 안건은 중복 승인할 수 없습니다.
+- 매일 23:01부터 그 한국 날짜에 후보가 한 번도 생성되지 않았으면 AI 후보 생성을 시도합니다. 뉴스 피드 또는 AI 제공자에 문제가 있으면 실패할 수 있습니다.
+- 다음 날 00:01에는 전날 생성된 미승인 후보 중 중복을 제외해 무작위로 하나를 승인하고, 그날 오전 07:00에 공개 예약합니다. 당일 공개 예약이 이미 있으면 자동 선택을 건너뜁니다.
+- 공개일을 첫날로 계산해 30번째 날 23:59:59 KST에 투표를 마감·보관합니다. 보관 뒤 90일간 댓글을 허용하고 이후 읽기 전용으로 표시합니다. Cron은 매분 만료를 반영하고 공개 안건 API는 만료 시각이 지난 안건을 진행 목록에서 제외합니다.
+- GitHub Pages SEO workflow는 매시간 실행되므로 새 안건의 정적 검색 페이지는 07:00 공개 직후가 아닌 다음 시간 실행에서 생성됩니다.
 
 ### 운영 흐름과 플랫폼 제약
 
@@ -88,7 +97,20 @@ Edge Functions·Cron의 실제 사용 가능 범위와 비용은 Supabase 요금
 1. D:\gpt에서 `npx.cmd supabase functions deploy content-admin`을 실행합니다. 공유 지침 파일도 함께 번들링됩니다.
 2. GitHub의 `index.html`, `app.js`, `content-automation.js`를 갱신합니다. 소스 보관용으로 README와 `supabase/functions/content-admin/index.ts`, `supabase/functions/_shared/topic-guidelines.ts`도 저장소에 반영합니다.
 3. Pages 배포 완료 후 새로고침하고 관리자 로그인 → AI 안건 검토 → 후보 작성 지침 확인에서 `2026-11-24-v2`를 확인합니다. 생성 후보 카드에서 ‘이슈 확인 보도’와 ‘사실·논거 확인 자료’를 각각 열어 검토합니다.
-4. ‘기존 안건 비우고 새 후보 생성’을 실행하면 새 지침으로 생성합니다. 이 작업은 기존 대기 후보를 교체하며 OpenAI 사용료가 발생합니다.
+
+## 승인 안건별 공개 SEO 페이지
+
+승인 안건은 `content-admin`의 `topics-public` 읽기 전용 작업으로 검색엔진에 공개할 수 있는 제목·설명·사실·찬반 관점만 제공합니다. 보관 안건도 읽기 전용 페이지를 유지하며, 투표 집계·이용자 글·댓글·운영 메모는 공개 응답에 포함하지 않습니다. Pages workflow는 공개 목록으로 `/topics/{제목-slug}-{안건 UUID}/` 정적 HTML과 `sitemap.xml`을 만듭니다. 관리자 투표 관리에서는 승인 안건을 보관함으로 옮기거나 공개 목록에서 삭제할 수 있습니다. 새 승인 안건의 브라우저 ID도 Supabase UUID로 통일해 같은 안건이 두 번 보이지 않게 합니다.
+
+적용 및 갱신:
+1. Supabase SQL Editor에서 `supabase/migrations/202611240002_poll_management_actions.sql` 전체를 실행합니다. 안건 상태에 보관·삭제를 추가하고 보관 시각을 저장합니다.
+2. `D:\gpt`에서 `npx.cmd supabase functions deploy content-admin`을 실행합니다. SQL이 적용된 다음 함수를 배포해야 합니다.
+3. GitHub 저장소 최상위의 `index.html`, `app.js`, `content-automation.js`, `scripts/generate-seo-files.mjs`를 갱신합니다. `supabase/functions/content-admin/index.ts`, 새 migration 파일도 소스 보관을 위해 저장소에 올립니다. 공개 주소의 투표 화면에서 오래된 중복 항목은 새 앱 파일이 로드될 때 Supabase UUID 기준으로 정리됩니다.
+4. Pages workflow는 코드가 바뀔 때 실행되고, 이후 매시간 승인 안건을 다시 읽어 검색 페이지와 사이트맵을 갱신합니다. 즉시 반영하려면 GitHub Actions에서 `Deploy GitHub Pages`를 열어 **Run workflow**를 실행합니다.
+5. 배포 뒤 사이트맵에 생성된 `/topics/제목-slug-안건UUID/` 페이지를 열어 로그인 없이 안건과 찬반 의견이 보이는지 확인합니다. 원문 기사의 링크를 열 수 있는지도 확인하고, 페이지 안에 투표 결과나 댓글이 들어가지 않는지 확인합니다.
+
+Google·Naver의 실제 검색 결과 반영은 크롤링과 색인에 시간이 더 걸릴 수 있습니다. 사이트맵 제출 및 Search Console/네이버 서치어드바이저 등록도 별도로 해야 하며, 이 구현은 색인을 보장하지 않습니다. 현재 회원 로그인과 투표 데이터는 프로토타입 단계이므로 실서비스 수준의 투표 비밀 보장은 서버 인증·권한 검사와 서버 집계로 별도 구현해야 합니다.
+4. ‘기존 안건 비우고 새 후보 생성’을 실행하면 새 지침으로 생성합니다. 이 작업은 기존 미승인 대기 후보를 교체하며 OpenAI 사용료가 발생합니다. 이미 승인·보관된 안건은 유지됩니다.
 
 ## AI 서비스 자동 전환 적용 2026 11 24
 
