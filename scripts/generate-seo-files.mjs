@@ -36,7 +36,7 @@ const seoRoot = path.join(root, 'topics');
 await rm(seoRoot, { recursive: true, force: true });
 await mkdir(seoRoot, { recursive: true });
 
-for (const topic of topics) {
+for (const topic of topics.filter((item) => item.status === 'approved' || item.status === 'archived')) {
   const id = String(topic.id || '');
   if (!/^[0-9a-f-]{36}$/i.test(id) || !topic.title || !topic.intro) continue;
   const topicPath = `topics/${slugFor(topic.title)}-${id}/`;
