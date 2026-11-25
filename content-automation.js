@@ -6,7 +6,7 @@ const platformNames = { instagram: '인스타그램', threads: '스레드', face
 let supabase; let currentUser = null; let isAdmin = false; let contents = [];
 function topicDraftFromRow(row) {
   return {
-    id: row.id, batchId: row.batch_id, category: row.category, title: row.title, intro: row.intro,
+    voteOptions: row.vote_options || ['찬성','반대','판단 보류'], id: row.id, batchId: row.batch_id, category: row.category, title: row.title, intro: row.intro,
     trendingReason: row.trending_reason, facts: row.facts || [], source: row.source, sourceUrl: row.source_url,
     sourceDate: row.source_date, forText: row.for_text, againstText: row.against_text,
     searchKeywords: row.search_keywords || [], dataSignals: row.data_signals || {},
@@ -150,11 +150,11 @@ async function init() {
       async generate(payload) {
         const result = await call('topics-generate', payload);
         const candidates = await this.list();
-        return { ...result, candidates };
+        return { ...result, generatedCount: result.candidates?.length || 0, candidates };
       },
       async save(draft) {
         await call('topics-save', {
-          id: draft.id, category: draft.category, title: draft.title, intro: draft.intro,
+          id: draft.id, voteOptions: draft.voteOptions, category: draft.category, title: draft.title, intro: draft.intro,
           trendingReason: draft.trendingReason, facts: draft.facts, source: draft.source,
           sourceDate: draft.sourceDate, sourceUrl: draft.sourceUrl, forText: draft.forText, againstText: draft.againstText
         });
@@ -359,3 +359,4 @@ window.addEventListener('siseon-admin-authenticated', () => {
 });
 
 init();
+

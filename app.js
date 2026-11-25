@@ -866,7 +866,7 @@ function loadPublishedTopics() {
     const { topics = [] } = await response.json();
     const mapped = topics.map((row) => {
       const id = `topic-${row.id}`;
-      return { id, category: row.category, title: row.title, intro: row.intro, facts: row.facts || [], source: row.source, sourceUrl: row.source_url,
+      return { id, voteOptions:row.vote_options || ['찬성','반대','판단 보류'], isHypothetical:row.is_hypothetical, generationMode:row.generation_mode, category: row.category, title: row.title, intro: row.intro, facts: row.facts || [], source: row.source, sourceUrl: row.source_url,
         forArguments: [['주요 논거', row.for_text]], againstArguments: [['주요 논거', row.against_text]], cardFor: row.for_text, cardAgainst: row.against_text,
         demoResults: [0, 0, 0], samplePosts: [], publishedAt: row.published_at || row.decided_at, expiresAt: row.expires_at, topicUuid: row.id, status: row.status, archivedAt: row.archived_at };
     });
@@ -969,7 +969,7 @@ async function castMemberVote(choice) {
 function stanceInfo(choice) {
   if (choice === '찬성') return { className: 'for', label: '찬성 의견', icon: '+' };
   if (choice === '반대') return { className: 'against', label: '반대 의견', icon: '−' };
-  return { className: 'hold', label: '판단 보류', icon: '…' };
+  return { className: 'hold', label: escapeSiteText(choice || '판단 보류'), icon: '…' };
 }
 
 function opinionTag(choice) {
@@ -1096,16 +1096,18 @@ function renderIssueContent() {
   const archiveRecord = activeIssueIsArchived ? getIssueArchiveRecord(activeIssueId) : null;
   const archivedDate = archiveRecord?.archivedAt ? new Date(archiveRecord.archivedAt).toLocaleDateString('ko-KR') : '';
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+  const options = issue.voteOptions || ['찬성','반대','판단 보류'];
+  const standard = JSON.stringify(options) === JSON.stringify(['찬성','반대','판단 보류']);
   const facts = issue.facts.map((fact) => `<li>${escapeHtml(fact)}</li>`).join('');
   const argumentCards = (items, side, title) => `<article class="argument-card ${side}"><h3><span>${side === 'for' ? '+' : '−'}</span> ${escapeHtml(title)}</h3><div class="argument-body"><ol class="argument-points">${items.flatMap(([heading, text]) => splitReadablePoints(text).map((point) => ({ heading, point }))).map(({ heading, point }) => `<li>${heading && heading !== '주요 논거' ? `<b>${escapeHtml(heading)}</b>` : ''}<p>${escapeHtml(point)}</p></li>`).join('')}</ol><small>각 항목은 토론용 관점이며, 사실은 출처에서 확인해 주세요.</small></div></article>`;
   const detail = document.querySelector('#issueView .issue-content');
   detail.innerHTML = `
     <div class="issue-meta"><span class="category">${escapeHtml(issue.category)}</span><span>${activeIssueIsArchived ? `${activeIssueIsReadOnly ? '지난 투표 · 읽기 전용' : '지난 투표 · 댓글 가능'}${archivedDate ? ` · 보관 ${archivedDate}` : ''}` : `투표 마감 ${formatPollDeadline(issue)}`}</span><span>·</span><span>읽는 시간 3분</span></div>
     <h1>${escapeHtml(issue.title)}</h1>${renderReadableParagraphs(issue.intro, 'issue-intro')}
-    <section class="facts-card"><div class="card-eyebrow">먼저 확인된 사실</div><h2>공통으로 확인할 내용</h2><ul>${facts}</ul><p>확인 가능한 사실과 각 입장의 해석을 구분합니다. <a class="candidate-source" href="${escapeHtml(issue.sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(issue.source)} ↗</a></p></section>
-    <h2 class="subhead">양쪽 주장을 비교해보세요</h2><div class="arguments">${argumentCards(issue.forArguments, 'for', '찬성 측 주장')}${argumentCards(issue.againstArguments, 'against', '반대 측 주장')}</div>
-    <section class="vote-card"><div class="card-eyebrow">${activeIssueIsArchived ? 'ARCHIVE RESULTS' : 'YOUR VOICE'}</div><h2>${activeIssueIsArchived ? '지난 투표 결과' : '당신의 생각은 어떤가요?'}</h2><p>${activeIssueIsArchived ? '투표가 종료된 주제의 결과와 토론 기록입니다.' : '이 이슈에 한 번 투표할 수 있어요. 투표 전에는 결과와 토론 글을 볼 수 없습니다.'}</p><div class="vote-options ${activeIssueIsArchived ? 'hidden' : ''}"><button data-vote="찬성" class="for"><span>+</span> 찬성</button><button data-vote="반대" class="against"><span>−</span> 반대</button><button data-vote="판단 보류" class="hold"><span>…</span> 판단 보류</button></div><div id="voteMessage" class="vote-message">${activeIssueIsArchived ? '지난 투표 결과와 토론을 보고 있습니다.' : '투표 후 결과와 토론이 열립니다.'}</div><div id="postVoteResults" class="hidden"></div></section>
-    <section class="discussion hidden" id="discussionSection"><div class="discussion-title"><div class="card-eyebrow">COMMUNITY VOICES</div><h2>이 이슈의 토론</h2><p class="discussion-demo-note">입장 글과 질문·자료·정정 요청을 나누어 살펴보세요.</p></div><div class="tabs"><button class="active" data-discussion-filter="all">전체</button><button data-discussion-filter="for">찬성 입장</button><button data-discussion-filter="against">반대 입장</button><button data-discussion-filter="question">질문 · 자료</button><button data-discussion-filter="correction">정정 요청</button></div><div id="discussionPosts" class="discussion-post-list"></div><button class="primary-button write-button" id="writeButton">의견 남기기 <span>→</span></button></section>`;
+    <section class="facts-card"><div class="card-eyebrow">${issue.isHypothetical ? '가상 상황 · 선택의 조건' : '배경과 확인할 내용'}</div><h2>공통으로 확인할 내용</h2><ul>${facts}</ul><p>확인 가능한 사실과 각 입장의 해석을 구분합니다. ${safeHttpsUrl(issue.sourceUrl) ? `<a class="candidate-source" href="${escapeHtml(safeHttpsUrl(issue.sourceUrl))}" target="_blank" rel="noopener noreferrer">${escapeHtml(issue.source)} ↗</a>` : escapeHtml(issue.source)}</p></section>
+    <h2 class="subhead">선택 전에 생각해 볼 관점</h2><div class="arguments">${argumentCards(issue.forArguments, 'for', standard ? '찬성 측 주장' : '고려할 관점 1')}${argumentCards(issue.againstArguments, 'against', standard ? '반대 측 주장' : '고려할 관점 2')}</div>
+    <section class="vote-card"><div class="card-eyebrow">${activeIssueIsArchived ? 'ARCHIVE RESULTS' : 'YOUR VOICE'}</div><h2>${activeIssueIsArchived ? '지난 투표 결과' : '당신의 생각은 어떤가요?'}</h2><p>${activeIssueIsArchived ? '투표가 종료된 주제의 결과와 토론 기록입니다.' : '이 이슈에 한 번 투표할 수 있어요. 투표 전에는 결과와 토론 글을 볼 수 없습니다.'}</p><div class="vote-options ${activeIssueIsArchived ? 'hidden' : ''}">${options.map((option,index)=>`<button data-vote="${escapeHtml(option)}" class="${index === 0 ? 'for' : index === 1 ? 'against' : 'hold'}"><span>${index+1}</span> ${escapeHtml(option)}</button>`).join('')}</div><div id="voteMessage" class="vote-message">${activeIssueIsArchived ? '지난 투표 결과와 토론을 보고 있습니다.' : '투표 후 결과와 토론이 열립니다.'}</div><div id="postVoteResults" class="hidden"></div></section>
+    <section class="discussion hidden" id="discussionSection"><div class="discussion-title"><div class="card-eyebrow">COMMUNITY VOICES</div><h2>이 이슈의 토론</h2><p class="discussion-demo-note">입장 글과 질문·자료·정정 요청을 나누어 살펴보세요.</p></div><div class="tabs"><button class="active" data-discussion-filter="all">전체</button>${standard ? '<button data-discussion-filter="for">찬성 입장</button><button data-discussion-filter="against">반대 입장</button>' : ''}<button data-discussion-filter="question">질문 · 자료</button><button data-discussion-filter="correction">정정 요청</button></div><div id="discussionPosts" class="discussion-post-list"></div><button class="primary-button write-button" id="writeButton">의견 남기기 <span>→</span></button></section>`;
   renderPrivateDiscussion();
 }
 
@@ -1183,8 +1185,9 @@ function renderDemoResults(visible) {
   const counts = Object.fromEntries(rows.map((row) => [row.choice, Number(row.vote_count)]));
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
   const percent = (choice) => total ? Math.round((counts[choice] || 0) * 100 / total) : 0;
-  const forPercent = percent('찬성'); const againstPercent = percent('반대'); const holdPercent = total ? Math.max(0, 100 - forPercent - againstPercent) : 0;
-  target.innerHTML = `<div class="result-heading"><strong>현재 결과</strong><span>시선 참여자 ${total}명</span></div><div class="result-bar"><i style="width:${forPercent}%"></i><i style="width:${againstPercent}%"></i><i style="width:${holdPercent}%"></i></div><div class="result-labels"><b>찬성 ${forPercent}%</b><b>반대 ${againstPercent}%</b><b>보류 ${holdPercent}%</b></div><small>이 결과는 시선에 참여한 회원의 투표 집계입니다.</small>`;
+  const options = getIssueData(activeIssueId)?.voteOptions || ['찬성','반대','판단 보류'];
+  target.innerHTML = `<div class="result-heading"><strong>현재 결과</strong><span>참여자 ${total}명</span></div>${options.map(option=>`<div class="option-result"><div><b>${escapeSiteText(option)}</b><span>${counts[option] || 0}표 · ${percent(option)}%</span></div><progress max="100" value="${percent(option)}" aria-label="${escapeSiteText(option)}"></progress></div>`).join('')}<small>시선 참여자의 의견이며 전체 여론을 대표하지 않습니다. 반올림으로 합계가 100%와 다를 수 있습니다.</small>`;
+
 }
 
 function renderPollCards() {
@@ -1367,6 +1370,7 @@ function currentDraftFromForm() {
   const savedMetadata = editorialState.pending.find((draft) => draft.id === activeDraftId) || {};
   return {
     ...savedMetadata,
+    voteOptions: [...editorialForm.querySelectorAll('[name="voteOption"]')].map(input => input.value.normalize('NFC').trim()),
     id: activeDraftId || editorialState.pending[0]?.id || `editorial-${Date.now()}`,
     category: values.category.trim(), title: values.title.trim(), intro: values.intro.trim(),
     facts: values.facts.split('\n').map((fact) => fact.trim()).filter(Boolean),
@@ -1440,10 +1444,10 @@ function renderReviewQueue() {
     const batch = draft.batchId ? editorialState.pending.filter((item) => item.batchId === draft.batchId) : [];
     const batchPosition = batch.findIndex((item) => item.id === draft.id) + 1;
     const batchLabel = batch.length ? `이번 생성 후보 ${batch.length}개 중 ${batchPosition}번` : 'AI 검토 안건';
-    const recency = draft.trendingReason ? `<small>최근 이슈 근거 · ${escapeAdminHtml(draft.trendingReason)}</small>` : '';
-    const selectedField = draft.selectedField ? `<small>후보 생성 분야 · ${escapeAdminHtml(draft.selectedField)}</small>` : '';
+    const recency = draft.trendingReason ? `<small>주제 선정 이유 · ${escapeAdminHtml(draft.trendingReason)}</small>` : '';
+    const selectedField = (draft.dataSignals?.manualReviewRequired ? '<small>관리자 직접 승인 필요 · 자동 승인 제외</small>' : '') + (draft.selectedField ? `<small>후보 생성 분야 · ${escapeAdminHtml(draft.selectedField)}</small>` : '');
     const headlines = draft.dataSignals?.coverageSources || draft.dataSignals?.relatedHeadlines || [];
-    const bingSummary = headlines.length ? `<small>이슈 확인 보도 · ${headlines.length}건 (보도 수는 사실이나 여론의 증거가 아님)</small>` : '';
+    const bingSummary = headlines.length ? `<small>참고 소재 · ${headlines.length}건 (게시글·보도 수는 여론의 증거가 아님)</small>` : '';
     const bingLinks = headlines.slice(0, 5).map((article) => safeHttpsUrl(article.url) ? `<a href="${escapeAdminHtml(safeHttpsUrl(article.url))}" target="_blank" rel="noopener noreferrer">${escapeAdminHtml(article.source || '기사')} ↗</a>` : '').filter(Boolean).join(' · ');
     const primarySources = (draft.dataSignals?.primarySources || []).map((source) => safeHttpsUrl(source.url) ? `<a href="${escapeAdminHtml(safeHttpsUrl(source.url))}" target="_blank" rel="noopener noreferrer">${escapeAdminHtml(source.publisher || '자료')}: ${escapeAdminHtml(source.title || '원자료')} ↗</a>` : '').filter(Boolean).join(' · ');
     const reviewNote = [draft.dataSignals?.aiProvider ? `생성 AI: ${draft.dataSignals.aiProvider} · ${draft.dataSignals.aiModel || ''}` : '', draft.dataSignals?.editorialReview].filter(Boolean).join('\n');
@@ -1466,6 +1470,7 @@ function renderReviewQueue() {
       const field = editorialForm.elements.namedItem(name);
       field.value = name === 'facts' ? draft.facts.join('\n') : draft[name] || '';
     });
+    renderDraftVoteOptions(draft.voteOptions);
     updateAdminPreview();
   }
   renderEditorialHistory();
@@ -1491,12 +1496,12 @@ document.querySelector('#generateTopicCandidatesButton')?.addEventListener('clic
   const status = document.querySelector('#topicGenerationStatus');
   const api = window.SISEON_TOPIC_ADMIN;
   if (!api) { status.textContent = '관리자 Supabase 연결을 먼저 확인해 주세요.'; return; }
-  if (!window.confirm('새 AI 안건 후보 1~5개를 생성할까요? 새 후보 생성 후 기존 검토 대기 후보만 정리됩니다. 이미 승인되었거나 보관된 투표는 유지됩니다.')) return;
+  if (!window.confirm('새 후보 1~5개를 추가할까요? 기존 후보와 공개 투표는 유지됩니다.')) return;
   const topicField = document.querySelector('#topicGenerationField').value;
-  button.disabled = true; status.textContent = '생성 시점의 Bing News 주요 기사 페이지를 확인해 근거가 충분한 후보를 만들고 있습니다.';
+  button.disabled = true; status.textContent = '선택한 방식으로 질문과 선택지를 만들고 있습니다…';
   try {
-    const result = await api.generate({ topicField, existingTitles: activeIssueIds.map((id) => issues[id]?.title).filter(Boolean) });
-    status.textContent = `현재 Bing News 주요 기사 페이지를 근거로 후보 ${result.candidates.length}개를 저장했습니다. 출처와 찬반 균형을 확인해 주세요.`;
+    const result = await api.generate({ topicField, generationMode: document.querySelector('#topicGenerationMode').value, topicKeyword: document.querySelector('#topicGenerationKeyword').value, sourceText: document.querySelector('#topicGenerationSourceText').value, sourceUrl: document.querySelector('#topicGenerationSourceUrl').value, brief: document.querySelector('#topicGenerationBrief').value, existingTitles: activeIssueIds.map((id) => issues[id]?.title).filter(Boolean) });
+    status.textContent = `후보 ${result.generatedCount}개를 추가했습니다. 질문·선택지·가상 표시와 참고 자료를 확인해 주세요.${result.discoveryWarnings?.length ? " 일부 검색에 실패하여 수집된 자료만 사용했습니다." : ""}`;
     renderReviewQueue();
   } catch (error) {
     status.textContent = `생성에 실패했습니다: ${error.message}`;
@@ -1897,10 +1902,10 @@ document.querySelector('#approveDraftButton').addEventListener('click', async (e
     ['출처 이름과 날짜', draft.source], ['찬성 관점', draft.forText], ['반대 관점', draft.againstText]
   ];
   const missing = requiredFields.find(([, value]) => !String(value || '').trim());
-  const sourceUrl = safeHttpsUrl(draft.sourceUrl);
+  const sourceUrl = safeHttpsUrl(draft.sourceUrl) || (draft.dataSignals?.generationMode === 'fun' && draft.title.startsWith('[가상 사례]'));
   const factsValid = draft.facts.length >= 2 && draft.facts.length <= 3;
   if (missing || !sourceUrl || !factsValid) {
-    const reason = missing ? `${missing[0]}을 입력해 주세요.` : !factsValid ? '확인된 사실을 2~3개 입력해 주세요.' : '출처 링크는 https:// 주소여야 합니다.';
+    const reason = missing ? `${missing[0]}을 입력해 주세요.` : !factsValid ? '사실 또는 가정 조건을 2~3개 입력해 주세요.' : '출처 링크는 https:// 주소여야 합니다.';
     document.querySelector('#draftStatus').textContent = `승인 전 확인: ${reason}`;
     window.alert(`안건을 승인하기 전에 확인해 주세요.\n\n${reason}`);
     const focusName = missing ? ({ '카테고리': 'category', '투표 제목': 'title', '주제 설명': 'intro', '출처 이름과 날짜': 'source', '찬성 관점': 'forText', '반대 관점': 'againstText' })[missing[0]] : (!factsValid ? 'facts' : 'sourceUrl');
@@ -1948,7 +1953,7 @@ document.querySelector('#publishDraftNowButton').addEventListener('click', async
     ['출처 이름과 날짜', draft.source], ['찬성 관점', draft.forText], ['반대 관점', draft.againstText]
   ];
   const missing = requiredFields.find(([, value]) => !String(value || '').trim());
-  const sourceUrl = safeHttpsUrl(draft.sourceUrl);
+  const sourceUrl = safeHttpsUrl(draft.sourceUrl) || (draft.dataSignals?.generationMode === 'fun' && draft.title.startsWith('[가상 사례]'));
   const factsValid = draft.facts.length >= 2 && draft.facts.length <= 3;
   if (missing || !sourceUrl || !factsValid) {
     const reason = missing ? `${missing[0]}을 입력해 주세요.` : !factsValid ? '확인된 사실을 2~3개 입력해 주세요.' : '출처 링크는 https:// 주소여야 합니다.';
@@ -2391,5 +2396,27 @@ document.querySelector('#memberView').addEventListener('change',async event=>{
     showUserActionToast('알림 설정을 저장했습니다.');
   }catch(error){input.checked=!input.checked;showUserActionToast('저장하지 못했습니다: '+error.message);}
   finally{input.disabled=false;}
+});
+
+function renderDraftVoteOptions(options = ['찬성','반대','판단 보류']) {
+  const target=document.querySelector('#draftVoteOptions');
+  target.replaceChildren();
+  for(const option of options){
+    const row=document.createElement('div');row.className='topic-option-row';
+    const input=document.createElement('input');input.name='voteOption';input.required=true;input.maxLength=60;input.value=option;input.setAttribute('aria-label','투표 선택지');
+    const remove=document.createElement('button');remove.type='button';remove.textContent='삭제';remove.addEventListener('click',()=>{if(target.children.length<=2){showUserActionToast('선택지는 최소 2개가 필요합니다.');return;}row.remove();});
+    row.append(input,remove);target.append(row);
+  }
+}
+document.querySelector('#addVoteOptionButton').addEventListener('click',()=>{
+  const inputs=[...document.querySelectorAll('#draftVoteOptions input')];
+  if(inputs.length>=10){showUserActionToast('선택지는 최대 10개까지 가능합니다.');return;}
+  renderDraftVoteOptions([...inputs.map(input=>input.value),'']);
+  document.querySelector('#draftVoteOptions .topic-option-row:last-child input').focus();
+});
+document.querySelector('#topicGenerationMode').addEventListener('change',event=>{
+  const material=['material','community'].includes(event.target.value);
+  document.querySelector('#topicSourceInputs').classList.toggle('hidden',!material);
+  document.querySelector('#topicGenerationStatus').textContent=event.target.value==='fun' ? '뉴스 출처 없이 재미 투표를 만듭니다. 가상 표시를 붙이고 관리자가 직접 승인합니다.' : material ? '참고 링크와 핵심 내용을 입력하세요. 원문 자동 수집은 하지 않습니다. 관리자가 직접 확인 후 승인합니다.' : '선택한 분야와 키워드로 뉴스를 찾습니다. 정치·재판·증시 주제는 관리자가 직접 승인합니다.';
 });
 
