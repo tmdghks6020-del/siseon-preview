@@ -977,7 +977,7 @@ async function castMemberVote(choice) {
   if (!memberAuth || !memberSession?.user || !topicId) { showUserActionToast('투표 서버 연결을 확인할 수 없습니다.'); return; }
   const { error } = await memberAuth.from('topic_votes').insert({ topic_id: topicId, user_id: memberSession.user.id, choice });
   if (error) {
-    showUserActionToast(error.code === '23505' ? '이미 이 안건에 투표했습니다.' : `투표를 저장하지 못했습니다: ${error.message}`);
+    showUserActionToast(error.code === '23505' ? '이미 이 안건에 투표했습니다. 같은 카카오 계정으로 재가입해도 다시 투표할 수 없습니다.' : `투표를 저장하지 못했습니다: ${error.message}`);
     await loadMemberIssueData(activeIssueId);
     return;
   }
@@ -1565,6 +1565,7 @@ function renderAdminPage(page = currentAdminPage) {
   if (page === 'reviews') { renderReviewQueue(); return; }
   document.querySelector('#adminReviewWorkflow').classList.add('hidden');
   content.classList.remove('hidden');
+  if (page === 'withdrawals') { renderWithdrawals(content); return; }
   const latestAudit = [...editorialState.history.map((entry) => ({ action: `안건 ${entry.status}`, target: entry.title, at: entry.at })), ...adminOperations.audit].sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 5);
   const auditRows = (entries) => entries.length ? entries.map((entry) => `<div class="activity-row"><span class="activity-dot"></span><div><strong>${escapeAdminHtml(entry.action)} · ${escapeAdminHtml(entry.target)}</strong><small>${escapeAdminHtml(entry.operator || '운영 편집')} · ${new Date(entry.at).toLocaleString('ko-KR')}${entry.reason ? ` · ${escapeAdminHtml(entry.reason)}` : ''}</small></div></div>`).join('') : '<p class="table-empty">아직 운영 기록이 없습니다.</p>';
   const header = (eyebrow, title, description, action = '') => `<div class="admin-page-heading"><div><span class="section-kicker">${eyebrow}</span><h1>${title}</h1><p>${description}</p></div>${action}</div>`;
@@ -2386,7 +2387,7 @@ function renderMemberPage() {
     <section class="member-card"><div class="member-avatar" aria-hidden="true">${escapeSiteText([...getMemberNickname()][0] || '시')}</div><h2>${nickname}</h2><p>${kakao ? '카카오 계정으로 연결됨' : '회원 계정으로 연결됨'}</p>
     ${profile ? `<dl class="member-details"><div><dt>닉네임</dt><dd>${nickname} <button data-member="nickname">변경</button></dd></div><div><dt>가입일</dt><dd>${new Date(user.created_at).toLocaleDateString('ko-KR')}</dd></div><div><dt>로그인 방식</dt><dd>${kakao ? '카카오 로그인' : '이메일 로그인'}</dd></div></dl>` : '<button class="member-row" data-member="profile">내 정보 수정 <span>→</span></button>'}</section>
     ${profile ? '' : '<section class="member-card"><h2>내 문의</h2><button class="member-row" data-member="contact">회원 문의 접수 <span>→</span></button><div id="memberInquiries" aria-live="polite">문의 내역을 불러오고 있습니다.</div></section><section class="member-card"><h2>내 활동</h2><p class="member-caption">최근 참여 기록을 확인하세요.</p><div id="memberActivity" role="status">기록을 불러오고 있습니다.</div></section><section class="member-card"><h2>알림 설정</h2><p class="member-caption">알림 수신 선호를 저장합니다. 기기 푸시 알림은 앱 연결 후 제공됩니다.</p><div id="memberPreferences" role="status">설정을 불러오고 있습니다.</div></section>'}
-    <section class="member-card"><h2>도움 및 계정</h2><button class="member-row" data-member="contact">회원 문의 <span>→</span></button><button class="member-row" data-member="logout">로그아웃 <span>→</span></button><p class="member-caption">회원 탈퇴는 회원 문의로 요청해 주세요.</p></section>`;
+    <section class="member-card"><h2>도움 및 계정</h2><button class="member-row" data-member="contact">회원 문의 <span>→</span></button><button class="member-row" data-member="logout">로그아웃 <span>→</span></button><button class="member-row" data-member="withdraw">탈퇴 요청 <span>→</span></button></section>`;
   if (!profile) {
     loadMemberPageData(user.id, request);
     loadMyInquiries(user.id, request);
@@ -2419,6 +2420,7 @@ document.querySelector('#memberView').addEventListener('click',async event=>{
     case 'nickname': openNicknameSetup();break;
     case 'contact': document.querySelector('footer [data-user-contact="inquiries"]')?.click();break;
     case 'logout': await signOutMember(button); break;
+    case 'withdraw': document.querySelector('#withdrawForm').reset(); document.querySelector('#withdrawMessage').textContent=''; document.querySelector('#withdrawDialog').showModal(); break;
   }
 });
 document.querySelector('#memberView').addEventListener('change',async event=>{
@@ -2602,3 +2604,31 @@ async function signOutMember(button) {
   }
 }
 document.querySelector('#headerLogoutButton').addEventListener('click', event => signOutMember(event.currentTarget));
+
+document.querySelector('#withdrawForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const reason = form.elements.reason.value.trim();
+  const status = document.querySelector('#withdrawMessage');
+  const button = form.querySelector('[type=submit]');
+  if (reason.length < 2) { status.textContent='탈퇴 사유를 두 글자 이상 입력해 주세요.'; return; }
+  if (!window.confirm('계정을 삭제하고 탈퇴할까요? 삭제한 계정은 복구할 수 없습니다.')) return;
+  button.disabled = true;
+  const {error} = await memberAuth.rpc('withdraw_siseon_member',{p_reason:reason});
+  if (error) { status.textContent='탈퇴를 완료하지 못했습니다. 계정은 유지됩니다.'; button.disabled=false; return; }
+  try { await memberAuth.auth.signOut({scope:'local'}); }
+  finally { window.location.replace(memberAppRootUrl); }
+});
+async function renderWithdrawals(content, today=false, offset=0) {
+  content.innerHTML='<h1>탈퇴 회원 관리</h1><p>불러오는 중입니다.</p>';
+  const {data,error}=await memberAuth.rpc('get_siseon_withdrawals',{p_today:today,p_offset:offset});
+  if(currentAdminPage!=='withdrawals')return;
+  if(error){content.innerHTML='<h1>탈퇴 회원 관리</h1><p>기록을 불러오지 못했습니다.</p>';return;}
+  content.innerHTML='<h1>탈퇴 회원 관리</h1><p>최근 90일 · 한국 시간 기준</p><div class="row-actions"><button data-wd-all>전체 '+data.total+'건</button><button data-wd-day>당일 '+data.today+'건</button></div>'+
+    (data.rows.length ? '<ul>'+data.rows.map(row=>'<li><time>'+new Date(row.created_at).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})+'</time><p>'+escapeSiteText(row.reason)+'</p></li>').join('')+'</ul>' : '<p>탈퇴 기록이 없습니다.</p>')+
+    '<div class="row-actions">'+(offset>0?'<button data-wd-prev>이전</button>':'')+(offset+30<(today?data.today:data.total)?'<button data-wd-next>다음</button>':'')+'</div>';
+  content.querySelector('[data-wd-all]').onclick=()=>renderWithdrawals(content);
+  content.querySelector('[data-wd-day]').onclick=()=>renderWithdrawals(content,true);
+  content.querySelector('[data-wd-prev]')?.addEventListener('click',()=>renderWithdrawals(content,today,offset-30));
+  content.querySelector('[data-wd-next]')?.addEventListener('click',()=>renderWithdrawals(content,today,offset+30));
+}
