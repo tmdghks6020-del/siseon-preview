@@ -1129,6 +1129,24 @@ function renderIssueContent() {
     <h2 class="subhead">선택 전에 생각해 볼 관점</h2><div class="arguments">${argumentCards(issue.forArguments, 'for', standard ? '찬성 측 주장' : '고려할 관점 1')}${argumentCards(issue.againstArguments, 'against', standard ? '반대 측 주장' : '고려할 관점 2')}</div>
     <section class="vote-card"><div class="card-eyebrow">${activeIssueIsArchived ? 'ARCHIVE RESULTS' : 'YOUR VOICE'}</div><h2>${activeIssueIsArchived ? '지난 투표 결과' : '당신의 생각은 어떤가요?'}</h2><p>${activeIssueIsArchived ? '투표가 종료된 주제의 결과와 토론 기록입니다.' : '이 이슈에 한 번 투표할 수 있어요. 투표 전에는 결과와 토론 글을 볼 수 없습니다.'}</p><div class="vote-options ${activeIssueIsArchived ? 'hidden' : ''}">${options.map((option,index)=>`<button data-vote="${escapeHtml(option)}" class="${index === 0 ? 'for' : index === 1 ? 'against' : 'hold'}"><span>${index+1}</span> ${escapeHtml(option)}</button>`).join('')}</div><div id="voteMessage" class="vote-message">${activeIssueIsArchived ? '지난 투표 결과와 토론을 보고 있습니다.' : '투표 후 결과와 토론이 열립니다.'}</div><div id="postVoteResults" class="hidden"></div></section>
     <section class="discussion hidden" id="discussionSection"><div class="discussion-title"><div class="card-eyebrow">COMMUNITY VOICES</div><h2>이 이슈의 토론</h2><p class="discussion-demo-note">입장 글과 질문·자료·정정 요청을 나누어 살펴보세요.</p></div><div class="tabs"><button class="active" data-discussion-filter="all">전체</button>${standard ? '<button data-discussion-filter="for">찬성 입장</button><button data-discussion-filter="against">반대 입장</button>' : ''}<button data-discussion-filter="question">질문 · 자료</button><button data-discussion-filter="correction">정정 요청</button></div><div id="discussionPosts" class="discussion-post-list"></div><button class="primary-button write-button" id="writeButton">의견 남기기 <span>→</span></button></section>`;
+  const topicUuid = getPersistedTopicUuid(activeIssueId);
+  if (topicUuid) {
+    const share = document.createElement('button');
+    share.type = 'button';
+    share.className = 'text-link';
+    share.textContent = '공유하기';
+    detail.querySelector('.issue-meta').append(share);
+    share.addEventListener('click', async () => {
+      const url = new URL('topics/' + topicUuid + '/', memberAppRootUrl).href;
+      try {
+        if (navigator.share) { await navigator.share({title:issue.title,url}); return; }
+        await navigator.clipboard.writeText(url);
+        showUserActionToast('공유 링크를 복사했습니다.');
+      } catch (error) {
+        if (error.name !== 'AbortError') window.prompt('공유 링크를 복사해 주세요.', url);
+      }
+    });
+  }
   renderPrivateDiscussion();
 }
 
