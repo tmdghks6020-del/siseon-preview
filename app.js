@@ -2677,14 +2677,29 @@ async function showPublicSharedPoll(uuid) {
     const escape = escapeSiteText;
     const url = new URL(memberAppRootUrl);
     url.searchParams.set('issue',id);
-    content.innerHTML = '<h1>'+escape(topic.title)+'</h1><p>'+escape(archived ? '투표 종료' : '마감 '+formatPollDeadline(topic))+'</p>'+
-      renderReadableParagraphs(topic.intro,'issue-intro')+
-      '<h2>배경과 확인할 내용</h2><ul>'+(topic.facts || []).map(fact=>'<li>'+escape(fact)+'</li>').join('')+'</ul>'+
-      (safeHttpsUrl(topic.sourceUrl)?'<p><a href="'+escape(safeHttpsUrl(topic.sourceUrl))+'" rel="noopener noreferrer">'+escape(topic.source || '참고 자료')+'</a></p>':'')+
-      '<h2>고려할 관점</h2>'+renderReadableParagraphs(topic.cardFor,'issue-intro')+renderReadableParagraphs(topic.cardAgainst,'issue-intro')+
-      '<h2>투표 선택지</h2><ul>'+options.map(option=>'<li>'+escape(option)+'</li>').join('')+'</ul>'+
-      (archived?'<section data-final-results><h2>최종 투표 결과</h2><p>집계를 불러오는 중입니다.</p></section>':'')+
-      '<p><a class="primary-button" href="'+escape(url.href)+'">'+(archived?'보관된 토론 보기':'투표 참여하기')+'</a></p>';
+    const source = safeHttpsUrl(topic.sourceUrl);
+    const perspective = (label, text, side) => `<section class="shared-perspective ${side}"><h3>${label}</h3>${renderReadablePoints(text)}</section>`;
+    content.innerHTML = `
+      <section class="shared-poll-heading">
+        <div class="shared-poll-meta"><span>${escape(topic.category)}</span><span>${escape(archived ? '투표 종료' : '마감 ' + formatPollDeadline(topic))}</span></div>
+        <h1>${escape(topic.title)}</h1>
+        ${renderReadableParagraphs(topic.intro, 'shared-poll-intro')}
+      </section>
+      <section class="shared-poll-panel">
+        <h2>${topic.isHypothetical ? '가상 상황의 조건' : '배경과 확인할 내용'}</h2>
+        <ul>${(topic.facts || []).map(fact => `<li>${escape(fact)}</li>`).join('')}</ul>
+        ${source ? `<a class="shared-poll-source" href="${escape(source)}" rel="noopener noreferrer">${escape(topic.source || '참고 자료')} ↗</a>` : ''}
+      </section>
+      <section class="shared-poll-views">
+        <h2>선택 전에 생각해 볼 관점</h2>
+        <div class="shared-perspective-grid">${perspective('고려할 관점 1', topic.cardFor, 'side-one')}${perspective('고려할 관점 2', topic.cardAgainst, 'side-two')}</div>
+      </section>
+      ${archived ? '<section class="shared-poll-panel" data-final-results><h2>최종 투표 결과</h2><p>집계를 불러오는 중입니다.</p></section>' : ''}
+      <section class="shared-poll-panel shared-poll-choices">
+        <h2>투표 선택지</h2>
+        <ol>${options.map(option => `<li>${escape(option)}</li>`).join('')}</ol>
+        <a class="primary-button shared-poll-cta" href="${escape(url.href)}">${archived ? '보관된 토론 보기' : '투표 참여하기'} <span aria-hidden="true">→</span></a>
+      </section>`;
     document.title=topic.title+' | 시선';
     if (!archived) return;
     const target = content.querySelector('[data-final-results]');

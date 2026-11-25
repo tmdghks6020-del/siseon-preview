@@ -38,7 +38,34 @@
 .issue-meta { flex-wrap: wrap; }
 .issue-meta button.text-link { display:inline-flex; align-items:center; justify-content:center; position:static; width:auto; min-height:44px; padding:0 12px; border:1px solid #b8cfc4; border-radius:9px; background:#fff; color:#185245; font-family:inherit; font-size:14px; font-weight:700; line-height:1.2; white-space:nowrap; overflow:visible; text-indent:0; cursor:pointer; }
 </style>
-<script>if (/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(new URLSearchParams(location.search).get('share') || '')) document.documentElement.classList.add('opening-public-share');</script><style>.opening-public-share #homeView{display:none!important}.opening-public-share #publicSharedPoll{display:block!important}</style></head>
+<script>if (/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(new URLSearchParams(location.search).get('share') || '')) document.documentElement.classList.add('opening-public-share');</script><style>.opening-public-share #homeView{display:none!important}.opening-public-share #publicSharedPoll{display:block!important}</style><style>
+#publicSharedPoll .announcement-content{width:min(calc(100% - 36px),820px);padding:24px 0 52px;margin:0 auto}
+#publicSharedPoll .announcement-detail{display:grid;gap:20px;padding:0;border:0;background:none;overflow-wrap:anywhere}
+.shared-poll-heading,.shared-poll-panel,.shared-perspective{border:1px solid #dce7df;border-radius:16px;padding:22px;background:#fff}
+.shared-poll-heading{background:#eaf3ed}
+.shared-poll-meta{display:flex;flex-wrap:wrap;gap:8px;font-size:13px;color:#235344;font-weight:700}
+.shared-poll-meta span{background:#fff;border-radius:20px;padding:4px 10px}
+#publicSharedPoll .shared-poll-heading h1{font-size:clamp(26px,5vw,42px);line-height:1.3;word-break:keep-all;margin:14px 0}
+#publicSharedPoll h2{font-size:20px;line-height:1.4;margin:0 0 12px}
+.shared-poll-intro p,.shared-poll-panel li,.shared-perspective li{font-size:15px;line-height:1.75;color:#40554c}
+.shared-poll-intro p{margin:0 0 8px}
+.shared-poll-intro p:last-child{margin-bottom:0}
+#publicSharedPoll ul,#publicSharedPoll ol{margin:0;padding-inline-start:20px}
+#publicSharedPoll li+li{margin-top:7px}
+.shared-poll-source{display:inline-block;margin-top:12px;font-size:14px;font-weight:700;color:#245a49}
+.shared-perspective-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.shared-perspective.side-one{background:#edf5f8;border-color:#d2e3eb}
+.shared-perspective.side-two{background:#fcf3ed;border-color:#eedfd4}
+.shared-perspective h3{margin:0 0 9px;font-size:16px}
+.shared-poll-cta{display:flex;justify-content:center;gap:12px;min-height:48px;margin-top:18px}
+@media(max-width:700px){
+ #publicSharedPoll .announcement-content{padding-top:16px}
+ #publicSharedPoll .announcement-detail{gap:16px}
+ .shared-poll-heading,.shared-poll-panel,.shared-perspective{padding:17px}
+ .shared-perspective-grid{grid-template-columns:1fr;gap:9px}
+}
+</style>
+</head>
 <body>
   <header class="topbar">
     <a class="brand" href="#homeView" aria-label="시선 홈"><img class="brand-mark" src="assets/siseon-mark.svg" alt="" /><span>시선</span></a>
@@ -361,7 +388,7 @@
   <script src="ai-candidates.js"></script>
   <script src="supabase-config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=public-share-route-v2"></script>
+  <script src="app.js?v=share-page-layout"></script>
   <script type="module" src="content-automation.js?v=topic-options-20261125"></script>
 </body>
 </html>
