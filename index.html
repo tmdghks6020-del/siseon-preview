@@ -100,7 +100,7 @@
         <nav class="admin-sidebar" aria-label="관리 메뉴">
           <span class="admin-nav-caption">운영</span>
           <button class="admin-nav active" data-admin-page="overview">▦ <span>대시보드</span></button>
-          <button class="admin-nav" data-admin-page="polls">◉ <span>투표 관리</span><b>30</b></button>
+          <button class="admin-nav" data-admin-page="polls">◉ <span>투표 관리</span><b id="navPollCount">0</b></button>
           <button class="admin-nav" data-admin-page="reviews">✦ <span>AI 안건 검토</span><b id="navPendingCount">0</b></button>
           <button class="admin-nav" data-admin-page="content-automation">↗ <span>콘텐츠 자동화</span></button>
           <button class="admin-nav" data-admin-page="api-settings">⚙ <span>API 설정</span></button>
@@ -303,7 +303,7 @@
   <script src="ai-candidates.js"></script>
   <script src="supabase-config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=immediate-topic-registration-20261124"></script>
+  <script src="app.js?v=admin-poll-count-20261125"></script>
   <script type="module" src="content-automation.js?v=immediate-topic-registration-20261124"></script>
 </body>
 </html>

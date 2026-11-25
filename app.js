@@ -1506,6 +1506,8 @@ function renderMembersTable() {
 function renderAdminPage(page = currentAdminPage) {
   currentAdminPage = page;
   document.querySelectorAll('.admin-nav').forEach((button) => button.classList.toggle('active', button.dataset.adminPage === page));
+  const pollNavCount = document.querySelector('#navPollCount');
+  if (pollNavCount) pollNavCount.textContent = String(activeIssueIds.length);
   document.querySelector('#navPendingCount').textContent = String(editorialState.pending.length);
   const reportNav = document.querySelector('[data-admin-page="reports"] .nav-alert');
   if (reportNav) reportNav.textContent = String(adminOperations.reports.filter((item) => item.status === '미검토').length);
@@ -2299,7 +2301,7 @@ loadPublishedTopics().then((topics) => {
   }
   activeIssueIds = serverActive.map((issue) => issue.id).slice(0, 30);
   renderPollCards(); renderPollBoard(); renderEditorialArchives(); syncPollCarousel();
-  if (currentAdminPage === 'archive' && isVerifiedAdmin) renderAdminPage('archive');
+  if (isVerifiedAdmin) renderAdminPage(currentAdminPage);
 }).catch((error) => console.warn('공개 안건 동기화 실패:', error.message));
 
 const exitConfirmDialog = document.querySelector('#exitConfirmDialog');
