@@ -1,4 +1,5 @@
 const homeView = document.querySelector('#homeView');
+let memberPageLoad = 0;
 const issueView = document.querySelector('#issueView');
 const pollBoardView = document.querySelector('#pollBoardView');
 const announcementsView = document.querySelector('#announcementsView');
@@ -35,9 +36,13 @@ const memberAppRootUrl = new URL('./', document.querySelector('script[src*="app.
 const getMemberNickname = () => String(memberSession?.user?.user_metadata?.nickname || '').trim();
 const isMemberSignedIn = () => Boolean(memberSession?.user && getMemberNickname());
 function refreshMemberControls() {
-  if (loginButton) loginButton.textContent = isMemberSignedIn() ? '로그아웃' : memberSession?.user ? '닉네임 설정' : '로그인';
+  if (loginButton) loginButton.textContent = isMemberSignedIn() ? '내 정보' : memberSession?.user ? '닉네임 설정' : '로그인';
 }
 function openNicknameSetup() {
+  document.querySelector('#memberNickname').value = getMemberNickname();
+  document.querySelector('#nicknameMessage').textContent = '';
+  nicknameDialog.querySelector('h2').textContent = getMemberNickname() ? '닉네임 변경' : '시선에서 사용할 닉네임을 정해주세요.';
+  nicknameDialog.querySelector('[type=submit]').textContent = '닉네임 저장';
   if (nicknameDialog && !nicknameDialog.open) nicknameDialog.showModal();
 }
 function syncMemberAuth(session) {
@@ -45,6 +50,7 @@ function syncMemberAuth(session) {
   if(!session?.user){memberVoteChoices.clear();memberVoteResults.clear();issuePostsCache.clear();issueCommentsCache.clear();memberInterestedSuggestions.clear();}
   if(!session?.user&&activityTrackingInterval){clearInterval(activityTrackingInterval);activityTrackingInterval=null;}
   refreshMemberControls();
+  if (['member','profile'].includes(window.history.state?.siseonRoute)) renderMemberPage();
   renderCommunityAccess();
   if (activeIssueId) renderVoteState();
   if (session?.user) {
@@ -58,7 +64,7 @@ function syncMemberAuth(session) {
       openNicknameSetup();
       return;
     }
-    if (nicknameDialog?.open) nicknameDialog.close();
+    // Close the editor only after both profile saves finish.
     const returnPath = sessionStorage.getItem('siseon:auth-return-path');
     if (returnPath) {
       sessionStorage.removeItem('siseon:auth-return-path');
@@ -177,6 +183,7 @@ function restoreRouteFromHistory(state = {}) {
     return;
   }
   if (route === 'issue') { const id = state.issueId || new URLSearchParams(window.location.search).get('issue'); if (id && getIssueData(id)) return openIssue(id, 'none'); }
+  if (route === 'member' || route === 'profile') return showMemberPage(route, false);
   if (route === 'poll-board') return showPollBoard(false);
   if (route === 'archive') return showArchiveBoard(false);
   if (route === 'open-talk' || route === 'suggestions') return showCommunitySubpage(route, false);
@@ -191,6 +198,7 @@ function restoreRouteFromHistory(state = {}) {
 }
 
 function setTopNavActive(key) {
+  document.querySelector('#memberView')?.classList.add('hidden');
   document.querySelectorAll('.desktop-nav [data-nav-key], .site-map-panel [data-nav-key]').forEach((link) => {
     const active = link.dataset.navKey === key;
     link.classList.toggle('nav-active', active);
@@ -1336,6 +1344,7 @@ const editorialFieldNames = ['category', 'title', 'intro', 'facts', 'source', 's
 let isVerifiedAdmin = false;
 
 function showAdminView(pushHistory = true) {
+  document.querySelector('#memberView').classList.add('hidden');
   if (!isVerifiedAdmin) {
     const dialog = document.querySelector('#adminLoginDialog');
     if (dialog && !dialog.open) dialog.showModal();
@@ -1982,28 +1991,7 @@ document.querySelector('#publishDraftNowButton').addEventListener('click', async
 document.querySelector('#backButton').addEventListener('click', () => {
   goBackWithinApp();
 });
-loginButton.addEventListener('click', () => {
-  if (!isMemberSignedIn()) {
-    if (memberSession?.user) openNicknameSetup();
-    else openLogin();
-    return;
-  }
-  memberAuth?.auth.signOut().then(({ error }) => {
-    if (error) { showUserActionToast(`로그아웃하지 못했습니다: ${error.message}`); return; }
-    pendingVote = null; pendingMemberAction = null;
-    sessionStorage.removeItem('siseon:pending-auth-vote');
-    if (activeIssueIsArchived && !issueView.classList.contains('hidden')) {
-      showArchiveBoard(false); pushAppRoute('archive', {}, true);
-    } else if (!openTalkView.classList.contains('hidden') && !document.querySelector('#openTalkDetail').classList.contains('hidden')) {
-      showCommunitySubpage('open-talk', false);
-    } else if (!topicSuggestionsView.classList.contains('hidden') && !document.querySelector('#topicSuggestionDetail').classList.contains('hidden')) {
-      showCommunitySubpage('suggestions', false);
-    } else if (activeIssueId && !issueView.classList.contains('hidden')) {
-      renderVoteState();
-    }
-    showUserActionToast('로그아웃했습니다.');
-  });
-});
+loginButton.addEventListener('click', () => showMemberPage());
 document.querySelector('#menuButton').addEventListener('click', () => {
   const panel = document.querySelector('#siteMapPanel');
   const button = document.querySelector('#menuButton');
@@ -2284,6 +2272,7 @@ else if (initialView === 'poll-board') showPollBoard(false);
 else if (initialView === 'archive') showArchiveBoard(false);
 else if (initialView === 'open-talk' || initialView === 'suggestions') showCommunitySubpage(initialView, false);
 else if (initialView === 'announcements') openAnnouncements(null, false);
+else if (initialView === 'member' || initialView === 'profile') showMemberPage(initialView, false);
 else if (initialView === 'admin') showAdminView(false);
 else restoreHomeView();
 
@@ -2325,5 +2314,82 @@ window.addEventListener('popstate', (event) => {
     return;
   }
   restoreRouteFromHistory(state);
+});
+
+
+function showMemberPage(page = 'member', pushHistory = true) {
+  closeSiteMap();
+  setTopNavActive('member');
+  [homeView, issueView, pollBoardView, announcementsView, archiveView, openTalkView, topicSuggestionsView, adminView].forEach(view => view.classList.add('hidden'));
+  if (pushHistory) pushAppRoute(page);
+  else window.history.replaceState({siseonRoute:page}, '', routeUrl(page));
+  document.querySelector('#memberView').classList.remove('hidden');
+  renderMemberPage();
+  window.scrollTo({top:0,behavior:'instant'});
+}
+function renderMemberPage() {
+  const view = document.querySelector('#memberView');
+  const request = ++memberPageLoad;
+  const back = '<button type="button" class="member-back" data-member="back">← 뒤로</button>';
+  if (!memberSession?.user) {
+    view.innerHTML = `${back}<h1>마이페이지</h1><div class="member-card"><h2>나의 시선을 모아보세요</h2><p>로그인하면 내 정보와 참여 기록을 확인할 수 있어요.</p><button class="primary-button" data-member="login">카카오로 로그인 · 가입</button></div>`;
+    return;
+  }
+  const user = memberSession.user;
+  const profile = window.history.state?.siseonRoute === 'profile';
+  const nickname = escapeSiteText(getMemberNickname() || '닉네임을 설정해 주세요');
+  const kakao = user.identities?.some(identity => identity.provider === 'kakao');
+  view.innerHTML = `${back}<h1>${profile ? '내 정보 수정' : '마이페이지'}</h1><p class="member-caption">${profile ? '시선에서 사용할 정보를 관리하세요.' : '내가 참여한 이야기와 나의 기록'}</p>
+    <section class="member-card"><div class="member-avatar" aria-hidden="true">${escapeSiteText([...getMemberNickname()][0] || '시')}</div><h2>${nickname}</h2><p>${kakao ? '카카오 계정으로 연결됨' : '회원 계정으로 연결됨'}</p>
+    ${profile ? `<dl class="member-details"><div><dt>닉네임</dt><dd>${nickname} <button data-member="nickname">변경</button></dd></div><div><dt>가입일</dt><dd>${new Date(user.created_at).toLocaleDateString('ko-KR')}</dd></div><div><dt>로그인 방식</dt><dd>${kakao ? '카카오 로그인' : '이메일 로그인'}</dd></div></dl>` : '<button class="member-row" data-member="profile">내 정보 수정 <span>→</span></button>'}</section>
+    ${profile ? '' : '<section class="member-card"><h2>내 활동</h2><p class="member-caption">최근 참여 기록을 확인하세요.</p><div id="memberActivity" role="status">기록을 불러오고 있습니다.</div></section><section class="member-card"><h2>알림 설정</h2><p class="member-caption">알림 수신 선호를 저장합니다. 기기 푸시 알림은 앱 연결 후 제공됩니다.</p><div id="memberPreferences" role="status">설정을 불러오고 있습니다.</div></section>'}
+    <section class="member-card"><h2>도움 및 계정</h2><button class="member-row" data-member="contact">회원 문의 <span>→</span></button><button class="member-row" data-member="logout">로그아웃 <span>→</span></button><p class="member-caption">회원 탈퇴는 회원 문의로 요청해 주세요.</p></section>`;
+  if (!profile) loadMemberPageData(user.id, request);
+}
+async function loadMemberPageData(userId, request) {
+  const queries = [
+    memberAuth.from('topic_votes').select('topic_id,choice,created_at').eq('user_id',userId).order('created_at',{ascending:false}).limit(20),
+    memberAuth.from('open_talk_posts').select('title,created_at').eq('author_id',userId).order('created_at',{ascending:false}).limit(20),
+    memberAuth.from('issue_posts').select('title,created_at').eq('author_id',userId).order('created_at',{ascending:false}).limit(20),
+    memberAuth.from('topic_suggestions').select('title,created_at').eq('author_id',userId).order('created_at',{ascending:false}).limit(20),
+    memberAuth.from('notification_preferences').select('new_topics,comments_on_my_posts,replies_to_my_comments').eq('user_id',userId).maybeSingle()
+  ];
+  try {
+    const results = await Promise.all(queries);
+    if(request !== memberPageLoad || memberSession?.user?.id !== userId) return;
+    const labels=['참여한 투표','자유토론 글','토론 의견','제안한 안건'];
+    document.querySelector('#memberActivity').innerHTML=results.slice(0,4).map((result,index)=>`<details class="member-activity"><summary>${labels[index]} · 최근 ${result.data?.length || 0}건</summary>${result.error ? '<p>기록을 불러오지 못했습니다. 잠시 후 다시 열어주세요.</p>' : (result.data || []).map(row=>`<div class="member-record">${escapeSiteText(row.title || getIssueData('topic-'+row.topic_id)?.title || '참여한 투표')}${row.choice ? ` <strong>${escapeSiteText(row.choice)}</strong>` : ''}<small>${new Date(row.created_at).toLocaleDateString('ko-KR')}</small></div>`).join('') || '<p>아직 활동 기록이 없습니다.</p>'}</details>`).join('');
+    const pref = results[4];
+    document.querySelector('#memberPreferences').innerHTML=pref.error ? '<p>설정을 불러오지 못했습니다. 잠시 후 다시 열어주세요.</p>' : [['new_topics','새 투표 등록'],['comments_on_my_posts','내 글에 새 댓글'],['replies_to_my_comments','내 댓글에 답글']].map(([key,label])=>`<label class="member-toggle"><span>${label}</span><input type="checkbox" data-member-pref="${key}" ${pref.data?.[key] !== false ? 'checked' : ''}></label>`).join('');
+  } catch { if(request===memberPageLoad) document.querySelector('#memberActivity').textContent='기록을 불러오지 못했습니다. 다시 시도해 주세요.'; }
+}
+document.querySelector('#memberPageLink').addEventListener('click',event=>{event.preventDefault();showMemberPage();});
+document.querySelector('#memberView').addEventListener('click',async event=>{
+  const button=event.target.closest('[data-member]'); if(!button)return;
+  switch(button.dataset.member){
+    case 'back': goBackWithinApp();break;
+    case 'login': openLogin();break;
+    case 'profile': showMemberPage('profile');break;
+    case 'nickname': openNicknameSetup();break;
+    case 'contact': document.querySelector('footer [data-user-contact="inquiries"]')?.click();break;
+    case 'logout':
+      if(!window.confirm('로그아웃하시겠습니까?'))return;
+      button.disabled=true;
+      const {error}=await memberAuth.auth.signOut();
+      if(error){button.disabled=false;showUserActionToast('로그아웃 실패: '+error.message);return;}
+      pendingVote=null;pendingMemberAction=null;sessionStorage.removeItem('siseon:pending-auth-vote');renderMemberPage();break;
+  }
+});
+document.querySelector('#memberView').addEventListener('change',async event=>{
+  const input=event.target.closest('[data-member-pref]');if(!input || !memberSession?.user)return;
+  const key=input.dataset.memberPref;
+  if(!['new_topics','comments_on_my_posts','replies_to_my_comments'].includes(key))return;
+  input.disabled=true;
+  try{
+    const {error}=await memberAuth.from('notification_preferences').upsert({user_id:memberSession.user.id,...Object.fromEntries([...document.querySelectorAll('[data-member-pref]')].map(control=>[control.dataset.memberPref,control.checked])),updated_at:new Date().toISOString()},{onConflict:'user_id'});
+    if(error)throw error;
+    showUserActionToast('알림 설정을 저장했습니다.');
+  }catch(error){input.checked=!input.checked;showUserActionToast('저장하지 못했습니다: '+error.message);}
+  finally{input.disabled=false;}
 });
 
