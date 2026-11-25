@@ -300,6 +300,20 @@
     .exit-confirm-actions #leaveSiteButton{border-color:var(--navy);background:var(--navy);color:#fff}
     @media(max-width:700px){.poll-section-links{gap:9px;align-items:flex-start;flex-direction:column}.poll-section-links .text-link{font-size:9px}.poll-section-links .text-link span{font-size:12px}.poll-board-row .archive-main small{font-size:10px}}
   </style>
+  <style>
+    .active-poll-list .poll-meta,.active-poll-list .stance-grid{display:none!important}
+    .active-poll-list .poll-body h3{margin:0 0 12px;font-size:clamp(25px,2.8vw,32px);line-height:1.42;letter-spacing:-.045em}
+    .active-poll-list .poll-summary{max-width:62ch;color:#5f7168;font-size:14px;line-height:1.9}
+    .active-poll-list .poll-summary p{margin:0 0 .8em}
+    .active-poll-list .poll-summary p:last-child{margin-bottom:0}
+    .active-poll-list .poll-footer{margin-top:24px}
+    @media(max-width:700px){
+      .active-poll-list .poll-body{padding:22px 18px 18px}
+      .active-poll-list .poll-body h3{font-size:23px;line-height:1.45}
+      .active-poll-list .poll-summary{font-size:13px;line-height:1.8}
+      .active-poll-list .poll-footer{margin-top:18px}
+    }
+  </style>
   <script src="ai-candidates.js"></script>
   <script src="supabase-config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -307,5 +321,6 @@
   <script type="module" src="content-automation.js?v=immediate-topic-registration-20261124"></script>
 </body>
 </html>
+
 
 
