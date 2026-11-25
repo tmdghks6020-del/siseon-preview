@@ -630,7 +630,13 @@ function renderAnnouncementTicker() {
   const title = document.querySelector('#announcementTickerTitle');
   const ticker = document.querySelector('#announcementTicker');
   if (!ticker || !title) return;
-  if (!item) { ticker.classList.add('hidden'); return; }
+  if (!item) {
+    ticker.classList.remove('hidden');
+    title.textContent = '공지사항 전체 보기';
+    document.querySelector('#announcementTickerDate').textContent = '';
+    delete ticker.dataset.announcementId;
+    return;
+  }
   ticker.classList.remove('hidden');
   title.textContent = item.title;
   document.querySelector('#announcementTickerDate').textContent = new Date(item.createdAt).toLocaleDateString('ko-KR');
@@ -650,6 +656,7 @@ function openAnnouncements(id = null, pushHistory = true) {
   announcementsView.classList.remove('hidden');
   renderAnnouncementList();
   if (id) openAnnouncementDetail(id); else backAnnouncementList();
+  if (!id && !sortedPublicAnnouncements().length) refreshAnnouncementsFromSupabase();
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
@@ -2288,7 +2295,7 @@ else if (initialIssueId?.startsWith('topic-')) openIssue(initialIssueId, 'replac
 else if (initialView === 'poll-board') showPollBoard(false);
 else if (initialView === 'archive') showArchiveBoard(false);
 else if (initialView === 'open-talk' || initialView === 'suggestions') showCommunitySubpage(initialView, false);
-else if (initialView === 'announcements') openAnnouncements(null, false);
+else if (initialView === 'announcements') { pushAppRoute('announcements', {}, true); openAnnouncements(null, false); }
 else if (initialView === 'member' || initialView === 'profile') showMemberPage(initialView, false);
 else if (['about','principles','privacy'].includes(initialView)) { pushAppRoute(initialView, {}, true); openSiteInfo(initialView, false); }
 else if (initialView === 'admin') showAdminView(false);
