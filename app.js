@@ -388,7 +388,9 @@ async function openOpenTalkDetail(id) {
   const detail = document.querySelector('#openTalkDetail');
   detail.classList.remove('hidden');
   detail.dataset.openTalkId = post.id;
-  detail.innerHTML = `<button type="button" class="announcement-detail-back" data-open-talk-detail-back>← 자유토론 목록</button><div class="open-talk-detail-card"><div class="open-talk-meta"><span>${escapeAdminHtml(post.category)}</span><b>${post.sample ? '예시 글' : escapeAdminHtml(post.author)}</b><time>${new Date(post.createdAt).toLocaleDateString('ko-KR')}</time></div><h1>${escapeAdminHtml(post.title)}</h1>${post.sample ? '<p class="suggestion-example-note">화면 구성을 위한 예시 글입니다.</p>' : ''}<p class="open-talk-detail-body">${escapeAdminHtml(post.body)}</p><div class="open-talk-detail-comments"><h2>댓글 ${(post.comments || []).length}개</h2>${(post.comments || []).map((comment) => `<p><b>${escapeAdminHtml(comment.author)}</b>${escapeAdminHtml(comment.text)}</p>`).join('') || '<p class="home-no-comments">아직 댓글이 없습니다.</p>'}</div>${post.sample ? '' : `<form class="open-talk-comment-form"><input name="comment" maxlength="500" required placeholder="익명으로 댓글 남기기"/><button type="submit">등록</button></form><button type="button" class="open-talk-report" data-open-talk-report>신고하기</button>`}</div>`;
+  detail.innerHTML = `<button type="button" class="announcement-detail-back" data-open-talk-detail-back>← 자유토론 목록</button><div class="open-talk-detail-card"><div class="open-talk-meta"><span>${escapeAdminHtml(post.category)}</span><b>${post.sample ? '예시 글' : escapeAdminHtml(post.author)}</b><time>${new Date(post.createdAt).toLocaleDateString('ko-KR')}</time></div><h1>${escapeAdminHtml(post.title)}</h1>${post.sample ? '<p class="suggestion-example-note">화면 구성을 위한 예시 글입니다.</p>' : ''}<p class="open-talk-detail-body">${escapeAdminHtml(post.body)}</p><div class="open-talk-reaction-mount"></div><div class="open-talk-detail-comments"><h2>댓글 ${(post.comments || []).length}개</h2>${(post.comments || []).map((comment) => `<p><b>${escapeAdminHtml(comment.author)}</b>${escapeAdminHtml(comment.text)}</p>`).join('') || '<p class="home-no-comments">아직 댓글이 없습니다.</p>'}</div>${post.sample ? '' : `<form class="open-talk-comment-form"><input name="comment" maxlength="500" required placeholder="익명으로 댓글 남기기"/><button type="submit">등록</button></form><button type="button" class="open-talk-report" data-open-talk-report>신고하기</button>`}</div>`;
+  detail.querySelector('.open-talk-reaction-mount').append(createReactionBar('talk', post.id));
+  refreshPostReactions(detail, 'talk');
 }
 
 function renderTopicSuggestions() {
@@ -1059,6 +1061,7 @@ function createDiscussionPost(post) {
   reportButton.textContent = '신고하기';
   reportButton.setAttribute('aria-label', `${post.title} 게시글 신고하기`);
   postTools.append(meta, reportButton);
+  if (article.dataset.kind === 'opinion') postTools.append(createReactionBar('issue', post.id));
 
   const expanded = document.createElement('div');
   expanded.className = 'post-expanded hidden';
@@ -1133,11 +1136,17 @@ function renderPrivateDiscussion() {
   [...(issuePostsCache.get(activeIssueId) || [])]
     .filter((post) => !unavailablePostIds.has(post.id))
     .forEach((post) => postList.append(createDiscussionPost(post)));
+  const popular = document.createElement('section');
+  popular.className = 'popular-opinions hidden';
+  postList.prepend(popular);
+  refreshPostReactions(postList, 'issue');
   applyDiscussionFilter('all');
   if (activeIssueIsReadOnly) document.querySelectorAll('#discussionPosts .comment-form').forEach((form) => form.classList.add('hidden'));
 }
 
 function applyDiscussionFilter(filter) {
+  const popular = document.querySelector(".popular-opinions");
+  if (popular) popular.hidden = filter !== "all";
   document.querySelectorAll('#discussionSection [data-discussion-filter]').forEach((button) => button.classList.toggle('active', button.dataset.discussionFilter === filter));
   document.querySelectorAll('#discussionPosts .discussion-post').forEach((post) => {
     const kind = post.dataset.kind; const stance = post.dataset.stance;
@@ -2497,3 +2506,77 @@ document.addEventListener('click', event => {
   event.preventDefault();
   openSiteInfo(link.dataset.infoPage);
 });
+
+function createReactionBar(board, id) {
+  const bar = document.createElement('div');
+  bar.className = 'post-reactions';
+  bar.dataset.reactionPost = id;
+  const options = board === 'issue' ? [['like','공감해요'],['differ','다르게 생각해요']] : [['like','공감해요']];
+  for (const [reaction,label] of options) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.dataset.reaction = reaction;
+    button.dataset.label = label;
+    button.disabled = true;
+    button.setAttribute('aria-pressed','false');
+    button.addEventListener('click', async () => {
+      for (const control of bar.children) control.disabled = true;
+      const container = board === 'issue' ? document.querySelector('#discussionPosts') : document.querySelector('#openTalkDetail');
+      const {error} = await memberAuth.rpc('set_post_reaction',{p_board:board,p_post:id,p_reaction:button.getAttribute('aria-pressed') === 'true' ? null : reaction});
+      if (error) showUserActionToast('반응을 저장하지 못했습니다. 다시 시도해 주세요.');
+      else await refreshPostReactions(container, board);
+      if (bar.isConnected) for (const control of bar.children) control.disabled = false;
+    });
+    bar.append(button);
+  }
+  return bar;
+}
+
+async function refreshPostReactions(container, board) {
+  const userId = memberSession?.user?.id;
+  const bars = [...container.querySelectorAll('[data-reaction-post]')];
+  if (!userId || !bars.length) return;
+  const ids = bars.map(bar => bar.dataset.reactionPost);
+  const requests = [];
+  for (let i = 0; i < ids.length; i += 500) requests.push(memberAuth.rpc('get_post_reactions',{p_board:board,p_posts:ids.slice(i,i+500)}));
+  const results = await Promise.all(requests);
+  if (!container.isConnected || memberSession?.user?.id !== userId || !bars.some(bar=>bar.isConnected)) return;
+  const byId = new Map(results.flatMap(result=>result.data || []).map(row=>[row.post_id,row]));
+  for (const bar of bars) {
+    const row = byId.get(bar.dataset.reactionPost);
+    if (!row || !bar.isConnected) continue;
+    for (const button of bar.children) {
+      button.textContent = button.dataset.label + ' ' + (button.dataset.reaction === 'like' ? row.likes : row.differs);
+      button.setAttribute('aria-pressed',String(row.mine === button.dataset.reaction));
+      button.disabled = false;
+    }
+  }
+  const popular = container.querySelector('.popular-opinions');
+  if (!popular) return;
+  const ranked = bars.filter(bar=>bar.isConnected && Number(byId.get(bar.dataset.reactionPost)?.likes)>0)
+    .sort((a,b)=>Number(byId.get(b.dataset.reactionPost).likes)-Number(byId.get(a.dataset.reactionPost).likes)).slice(0,3);
+  popular.classList.toggle('hidden',!ranked.length);
+  popular.replaceChildren();
+  if (!ranked.length) return;
+  const title = document.createElement('h3');
+  title.textContent = '공감 많이 받은 의견';
+  const list = document.createElement('ol');
+  for (const bar of ranked) {
+    const article = bar.closest('.discussion-post');
+    const row = byId.get(bar.dataset.reactionPost);
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = article.dataset.postTitle + ' · 공감 ' + row.likes + ' · 다르게 생각해요 ' + row.differs;
+    button.addEventListener('click',()=>{
+      const toggle = article.querySelector('.post-title-toggle');
+      if (toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
+      toggle.focus({preventScroll:true});
+      article.scrollIntoView({block:'center'});
+    });
+    item.append(button);
+    list.append(item);
+  }
+  popular.append(title,list);
+}

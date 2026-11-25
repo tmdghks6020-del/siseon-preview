@@ -31,7 +31,9 @@
 
 </style>
 <style>.site-info-article section,.site-info-links{margin-top:24px;padding-top:16px;border-top:1px solid var(--line)}.site-info-article h2{font-size:19px;margin:0 0 8px}.site-info-article p{line-height:1.8}.site-info-links a{display:inline-block;padding:6px}</style>
-</head>
+<style>
+.post-reactions{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.post-reactions button,.popular-opinions button{border:1px solid var(--line);border-radius:9px;background:#fff;color:#245449;padding:8px 12px;text-align:left}.post-reactions button[aria-pressed=true]{background:#e3f1e9;border-color:#4d806c}.popular-opinions{padding:16px;background:#edf5ef;border-radius:12px;margin-bottom:16px}.popular-opinions h3{margin:0}.popular-opinions li+li{margin-top:8px}
+</style></head>
 <body>
   <header class="topbar">
     <a class="brand" href="#homeView" aria-label="시선 홈"><img class="brand-mark" src="assets/siseon-mark.svg" alt="" /><span>시선</span></a>
@@ -351,7 +353,7 @@
   <script src="ai-candidates.js"></script>
   <script src="supabase-config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=restore-notice-board"></script>
+  <script src="app.js?v=post-reactions-v1"></script>
   <script type="module" src="content-automation.js?v=topic-options-20261125"></script>
 </body>
 </html>
