@@ -33,12 +33,13 @@
 <style>.site-info-article section,.site-info-links{margin-top:24px;padding-top:16px;border-top:1px solid var(--line)}.site-info-article h2{font-size:19px;margin:0 0 8px}.site-info-article p{line-height:1.8}.site-info-links a{display:inline-block;padding:6px}</style>
 <style>
 .post-reactions{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.post-reactions button,.popular-opinions button{border:1px solid var(--line);border-radius:9px;background:#fff;color:#245449;padding:8px 12px;text-align:left}.post-reactions button[aria-pressed=true]{background:#e3f1e9;border-color:#4d806c}.popular-opinions{padding:16px;background:#edf5ef;border-radius:12px;margin-bottom:16px}.popular-opinions h3{margin:0}.popular-opinions li+li{margin-top:8px}
-</style></head>
+</style><style>.top-actions .header-logout{padding-inline:10px;white-space:nowrap}@media(max-width:700px){.top-actions{gap:5px}.top-actions .header-logout{padding-inline:7px;font-size:11px}}</style>
+</head>
 <body>
   <header class="topbar">
     <a class="brand" href="#homeView" aria-label="시선 홈"><img class="brand-mark" src="assets/siseon-mark.svg" alt="" /><span>시선</span></a>
     <nav class="desktop-nav" aria-label="주요 메뉴"><a class="nav-active" data-nav-key="polls" href="#pollBoard" data-open-poll-board>투표</a><a data-nav-key="announcements" href="?view=announcements" data-open-announcements>공지사항</a><a data-nav-key="open-talk" href="#openTalk">익명 자유토론</a><a data-nav-key="suggestions" href="#topicSuggestions">주제 제안</a><a data-nav-key="principles" href="#principles">운영 원칙</a><a data-nav-key="archive" href="#archiveBoard" data-open-archive>지난 투표 보관함</a><a data-nav-key="community" href="#guidelines">커뮤니티 안내</a></nav>
-    <div class="top-actions"><button class="admin-entry hidden" id="adminEntryButton">관리자 편성</button><button class="login-button" id="loginButton">로그인</button><button class="icon-button" id="menuButton" type="button" aria-label="사이트맵 열기" aria-expanded="false" aria-controls="siteMapPanel"><span></span><span></span><span></span></button></div>
+    <div class="top-actions"><button class="admin-entry hidden" id="adminEntryButton">관리자 편성</button><button class="login-button" id="loginButton">로그인</button><button type="button" class="login-button header-logout hidden" id="headerLogoutButton">로그아웃</button><button class="icon-button" id="menuButton" type="button" aria-label="사이트맵 열기" aria-expanded="false" aria-controls="siteMapPanel"><span></span><span></span><span></span></button></div>
     <nav class="site-map-panel hidden" id="siteMapPanel" aria-label="사이트맵"><div class="site-map-heading"><strong>사이트맵</strong><button type="button" id="siteMapClose" aria-label="사이트맵 닫기">×</button></div><a href="#pollBoard" data-nav-key="polls" data-open-poll-board>진행 중인 투표 <span>→</span></a><a href="?view=announcements" data-nav-key="announcements" data-open-announcements>공지사항 <span>→</span></a><a href="#openTalk" data-nav-key="open-talk">익명 자유토론장 <span>→</span></a><a href="#topicSuggestions" data-nav-key="suggestions">다음 주제 제안 <span>→</span></a><a href="#principles" data-nav-key="principles">운영 원칙 <span>→</span></a><a href="#archiveBoard" data-nav-key="archive" data-open-archive>지난 투표 보관함 <span>→</span></a><a href="#guidelines" data-nav-key="community">커뮤니티 안내 <span>→</span></a><a href="?view=member" id="memberPageLink">마이페이지 · 내 정보 <span>→</span></a><a href="#adminLogin" data-open-admin-login>운영자 로그인 <span>→</span></a></nav>
   </header>
   <main id="homeView">
@@ -353,7 +354,7 @@
   <script src="ai-candidates.js"></script>
   <script src="supabase-config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=post-reactions-v1"></script>
+  <script src="app.js?v=header-logout"></script>
   <script type="module" src="content-automation.js?v=topic-options-20261125"></script>
 </body>
 </html>

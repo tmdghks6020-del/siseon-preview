@@ -36,6 +36,7 @@ const memberAppRootUrl = new URL('./', document.querySelector('script[src*="app.
 const getMemberNickname = () => String(memberSession?.user?.user_metadata?.nickname || '').trim();
 const isMemberSignedIn = () => Boolean(memberSession?.user && getMemberNickname());
 function refreshMemberControls() {
+  document.querySelector('#headerLogoutButton').classList.toggle('hidden', !memberSession?.user);
   if (loginButton) loginButton.textContent = isMemberSignedIn() ? '내 정보' : memberSession?.user ? '닉네임 설정' : '로그인';
 }
 function openNicknameSetup() {
@@ -2409,12 +2410,7 @@ document.querySelector('#memberView').addEventListener('click',async event=>{
     case 'profile': showMemberPage('profile');break;
     case 'nickname': openNicknameSetup();break;
     case 'contact': document.querySelector('footer [data-user-contact="inquiries"]')?.click();break;
-    case 'logout':
-      if(!window.confirm('로그아웃하시겠습니까?'))return;
-      button.disabled=true;
-      const {error}=await memberAuth.auth.signOut();
-      if(error){button.disabled=false;showUserActionToast('로그아웃 실패: '+error.message);return;}
-      pendingVote=null;pendingMemberAction=null;sessionStorage.removeItem('siseon:pending-auth-vote');renderMemberPage();break;
+    case 'logout': await signOutMember(button); break;
   }
 });
 document.querySelector('#memberView').addEventListener('change',async event=>{
@@ -2580,3 +2576,21 @@ async function refreshPostReactions(container, board) {
   }
   popular.append(title,list);
 }
+
+async function signOutMember(button) {
+  if (!memberSession?.user || !window.confirm('로그아웃하시겠습니까?')) return;
+  button.disabled = true;
+  try {
+    const { error } = await memberAuth.auth.signOut();
+    if (error) throw error;
+    pendingVote = null;
+    pendingMemberAction = null;
+    sessionStorage.removeItem('siseon:pending-auth-vote');
+    showUserActionToast('로그아웃했습니다.');
+  } catch (error) {
+    showUserActionToast('로그아웃하지 못했습니다: ' + error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+document.querySelector('#headerLogoutButton').addEventListener('click', event => signOutMember(event.currentTarget));
