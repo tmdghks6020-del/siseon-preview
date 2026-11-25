@@ -2211,6 +2211,7 @@ document.querySelector('footer').addEventListener('click', (event) => {
   [...typeSelect.options].forEach((option) => { option.hidden = isPartnership ? !['콘텐츠 제휴', '자료 협력', '학술 협력', '기타'].includes(option.value) : ['콘텐츠 제휴', '자료 협력', '학술 협력'].includes(option.value); });
   typeSelect.value = isPartnership ? '콘텐츠 제휴' : '서비스 이용';
   document.querySelector('#contactForm').reset();
+  if (!isPartnership) document.querySelector('#contactSender').value = getMemberNickname();
   typeSelect.value = isPartnership ? '콘텐츠 제휴' : '서비스 이용';
   document.querySelector('#contactDialog').showModal();
 });
