@@ -787,7 +787,7 @@ async function refreshAdminOperations() {
   const targetMap=new Map([...talk.map(x=>[x.id,{owner:x.author_id,nickname:x.author_nickname,title:x.title,status:x.status}]),...posts.map(x=>[x.id,{owner:x.author_id,nickname:x.author_nickname,title:x.title,status:x.status}])]);
   adminOperations.members=members.map(x=>({id:x.user_id,nickname:x.nickname,authRef:x.user_id,joined:new Date(x.created_at).toLocaleDateString('ko-KR'),status:({active:'정상',warned:'주의',suspended:'7일 정지',deleted:'탈퇴'})[x.status]||'정상',role:x.trust_level==='trusted'?'신뢰 회원':'일반 회원',reports:reports.filter(r=>targetMap.get(r.target_id)?.owner===x.user_id).length}));
   adminOperations.reports=reports.map(x=>{const target=targetMap.get(x.target_id)||{};return {id:x.id,memberId:target.owner||'',nickname:target.nickname||'익명 작성자',area:x.target_type==='open_talk_post'?'익명 자유토론장':'토론 게시글',summary:x.details,reason:x.reason,count:1,status:({pending:'미검토',reviewing:'검토 중',resolved:'조치 완료',dismissed:'위반 아님'})[x.status],postStatus:({published:'공개',hidden:'숨김',removed:'삭제됨'})[target.status]||'공개',postId:x.target_id,postTitle:target.title,issueId:x.target_type==='open_talk_post'?'open-talk':`topic-${posts.find(p=>p.id===x.target_id)?.topic_id||''}`,reportedAt:x.created_at};});
-  adminOperations.inquiries=inquiries.map(x=>({id:x.id,type:x.category,title:x.title,sender:x.sender,received:new Date(x.created_at).toLocaleString('ko-KR'),status:({pending:'미답변',answered:'답변 중',closed:'완료'})[x.status],message:x.message,reply:x.admin_note,createdAt:x.created_at}));
+  adminOperations.inquiries=inquiries.map(x=>({id:x.id,type:x.category,title:x.title,sender:x.sender,memberId:x.user_id,received:new Date(x.created_at).toLocaleString('ko-KR'),status:({pending:'미답변',answered:'답변 완료',closed:'완료'})[x.status],message:x.message,reply:x.admin_note,answeredAt:x.answered_at,createdAt:x.created_at}));
   adminOperations.partnerships=partners.map(x=>({id:x.id,type:x.category,title:x.title,sender:x.organization,received:new Date(x.created_at).toLocaleString('ko-KR'),status:({pending:'미확인',reviewing:'검토 중',answered:'답변 중',closed:'완료'})[x.status],message:x.message,reply:x.admin_note,createdAt:x.created_at}));
   adminOperations.announcements=notices.map(x=>({id:x.id,category:x.category,title:x.title,summary:x.summary,body:x.body,published:x.published,pinned:x.pinned,createdAt:x.created_at}));
   adminOperations.openTalkPosts=talk.map(x=>({id:x.id,category:x.category,title:x.title,body:x.body,author:x.author_nickname,memberRef:x.author_id,status:({published:'공개',hidden:'숨김',removed:'삭제됨'})[x.status],createdAt:x.created_at,comments:[]}));
@@ -1571,7 +1571,7 @@ function renderAdminPage(page = currentAdminPage) {
     content.innerHTML = `${header('SAFETY & MODERATION', '신고·게시글 관리', '신고 맥락을 확인하고 게시글과 회원에 각각 비례한 조치를 적용하세요.')}<div class="moderation-guidance"><strong>검토 기준</strong><span>비판 의견과 인격 모독을 구분하고, 표현의 맥락·반복성·피해 정도를 살핀 뒤 사유를 기록합니다.</span></div><div class="report-list">${adminOperations.reports.map((report) => `<article class="report-card"><div class="report-card-top"><span class="report-reason">${escapeAdminHtml(report.reason)}</span><span class="admin-status ${report.status === '미검토' ? 'status-warn' : 'status-good'}">${escapeAdminHtml(report.status)}</span></div>${report.postTitle ? `<p class="reported-object">신고 대상 글: ${escapeAdminHtml(report.postTitle)}</p>` : ''}<h2>${escapeAdminHtml(report.summary)}</h2><p>${escapeAdminHtml(report.area)} · 작성자 ${escapeAdminHtml(report.nickname)} · 신고 ${report.count}건 · 게시글 ${escapeAdminHtml(report.postStatus)}</p><details class="report-detail"><summary>신고 맥락과 검토 안내</summary><p>신고된 원문은 시연 화면에서 일부 가려져 있습니다. 앞뒤 대화, 반복 여부, 대상이 된 회원의 설명과 기존 운영 기록을 함께 확인한 뒤 조치하세요. 이 예시 데이터에는 실제 회원 게시물이 포함되어 있지 않습니다.</p></details><div class="report-actions"><button data-admin-action="dismiss-report" data-id="${report.id}">위반 아님</button>${report.postStatus !== '공개' ? `<button data-admin-action="restore-post" data-id="${report.id}">게시글 복구</button>` : `<button data-admin-action="hide-post" data-id="${report.id}">게시글 숨김</button><button data-admin-action="delete-post" data-id="${report.id}">삭제 처리</button>`}<button class="danger-action" data-admin-action="suspend-member" data-id="${escapeAdminHtml(report.memberId)}">회원 제재 검토</button></div></article>`).join('')}</div>`;
   } else if (page === 'inquiries' || page === 'partnerships') {
     const isInquiry = page === 'inquiries'; const items = isInquiry ? adminOperations.inquiries : adminOperations.partnerships;
-    content.innerHTML = `${header(isInquiry ? 'SUPPORT INBOX' : 'PARTNERSHIPS', isInquiry ? '회원 문의' : '제휴 문의', isInquiry ? '접수 내용을 확인하고 답변 진행 상태를 관리하세요.' : '협력 목적과 기대 효과를 확인하고 내부 검토 상태를 기록하세요.')}<div class="table-toolbar"><span>전체 <b>${items.length}</b>건 접수</span><select id="inboxStatusFilter"><option>전체</option><option>미답변</option><option>답변 중</option><option>미확인</option><option>검토 중</option><option>완료</option></select></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>접수 내용</th><th>분류</th><th>보낸 사람</th><th>접수 시각</th><th>상태·처리</th></tr></thead><tbody>${items.map((item) => `<tr><td><strong>${escapeAdminHtml(item.title)}</strong><small>접수번호 ${escapeAdminHtml(item.id)}</small><details class="inbox-message"><summary>접수 내용${item.reply ? ' · 답변/메모 확인' : ' 보기'}</summary><p>${escapeAdminHtml(item.message || '기존 시연 문의의 상세 본문입니다.')}</p>${item.reply ? `<p class="saved-reply"><b>운영 답변·메모</b>${escapeAdminHtml(item.reply)}</p>` : ''}</details></td><td>${escapeAdminHtml(item.type)}</td><td>${escapeAdminHtml(item.sender)}</td><td>${escapeAdminHtml(item.received)}</td><td><span class="admin-status status-warn">${escapeAdminHtml(item.status)}</span><div class="row-actions"><button data-admin-action="progress-${page}" data-id="${item.id}">검토 시작</button><button data-admin-action="${isInquiry ? 'reply-inquiries' : 'note-partnerships'}" data-id="${item.id}">${isInquiry ? '답변 초안' : '내부 메모'}</button><button data-admin-action="complete-${page}" data-id="${item.id}">완료 처리</button></div></td></tr>`).join('')}</tbody></table></div>`;
+    content.innerHTML = `${header(isInquiry ? 'SUPPORT INBOX' : 'PARTNERSHIPS', isInquiry ? '회원 문의' : '제휴 문의', isInquiry ? '접수 내용을 확인하고 답변 진행 상태를 관리하세요.' : '협력 목적과 기대 효과를 확인하고 내부 검토 상태를 기록하세요.')}<div class="table-toolbar"><span>전체 <b>${items.length}</b>건 접수</span><select id="inboxStatusFilter"><option>전체</option><option>미답변</option><option>답변 중</option><option>미확인</option><option>검토 중</option><option>완료</option></select></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>접수 내용</th><th>분류</th><th>보낸 사람</th><th>접수 시각</th><th>상태·처리</th></tr></thead><tbody>${items.map((item) => `<tr><td><strong>${escapeAdminHtml(item.title)}</strong><small>접수번호 ${escapeAdminHtml(item.id)}</small><details class="inbox-message"><summary>접수 내용${item.reply ? ' · 답변/메모 확인' : ' 보기'}</summary><p>${escapeAdminHtml(item.message || '기존 시연 문의의 상세 본문입니다.')}</p>${item.reply ? `<p class="saved-reply"><b>운영 답변·메모</b>${escapeAdminHtml(item.reply)}</p>` : ''}</details></td><td>${escapeAdminHtml(item.type)}</td><td>${escapeAdminHtml(item.sender)}</td><td>${escapeAdminHtml(item.received)}</td><td><span class="admin-status status-warn">${escapeAdminHtml(item.status)}</span><div class="row-actions"><button data-admin-action="progress-${page}" data-id="${item.id}">검토 시작</button><button data-admin-action="${isInquiry ? 'reply-inquiries' : 'note-partnerships'}" data-id="${item.id}">${isInquiry ? '답변하기' : '내부 메모'}</button><button data-admin-action="complete-${page}" data-id="${item.id}">완료 처리</button></div></td></tr>`).join('')}</tbody></table></div>`;
   } else if (page === 'announcements') {
     const edit = adminOperations.announcements.find((item) => item.id === editingAnnouncementId);
     content.innerHTML = `${header('PUBLIC INFORMATION', '공지사항 관리', '게시할 공지를 작성하고 사용자 화면 노출과 상단 고정을 관리합니다.')}<div class="admin-announcement-layout"><form class="announcement-editor" id="announcementEditor"><h2>${edit ? '공지 수정' : '새 공지 작성'}</h2><label for="announcementTitle">제목</label><input id="announcementTitle" name="title" maxlength="100" required value="${escapeAdminHtml(edit?.title || '')}" placeholder="공지 제목"/><label for="announcementCategory">분류</label><select id="announcementCategory" name="category"><option ${edit?.category === '운영 원칙' ? 'selected' : ''}>운영 원칙</option><option ${edit?.category === '이용 안내' ? 'selected' : ''}>이용 안내</option><option ${edit?.category === '신고와 제재' ? 'selected' : ''}>신고와 제재</option><option ${edit?.category === '투표 안내' ? 'selected' : ''}>투표 안내</option><option ${edit?.category === '안전과 개인정보' ? 'selected' : ''}>안전과 개인정보</option><option ${edit?.category === '서비스 소식' ? 'selected' : ''}>서비스 소식</option></select><label for="announcementSummary">목록 요약</label><input id="announcementSummary" name="summary" maxlength="180" required value="${escapeAdminHtml(edit?.summary || '')}" placeholder="목록과 상단 공지에 보일 한 줄 요약"/><label for="announcementBody">본문</label><textarea id="announcementBody" name="body" required placeholder="공지 내용을 입력하세요">${escapeAdminHtml(edit?.body || '')}</textarea><label class="announcement-check"><input type="checkbox" name="pinned" ${edit?.pinned ? 'checked' : ''}/> 상단 공지로 고정</label><div class="announcement-editor-actions"><button class="primary-button" type="submit">${edit ? '수정 저장' : '저장하고 게시'}</button>${edit ? '<button type="button" data-announcement-action="cancel-edit">취소</button>' : ''}</div><p class="admin-footnote">게시된 공지는 사용자 화면 상단 한 줄 공지와 공지 목록에 바로 반영됩니다.</p></form><section class="announcement-admin-list"><h2>등록 공지 ${adminOperations.announcements.length}건</h2>${[...adminOperations.announcements].sort((a,b) => new Date(b.createdAt)-new Date(a.createdAt)).map((item) => `<article class="announcement-admin-item"><strong>${escapeAdminHtml(item.title)}</strong><small>${escapeAdminHtml(item.category)} · ${item.published ? '게시 중' : '내림'}${item.pinned ? ' · 상단 고정' : ''}</small><div class="announcement-row-actions"><button data-announcement-action="edit" data-id="${escapeAdminHtml(item.id)}">수정</button><button data-announcement-action="toggle-publish" data-id="${escapeAdminHtml(item.id)}">${item.published ? '게시 내리기' : '게시하기'}</button><button data-announcement-action="toggle-pin" data-id="${escapeAdminHtml(item.id)}">${item.pinned ? '고정 해제' : '상단 고정'}</button></div></article>`).join('')}</section></div>`;
@@ -1648,7 +1648,12 @@ async function handleAdminAction(action, id) {
     const collection = action.endsWith('inquiries') ? adminOperations.inquiries : adminOperations.partnerships;
     const item = collection.find((entry) => entry.id === id);
     if (!item) return;
-    if (action.startsWith('reply-') || action.startsWith('note-')) {
+    if (action === 'reply-inquiries') {
+      if (!item.memberId) { window.alert('계정과 연결되지 않은 예전 문의는 마이페이지로 답변을 전달할 수 없습니다.'); return; }
+      openInquiryReply(item);
+      return;
+    }
+    if (action.startsWith('note-')) {
       const reply = window.prompt(action.startsWith('reply-') ? '답변 초안 내용을 입력해 주세요.' : '내부 검토 메모를 입력해 주세요.', item.reply || '');
       if (!reply?.trim()) return;
       item.reply = reply.trim();
@@ -1659,7 +1664,7 @@ async function handleAdminAction(action, id) {
     } else {
       item.status = action.startsWith('complete-') ? '완료' : (action.endsWith('inquiries') ? '답변 중' : '검토 중');
       const table=action.endsWith('inquiries')?'user_inquiries':'partnership_inquiries';
-      const status=action.startsWith('complete-')?'closed':action.endsWith('inquiries')?'answered':'reviewing';
+      const status=action.startsWith('complete-')?'closed':action.endsWith('inquiries')?(item.answeredAt?'answered':'pending'):'reviewing';
       await memberAuth.from(table).update({status}).eq('id',item.id);
       logAdminAction(action.startsWith('complete-') ? '문의 완료 처리' : '문의 검토 시작', item.title, `${item.sender} · ${item.id}`);
     }
@@ -2204,6 +2209,7 @@ document.querySelector('footer').addEventListener('click', (event) => {
   event.preventDefault();
   activeContactMode = contactButton.dataset.userContact;
   const isPartnership = activeContactMode === 'partnerships';
+  if (!isPartnership && !isMemberSignedIn()) { openLogin(() => contactButton.click()); return; }
   document.querySelector('#contactDialogTitle').textContent = isPartnership ? '제휴 문의 접수' : '회원 문의 접수';
   document.querySelector('#contactSenderLabel').textContent = isPartnership ? '기관·회사명' : '닉네임';
   document.querySelector('#contactSender').placeholder = isPartnership ? '기관 또는 회사 이름' : '닉네임 또는 담당자명';
@@ -2221,13 +2227,15 @@ document.querySelector('#contactForm').addEventListener('submit', async (event) 
   const form = event.currentTarget;
   const values = Object.fromEntries(new FormData(form).entries());
   const isPartnership = activeContactMode === 'partnerships';
+  if (!isPartnership && !isMemberSignedIn()) { showUserActionToast('로그인 후 회원 문의를 접수해 주세요.'); return; }
   const table=isPartnership?'partnership_inquiries':'user_inquiries';
   const payload=isPartnership?{user_id:memberSession?.user?.id||null,category:values.type,title:values.title.trim(),organization:values.sender.trim(),message:values.message.trim()}:{user_id:memberSession?.user?.id||null,category:values.type,title:values.title.trim(),sender:values.sender.trim(),message:values.message.trim()};
   const {error}=await memberAuth.from(table).insert(payload);
   if(error){showUserActionToast(`접수하지 못했습니다: ${error.message}`);return;}
   document.querySelector('#contactDialog').close();
   form.reset();
-  showUserActionToast(isPartnership ? '제휴 문의를 접수했습니다.' : '문의가 접수됐습니다. 운영팀이 확인하겠습니다.');
+  showUserActionToast(isPartnership ? '제휴 문의를 접수했습니다.' : '문의가 접수됐습니다. 답변은 마이페이지의 내 문의에서 확인할 수 있습니다.');
+  if (!document.querySelector('#memberView').classList.contains('hidden')) renderMemberPage();
 });
 
 document.querySelectorAll('[data-close-dialog]').forEach((button) => {
@@ -2348,9 +2356,12 @@ function renderMemberPage() {
   view.innerHTML = `${back}<h1>${profile ? '내 정보 수정' : '마이페이지'}</h1><p class="member-caption">${profile ? '시선에서 사용할 정보를 관리하세요.' : '내가 참여한 이야기와 나의 기록'}</p>
     <section class="member-card"><div class="member-avatar" aria-hidden="true">${escapeSiteText([...getMemberNickname()][0] || '시')}</div><h2>${nickname}</h2><p>${kakao ? '카카오 계정으로 연결됨' : '회원 계정으로 연결됨'}</p>
     ${profile ? `<dl class="member-details"><div><dt>닉네임</dt><dd>${nickname} <button data-member="nickname">변경</button></dd></div><div><dt>가입일</dt><dd>${new Date(user.created_at).toLocaleDateString('ko-KR')}</dd></div><div><dt>로그인 방식</dt><dd>${kakao ? '카카오 로그인' : '이메일 로그인'}</dd></div></dl>` : '<button class="member-row" data-member="profile">내 정보 수정 <span>→</span></button>'}</section>
-    ${profile ? '' : '<section class="member-card"><h2>내 활동</h2><p class="member-caption">최근 참여 기록을 확인하세요.</p><div id="memberActivity" role="status">기록을 불러오고 있습니다.</div></section><section class="member-card"><h2>알림 설정</h2><p class="member-caption">알림 수신 선호를 저장합니다. 기기 푸시 알림은 앱 연결 후 제공됩니다.</p><div id="memberPreferences" role="status">설정을 불러오고 있습니다.</div></section>'}
+    ${profile ? '' : '<section class="member-card"><h2>내 문의</h2><button class="member-row" data-member="contact">회원 문의 접수 <span>→</span></button><div id="memberInquiries" aria-live="polite">문의 내역을 불러오고 있습니다.</div></section><section class="member-card"><h2>내 활동</h2><p class="member-caption">최근 참여 기록을 확인하세요.</p><div id="memberActivity" role="status">기록을 불러오고 있습니다.</div></section><section class="member-card"><h2>알림 설정</h2><p class="member-caption">알림 수신 선호를 저장합니다. 기기 푸시 알림은 앱 연결 후 제공됩니다.</p><div id="memberPreferences" role="status">설정을 불러오고 있습니다.</div></section>'}
     <section class="member-card"><h2>도움 및 계정</h2><button class="member-row" data-member="contact">회원 문의 <span>→</span></button><button class="member-row" data-member="logout">로그아웃 <span>→</span></button><p class="member-caption">회원 탈퇴는 회원 문의로 요청해 주세요.</p></section>`;
-  if (!profile) loadMemberPageData(user.id, request);
+  if (!profile) {
+    loadMemberPageData(user.id, request);
+    loadMyInquiries(user.id, request);
+  }
 }
 async function loadMemberPageData(userId, request) {
   const queries = [
@@ -2421,3 +2432,40 @@ document.querySelector('#topicGenerationMode').addEventListener('change',event=>
   document.querySelector('#topicGenerationStatus').textContent=event.target.value==='fun' ? '뉴스 출처 없이 재미 투표를 만듭니다. 가상 표시를 붙이고 관리자가 직접 승인합니다.' : material ? '참고 링크와 핵심 내용을 입력하세요. 원문 자동 수집은 하지 않습니다. 관리자가 직접 확인 후 승인합니다.' : '선택한 분야와 키워드로 뉴스를 찾습니다. 정치·재판·증시 주제는 관리자가 직접 승인합니다.';
 });
 
+
+async function loadMyInquiries(userId, request) {
+  const target = document.querySelector('#memberInquiries');
+  const { data, error } = await memberAuth.rpc('get_my_siseon_inquiries');
+  if (!target.isConnected || request !== memberPageLoad || memberSession?.user?.id !== userId) return;
+  if (error) { target.textContent = '문의 내역을 불러오지 못했습니다. 마이페이지를 다시 열어 주세요.'; return; }
+  target.innerHTML = (data || []).map(item => `<details class="member-activity"><summary>${escapeSiteText(item.title)} · ${item.answered_at ? '답변 완료' : '답변 대기'}</summary><p class="member-caption">${new Date(item.created_at).toLocaleString('ko-KR')}</p><p style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeSiteText(item.message)}</p>${item.answered_at ? `<div class="member-record"><strong>[운영자]</strong><small>${new Date(item.answered_at).toLocaleString('ko-KR')}</small><p style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeSiteText(item.reply)}</p></div>` : ''}</details>`).join('') || '<p class="member-caption">접수한 문의가 없습니다.</p>';
+}
+
+function openInquiryReply(item) {
+  const dialog = document.querySelector('#inquiryReplyDialog');
+  const form = dialog.querySelector('form');
+  const message = dialog.querySelector('[role=status]');
+  form.elements.reply.value = item.answeredAt ? item.reply : '';
+  message.textContent = '';
+  form.onsubmit = async event => {
+    event.preventDefault();
+    const reply = form.elements.reply.value.trim();
+    if (!reply) { message.textContent = '답변 내용을 입력해 주세요.'; return; }
+    const send = form.querySelector('[type=submit]');
+    send.disabled = true;
+    try {
+      const answeredAt = new Date().toISOString();
+      const { error } = await memberAuth.from('user_inquiries')
+        .update({status:'answered', admin_note:reply, answered_at:answeredAt})
+        .eq('id', item.id).select('id').single();
+      if (error) throw error;
+      Object.assign(item, {reply, answeredAt, status:'답변 완료'});
+      dialog.close();
+      renderAdminPage(currentAdminPage);
+      showUserActionToast('회원의 내 문의에 답변을 전송했습니다.');
+    } catch (error) {
+      message.textContent = '답변 전송 실패: ' + error.message;
+    } finally { send.disabled = false; }
+  };
+  dialog.showModal();
+}
