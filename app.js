@@ -155,6 +155,8 @@ function routeUrl(route, params = {}) {
   url.searchParams.delete('issue');
   url.searchParams.delete('view');
   url.searchParams.delete('notice');
+  url.searchParams.delete('share');
+  if (route === 'public-share') { url.searchParams.set('share', params.uuid); return url.pathname + url.search; }
   url.hash = '';
   if (route === 'issue' && params.issueId) url.searchParams.set('issue', params.issueId);
   else if (route !== 'home') url.searchParams.set('view', route);
@@ -163,6 +165,7 @@ function routeUrl(route, params = {}) {
 }
 
 function pushAppRoute(route, params = {}, replace = false) {
+  if (route !== 'public-share') document.querySelector('#publicSharedPoll')?.classList.add('hidden');
   const state = { siseonRoute: route, ...params };
   const method = replace ? 'replaceState' : 'pushState';
   window.history[method](state, '', routeUrl(route, params));
@@ -192,6 +195,7 @@ function restoreRouteFromHistory(state = {}) {
     if (dialog && !dialog.open) dialog.showModal();
     return;
   }
+  if (route === 'public-share' && state.uuid) return showPublicSharedPoll(state.uuid);
   if (route === 'issue') { const id = state.issueId || new URLSearchParams(window.location.search).get('issue'); if (id && getIssueData(id)) return openIssue(id, 'none'); }
   if (route === 'member' || route === 'profile') return showMemberPage(route, false);
   if (['about','principles','privacy'].includes(route)) return openSiteInfo(route, false);
@@ -209,7 +213,7 @@ function restoreRouteFromHistory(state = {}) {
 }
 
 function setTopNavActive(key) {
-  document.querySelector('#publicSharedPoll')?.classList.add('hidden');
+  if (history.state?.siseonRoute !== 'public-share') document.querySelector('#publicSharedPoll')?.classList.add('hidden');
   document.querySelector('#siteInfoView').classList.add('hidden');
   document.querySelector('#memberView')?.classList.add('hidden');
   document.querySelectorAll('.desktop-nav [data-nav-key], .site-map-panel [data-nav-key]').forEach((link) => {
@@ -2327,12 +2331,13 @@ const sharedTopicId = new URLSearchParams(window.location.search).get('share');
 const initialIssueId = new URLSearchParams(window.location.search).get('issue');
 const initialView = new URLSearchParams(window.location.search).get('view');
 const rootUrl = new URL(window.location.href);
-rootUrl.searchParams.delete('issue'); rootUrl.searchParams.delete('view'); rootUrl.searchParams.delete('notice');
+rootUrl.searchParams.delete('issue'); rootUrl.searchParams.delete('view'); rootUrl.searchParams.delete('notice'); rootUrl.searchParams.delete('share');
 const rootLocation = `${rootUrl.pathname}${rootUrl.search}${rootUrl.hash}`;
 window.history.replaceState({ siseonRoute: 'home', siseonRoot: true }, '', rootLocation);
 window.history.pushState({ siseonRoute: 'home', siseonExitGuard: true }, '', rootLocation);
 syncSeoMetadata(null, 'none');
-if (initialIssueId && getIssueData(initialIssueId)) openIssue(initialIssueId, 'replace');
+if (/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(sharedTopicId || '')) showPublicSharedPoll(sharedTopicId);
+else if (initialIssueId && getIssueData(initialIssueId)) openIssue(initialIssueId, 'replace');
 else if (initialIssueId?.startsWith('topic-')) openIssue(initialIssueId, 'replace').catch(() => restoreHomeView());
 else if (initialView === 'poll-board') showPollBoard(false);
 else if (initialView === 'archive') showArchiveBoard(false);
@@ -2342,7 +2347,6 @@ else if (initialView === 'member' || initialView === 'profile') showMemberPage(i
 else if (['about','principles','privacy'].includes(initialView)) { pushAppRoute(initialView, {}, true); openSiteInfo(initialView, false); }
 else if (initialView === 'admin') showAdminView(false);
 else restoreHomeView();
-if (/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(sharedTopicId || '')) showPublicSharedPoll(sharedTopicId);
 
 loadPublishedTopics().then((topics) => {
   topics.forEach((issue) => { issues[issue.id] = issue; });
@@ -2661,7 +2665,8 @@ async function showPublicSharedPoll(uuid) {
   const view = document.querySelector('#publicSharedPoll');
   homeView.classList.add('hidden');
   view.classList.remove('hidden');
-  history.replaceState(history.state, '', new URL('?share=' + uuid, memberAppRootUrl));
+  pushAppRoute('public-share', { uuid }, true);
+  document.documentElement.classList.remove('opening-public-share');
   const content = view.querySelector('article');
   try {
     const id = 'topic-' + uuid.toLowerCase();
