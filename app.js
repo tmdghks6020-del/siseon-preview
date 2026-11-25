@@ -184,6 +184,7 @@ function restoreRouteFromHistory(state = {}) {
   }
   if (route === 'issue') { const id = state.issueId || new URLSearchParams(window.location.search).get('issue'); if (id && getIssueData(id)) return openIssue(id, 'none'); }
   if (route === 'member' || route === 'profile') return showMemberPage(route, false);
+  if (['about','principles','privacy'].includes(route)) return openSiteInfo(route, false);
   if (route === 'poll-board') return showPollBoard(false);
   if (route === 'archive') return showArchiveBoard(false);
   if (route === 'open-talk' || route === 'suggestions') return showCommunitySubpage(route, false);
@@ -198,6 +199,7 @@ function restoreRouteFromHistory(state = {}) {
 }
 
 function setTopNavActive(key) {
+  document.querySelector('#siteInfoView').classList.add('hidden');
   document.querySelector('#memberView')?.classList.add('hidden');
   document.querySelectorAll('.desktop-nav [data-nav-key], .site-map-panel [data-nav-key]').forEach((link) => {
     const active = link.dataset.navKey === key;
@@ -1347,6 +1349,7 @@ const editorialFieldNames = ['category', 'title', 'intro', 'facts', 'source', 's
 let isVerifiedAdmin = false;
 
 function showAdminView(pushHistory = true) {
+  document.querySelector('#siteInfoView').classList.add('hidden');
   document.querySelector('#memberView').classList.add('hidden');
   if (!isVerifiedAdmin) {
     const dialog = document.querySelector('#adminLoginDialog');
@@ -2287,6 +2290,7 @@ else if (initialView === 'archive') showArchiveBoard(false);
 else if (initialView === 'open-talk' || initialView === 'suggestions') showCommunitySubpage(initialView, false);
 else if (initialView === 'announcements') openAnnouncements(null, false);
 else if (initialView === 'member' || initialView === 'profile') showMemberPage(initialView, false);
+else if (['about','principles','privacy'].includes(initialView)) { pushAppRoute(initialView, {}, true); openSiteInfo(initialView, false); }
 else if (initialView === 'admin') showAdminView(false);
 else restoreHomeView();
 
@@ -2469,3 +2473,20 @@ function openInquiryReply(item) {
   };
   dialog.showModal();
 }
+
+function openSiteInfo(page, pushHistory = true) {
+  setTopNavActive('info');
+  [homeView, issueView, pollBoardView, announcementsView, archiveView, openTalkView, topicSuggestionsView, adminView].forEach(view => view.classList.add('hidden'));
+  closeSiteMap();
+  if (pushHistory) pushAppRoute(page);
+  const view = document.querySelector('#siteInfoView');
+  view.classList.remove('hidden');
+  view.querySelectorAll('.site-info-article').forEach(article => article.classList.toggle('hidden', article.id !== 'site-info-' + page));
+  window.scrollTo(0, 0);
+}
+document.addEventListener('click', event => {
+  const link = event.target.closest('[data-info-page]');
+  if (!link || event.defaultPrevented || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  openSiteInfo(link.dataset.infoPage);
+});
