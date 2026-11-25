@@ -32,6 +32,7 @@ jobs:
           cp index.html app.js content-automation.js supabase-config.js styles.css ai-candidates.js sitemap.xml robots.txt _site/
           cp -r assets _site/assets
           cp -r topics _site/topics
+          cp 404.html _site/404.html
       - name: Upload website artifact
         uses: actions/upload-pages-artifact@v4
         with:

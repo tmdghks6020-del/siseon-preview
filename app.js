@@ -209,6 +209,7 @@ function restoreRouteFromHistory(state = {}) {
 }
 
 function setTopNavActive(key) {
+  document.querySelector('#publicSharedPoll')?.classList.add('hidden');
   document.querySelector('#siteInfoView').classList.add('hidden');
   document.querySelector('#memberView')?.classList.add('hidden');
   document.querySelectorAll('.desktop-nav [data-nav-key], .site-map-panel [data-nav-key]').forEach((link) => {
@@ -1137,7 +1138,9 @@ function renderIssueContent() {
     share.textContent = '공유하기';
     detail.querySelector('.issue-meta').append(share);
     share.addEventListener('click', async () => {
-      const url = new URL('topics/' + topicUuid + '/', memberAppRootUrl).href;
+      const target = new URL(memberAppRootUrl);
+      target.searchParams.set('share', topicUuid);
+      const url = target.href;
       try {
         if (navigator.share) { await navigator.share({title:issue.title,url}); return; }
         await navigator.clipboard.writeText(url);
@@ -1392,6 +1395,7 @@ const editorialFieldNames = ['category', 'title', 'intro', 'facts', 'source', 's
 let isVerifiedAdmin = false;
 
 function showAdminView(pushHistory = true) {
+  document.querySelector('#publicSharedPoll')?.classList.add('hidden');
   document.querySelector('#siteInfoView').classList.add('hidden');
   document.querySelector('#memberView').classList.add('hidden');
   if (!isVerifiedAdmin) {
@@ -2319,6 +2323,7 @@ refreshAnnouncementsFromSupabase(false);
 refreshCommunityFromSupabase();
 refreshMemberControls();
 syncPollCarousel();
+const sharedTopicId = new URLSearchParams(window.location.search).get('share');
 const initialIssueId = new URLSearchParams(window.location.search).get('issue');
 const initialView = new URLSearchParams(window.location.search).get('view');
 const rootUrl = new URL(window.location.href);
@@ -2337,6 +2342,7 @@ else if (initialView === 'member' || initialView === 'profile') showMemberPage(i
 else if (['about','principles','privacy'].includes(initialView)) { pushAppRoute(initialView, {}, true); openSiteInfo(initialView, false); }
 else if (initialView === 'admin') showAdminView(false);
 else restoreHomeView();
+if (/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(sharedTopicId || '')) showPublicSharedPoll(sharedTopicId);
 
 loadPublishedTopics().then((topics) => {
   topics.forEach((issue) => { issues[issue.id] = issue; });
@@ -2649,4 +2655,41 @@ async function renderWithdrawals(content, today=false, offset=0) {
   content.querySelector('[data-wd-day]').onclick=()=>renderWithdrawals(content,true);
   content.querySelector('[data-wd-prev]')?.addEventListener('click',()=>renderWithdrawals(content,today,offset-30));
   content.querySelector('[data-wd-next]')?.addEventListener('click',()=>renderWithdrawals(content,today,offset+30));
+}
+
+async function showPublicSharedPoll(uuid) {
+  const view = document.querySelector('#publicSharedPoll');
+  homeView.classList.add('hidden');
+  view.classList.remove('hidden');
+  history.replaceState(history.state, '', new URL('?share=' + uuid, memberAppRootUrl));
+  const content = view.querySelector('article');
+  try {
+    const id = 'topic-' + uuid.toLowerCase();
+    const topic = (await loadPublishedTopics()).find(item => item.id === id);
+    if (!topic) { content.textContent = '공개 중인 안건을 찾을 수 없습니다.'; return; }
+    const archived = topic.status === 'archived';
+    const options = topic.voteOptions || ['찬성','반대','판단 보류'];
+    const escape = escapeSiteText;
+    const url = new URL(memberAppRootUrl);
+    url.searchParams.set('issue',id);
+    content.innerHTML = '<h1>'+escape(topic.title)+'</h1><p>'+escape(archived ? '투표 종료' : '마감 '+formatPollDeadline(topic))+'</p>'+
+      renderReadableParagraphs(topic.intro,'issue-intro')+
+      '<h2>배경과 확인할 내용</h2><ul>'+(topic.facts || []).map(fact=>'<li>'+escape(fact)+'</li>').join('')+'</ul>'+
+      (safeHttpsUrl(topic.sourceUrl)?'<p><a href="'+escape(safeHttpsUrl(topic.sourceUrl))+'" rel="noopener noreferrer">'+escape(topic.source || '참고 자료')+'</a></p>':'')+
+      '<h2>고려할 관점</h2>'+renderReadableParagraphs(topic.cardFor,'issue-intro')+renderReadableParagraphs(topic.cardAgainst,'issue-intro')+
+      '<h2>투표 선택지</h2><ul>'+options.map(option=>'<li>'+escape(option)+'</li>').join('')+'</ul>'+
+      (archived?'<section data-final-results><h2>최종 투표 결과</h2><p>집계를 불러오는 중입니다.</p></section>':'')+
+      '<p><a class="primary-button" href="'+escape(url.href)+'">'+(archived?'보관된 토론 보기':'투표 참여하기')+'</a></p>';
+    document.title=topic.title+' | 시선';
+    if (!archived) return;
+    const target = content.querySelector('[data-final-results]');
+    const {data,error} = await memberAuth.rpc('get_archived_share_results',{p_topics:[uuid]});
+    if(error){target.querySelector('p').textContent='최종 집계를 불러오지 못했습니다.';return;}
+    const counts=new Map((data || []).map(row=>[row.choice,Number(row.vote_count)]));
+    const total=[...counts.values()].reduce((sum,n)=>sum+n,0);
+    target.innerHTML='<h2>최종 투표 결과</h2><p>총 '+total+'명 참여</p><ul>'+options.map(option=>{
+      const count=counts.get(option)||0;
+      return '<li>'+escape(option)+' · '+count+'표 ('+(total?100*count/total:0).toFixed(1)+'%)</li>';
+    }).join('')+'</ul>';
+  } catch { content.textContent='안건을 불러오지 못했습니다. 새로고침해 주세요.'; }
 }
