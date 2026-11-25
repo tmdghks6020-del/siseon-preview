@@ -33,6 +33,15 @@ const memberAuth = window.supabase?.createClient && authConfig?.url && authConfi
   ? window.supabase.createClient(authConfig.url, authConfig.publishableKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
 const memberAppRootUrl = new URL('./', document.querySelector('script[src*="app.js"]')?.src || window.location.href).href;
+function stableMemberReturnUrl(path) {
+  const url = new URL(path, memberAppRootUrl);
+  const root = new URL(memberAppRootUrl);
+  if (url.origin !== root.origin || !url.pathname.startsWith(root.pathname)) return root;
+  const relativePath = url.pathname.slice(root.pathname.length);
+  const topicId = relativePath.match(/^topics\/[^/]*?([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})\/?$/i)?.[1];
+  if (topicId) root.searchParams.set('issue', 'topic-' + topicId.toLowerCase());
+  return topicId ? root : url;
+}
 const getMemberNickname = () => String(memberSession?.user?.user_metadata?.nickname || '').trim();
 const isMemberSignedIn = () => Boolean(memberSession?.user && getMemberNickname());
 function refreshMemberControls() {
@@ -69,7 +78,7 @@ function syncMemberAuth(session) {
     const returnPath = sessionStorage.getItem('siseon:auth-return-path');
     if (returnPath) {
       sessionStorage.removeItem('siseon:auth-return-path');
-      const returnUrl = new URL(returnPath, window.location.origin);
+      const returnUrl = stableMemberReturnUrl(returnPath);
       const appRootPath = new URL(memberAppRootUrl).pathname;
       if (returnUrl.origin === window.location.origin && returnUrl.pathname.startsWith(appRootPath)) {
         window.location.replace(returnUrl.href);
@@ -142,7 +151,7 @@ function renderReadableParagraphs(value, className) {
 }
 
 function routeUrl(route, params = {}) {
-  const url = new URL(window.location.href);
+  const url = stableMemberReturnUrl(window.location.href);
   url.searchParams.delete('issue');
   url.searchParams.delete('view');
   url.searchParams.delete('notice');
@@ -840,8 +849,7 @@ function voteKey(issueId = activeIssueId) {
 
 function syncSeoMetadata(issueId = null, historyMode = 'none') {
   const issue = issueId ? getIssueData(issueId) : null;
-  const normalizedPath = window.location.pathname.replace(/\/index\.html$/i, '/');
-  const baseUrl = new URL(normalizedPath, window.location.origin);
+  const baseUrl = new URL(memberAppRootUrl);
   if (issue && String(issueId).startsWith('topic-')) {
     const slug = String(issue.title).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '').slice(0, 64).replace(/-$/g, '');
     baseUrl.pathname = `${baseUrl.pathname.replace(/\/$/, '')}/topics/${encodeURIComponent(`${slug}-${String(issueId).slice(6)}`)}/`;
@@ -860,8 +868,8 @@ function syncSeoMetadata(issueId = null, historyMode = 'none') {
     ? { '@context': 'https://schema.org', '@type': 'Article', headline: issue.title, description, articleSection: issue.category, articleBody: `${issue.intro} ${(issue.facts || []).join(' ')} ${(issue.cardFor || '')} ${(issue.cardAgainst || '')}`.slice(0, 5000), url: canonicalUrl, mainEntityOfPage: canonicalUrl, isPartOf: { '@type': 'WebSite', name: '시선', url: websiteUrl } }
     : { '@context': 'https://schema.org', '@type': 'WebSite', name: '시선', url: websiteUrl, description };
   document.querySelector('#seoStructuredData').textContent = JSON.stringify(schema);
-  if (historyMode === 'push') window.history.pushState({ issueId, siseonRoute: 'issue' }, '', canonicalUrl);
-  if (historyMode === 'replace') window.history.replaceState({ ...(window.history.state || {}), issueId, siseonRoute: issueId ? 'issue' : (window.history.state?.siseonRoute || 'home') }, '', canonicalUrl);
+  if (historyMode === 'push') window.history.pushState({ issueId, siseonRoute: 'issue' }, '', routeUrl('issue', { issueId }));
+  if (historyMode === 'replace') window.history.replaceState({ ...(window.history.state || {}), issueId, siseonRoute: issueId ? 'issue' : (window.history.state?.siseonRoute || 'home') }, '', issueId ? routeUrl('issue', { issueId }) : memberAppRootUrl);
 }
 
 let publishedTopicsPromise;
@@ -2052,7 +2060,7 @@ document.querySelector('#kakaoLoginButton').addEventListener('click', async (eve
   button.textContent = '카카오로 이동 중…';
   message.textContent = '카카오 인증 화면으로 이동합니다.';
   if (pendingVote) sessionStorage.setItem('siseon:pending-auth-vote', pendingVote);
-  sessionStorage.setItem('siseon:auth-return-path', `${window.location.pathname}${window.location.search}${window.location.hash}`);
+  sessionStorage.setItem('siseon:auth-return-path', stableMemberReturnUrl(window.location.href).href);
   const { error } = await memberAuth.auth.signInWithOAuth({
     provider: 'kakao',
     options: { redirectTo: memberAppRootUrl }
