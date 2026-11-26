@@ -569,6 +569,7 @@ function makePollShareCard(issue, photo = null, photoSize = 0) {
   ctx.fillStyle = '#faf5e9';
   ctx.fillRect(0,0,1080,1080);
   const originalPhoto = photo;
+  const housingIllustration = !photo && /재개발|재건축/.test(issue.title || '');
   if (photo) {
     const photoHeight = 414;
     const ratio = Math.max(1080 / photo.width, photoHeight / photo.height);
@@ -584,12 +585,28 @@ function makePollShareCard(issue, photo = null, photoSize = 0) {
     ctx.drawImage(strip, 0, 0, 1080, photoHeight);
     ctx.imageSmoothingEnabled = true;
   }
+  if (housingIllustration) {
+    const sky = ctx.createLinearGradient(0,0,0,414);
+    sky.addColorStop(0,'#bdd9e3'); sky.addColorStop(1,'#f1e6c9');
+    ctx.fillStyle = sky; ctx.fillRect(0,0,1080,414);
+    const towers = [[35,117,146],[205,71,151],[380,134,153],[545,54,174],[746,98,148],[916,156,127]];
+    for (const [x,y,width] of towers) {
+      ctx.fillStyle='#d7c6a8'; ctx.fillRect(x+width-20,y+10,24,370-y);
+      ctx.fillStyle='#f4e9d4'; ctx.fillRect(x,y,width-20,380-y);
+      ctx.fillStyle='#6c858c';
+      for(let floor=y+24;floor<359;floor+=31) {
+        for(let column=x+13;column<x+width-35;column+=29) ctx.fillRect(column,floor,15,15);
+      }
+    }
+    ctx.fillStyle='#38594b'; ctx.fillRect(0,380,1080,34);
+  }
   panel(965,15,70,65,'#123d35');
   ctx.strokeStyle='#dcebdc'; ctx.lineWidth=3;
   ctx.beginPath(); ctx.moveTo(976,48); ctx.quadraticCurveTo(1000,21,1024,48); ctx.quadraticCurveTo(1000,75,976,48); ctx.stroke();
   ctx.fillStyle='#d7ee83'; ctx.beginPath(); ctx.arc(1000,48,9,0,Math.PI*2); ctx.fill();
   ctx.fillStyle='#123d35'; ctx.beginPath(); ctx.arc(1000,48,3,0,Math.PI*2); ctx.fill();
-  const top = photo ? 420 : 160;
+  const top = photo || housingIllustration ? 420 : 160;
+  if (housingIllustration) { font(21,600); wrap('아파트 단지 예시 삽화',55,top+23,950,1,25,accent); }
   if (issue.credit) { font(21,600); wrap('사진 · ' + issue.credit,55,top+23,950,1,25,accent); }
   font(52,800); wrap(issue.title,55,top+91,970,3,58,accent);
   const rows = [['배경',issue.summary],['찬성 의견',issue.forView],['반대 의견',issue.againstView]].filter(([,value])=>String(value || '').trim());
