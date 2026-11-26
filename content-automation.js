@@ -81,6 +81,7 @@ function renderContent(item) {
   const publishedLink = item.externalPostUrl && !removed ? `<p><a href="${esc(item.externalPostUrl)}" target="_blank" rel="noopener noreferrer">게시물 확인 ↗</a></p>` : '';
   const scheduleLabel = item.scheduledAt ? `<p class="admin-footnote">게시 예약 시각: ${esc(new Date(item.scheduledAt).toLocaleString('ko-KR'))} · 작업 ${esc(item.jobStatus || '')} · 재시도 ${Number(item.retryCount || 0)}회</p>` : '';
   const buttons = [
+    ['threads','instagram'].includes(item.platform) && item.status === 'published' && item.external_post_id ? `<button type="button" data-content-action="delete-social-post" data-id="${esc(item.id)}">게시물 삭제</button>` : '',
     item.platform === 'facebook' && item.status === 'published' && item.external_post_id && !removed ? `<button type="button" data-content-action="delete-facebook-post" data-id="${esc(item.id)}">Facebook 게시물 삭제</button>` : '',
     editable ? '<button type="button" data-content-action="save" data-id="' + esc(item.id) + '">수정 저장</button>' : '',
     editable ? '<button type="button" data-content-action="regenerate" data-id="' + esc(item.id) + '">AI 재생성</button>' : '',
@@ -366,6 +367,13 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
     button.disabled = true;
     if (action === 'logout') await supabase.auth.signOut();
     else if (action === 'refresh') await loadContents();
+    else if (action === 'delete-social-post') {
+      const item = contents.find(entry => entry.id === id);
+      const platform = platformNames[item?.platform] || '외부 채널';
+      if (!window.confirm(platform + ' 게시물과 시선의 발행 항목을 영구 삭제할까요?')) { button.disabled = false; return; }
+      await call('delete-social-post', { id });
+      await loadContents();
+    }
     else if (action === 'delete-facebook-post') {
       if (!window.confirm('Facebook 페이지에서 이 게시물을 삭제할까요? 게시물은 복구할 수 없습니다.')) { button.disabled = false; return; }
       await call('delete-facebook-post', { id });
