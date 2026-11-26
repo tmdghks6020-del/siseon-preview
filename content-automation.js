@@ -38,12 +38,12 @@ function renderPollPromotionStatuses(error = false) {
     const latest = new Map();
     for (const item of contents) {
       if (item.issueId !== target.dataset.promoStatus) continue;
-      const key = item.platform + ':' + item.status;
+      const key = item.platform + ':' + (item.content?.facebookDeletedAt ? 'removed' : item.status);
       const record = latest.get(key) || {item,count:0};
       record.count++;
       latest.set(key,record);
     }
-    target.innerHTML = [...latest.values()].map(({item,count}) => `<span class="admin-status ${item.status==='failed'?'status-blocked':item.status==='published'?'status-good':'status-warn'}">${esc(platformNames[item.platform] || item.platform)} · ${esc(promoStatus[item.status] || item.status)}${count>1?' '+count+'건':''}</span>`).join('') || '홍보 기록 없음';
+    target.innerHTML = [...latest.values()].map(({item,count}) => `<span class="admin-status ${item.status==='failed'?'status-blocked':item.status==='published'?'status-good':'status-warn'}">${esc(platformNames[item.platform] || item.platform)} · ${esc(item.content?.facebookDeletedAt ? '게시물 삭제 완료' : promoStatus[item.status] || item.status)}${count>1?' '+count+'건':''}</span>`).join('') || '홍보 기록 없음';
   }
 }
 function render() {
@@ -57,16 +57,18 @@ function render() {
     <div class="content-auto-list">${scoped.map(renderContent).join('') || '<p class="table-empty">아직 생성된 콘텐츠가 없습니다.</p>'}</div>`;
 }
 function renderContent(item) {
-  const statusLabel = ({ review_required: '검토 대기', approved: '승인 완료', rejected: '반려', queued: '게시 대기', publishing: '게시 중', published: '게시 완료', failed: '게시 실패' })[item.status] || item.status;
+  const removed = item.platform === 'facebook' && item.status === 'published' && item.content?.facebookDeletedAt;
+  const statusLabel = removed ? '게시물 삭제 완료' : ({ review_required: '검토 대기', approved: '승인 완료', rejected: '반려', queued: '게시 대기', publishing: '게시 중', published: '게시 완료', failed: '게시 실패' })[item.status] || item.status;
   const editable = !['published', 'publishing'].includes(item.status);
   const sourceLinks = (item.sources || []).map((url) => `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>`).join(' · ') || '등록된 출처 없음';
   const jsonValue = JSON.stringify(platformContentShape(item), null, 2);
   const jobState = item.errorMessage ? `<p class="content-error">${esc(item.errorMessage)}</p>` : '';
   const imageUrl = /^https:\/\//i.test(item.content?.imageUrl || '') ? item.content.imageUrl : '';
   const imagePreview = ['instagram','facebook'].includes(item.platform) && imageUrl ? `<img class="content-image-preview" src="${esc(imageUrl)}" alt="홍보 이미지 시안" loading="lazy">` : '';
-  const publishedLink = item.externalPostUrl ? `<p><a href="${esc(item.externalPostUrl)}" target="_blank" rel="noopener noreferrer">게시물 확인 ↗</a></p>` : '';
+  const publishedLink = item.externalPostUrl && !removed ? `<p><a href="${esc(item.externalPostUrl)}" target="_blank" rel="noopener noreferrer">게시물 확인 ↗</a></p>` : '';
   const scheduleLabel = item.scheduledAt ? `<p class="admin-footnote">게시 예약 시각: ${esc(new Date(item.scheduledAt).toLocaleString('ko-KR'))} · 작업 ${esc(item.jobStatus || '')} · 재시도 ${Number(item.retryCount || 0)}회</p>` : '';
   const buttons = [
+    item.platform === 'facebook' && item.status === 'published' && item.external_post_id && !removed ? `<button type="button" data-content-action="delete-facebook-post" data-id="${esc(item.id)}">Facebook 게시물 삭제</button>` : '',
     editable ? '<button type="button" data-content-action="save" data-id="' + esc(item.id) + '">수정 저장</button>' : '',
     editable ? '<button type="button" data-content-action="regenerate" data-id="' + esc(item.id) + '">AI 재생성</button>' : '',
     ['instagram','facebook'].includes(item.platform) && ['review_required','rejected'].includes(item.status) ? `<button type="button" data-content-action="generate-image" data-id="${esc(item.id)}">${imageUrl ? '이미지 시안 다시 만들기' : '이미지 시안 생성'}</button>` : '',
@@ -346,6 +348,11 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
     button.disabled = true;
     if (action === 'logout') await supabase.auth.signOut();
     else if (action === 'refresh') await loadContents();
+    else if (action === 'delete-facebook-post') {
+      if (!window.confirm('Facebook 페이지에서 이 게시물을 삭제할까요? 게시물은 복구할 수 없습니다.')) { button.disabled = false; return; }
+      await call('delete-facebook-post', { id });
+      await loadContents();
+    }
     else if (action === 'copy') {
       const item = contents.find((entry) => entry.id === id); const data = item?.content || {};
       const text = [data.title, data.intro, data.body, ...(data.headings || []), ...(data.tags || []).map((tag) => `#${tag}`)].filter(Boolean).join('\n\n');

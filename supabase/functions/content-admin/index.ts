@@ -744,6 +744,28 @@ async function handle(request: Request) {
       await audit('social_image_generated', row.id, actor.id, { platform: row.platform });
       return respond({ ok: true, imageUrl: publicFile.publicUrl });
     }
+    if (action === 'delete-facebook-post') {
+      const id = clean(body.id, 64);
+      if (!/^[0-9a-f-]{36}$/i.test(id)) return fail('홍보 글 ID가 올바르지 않습니다.');
+      const {data: row, error} = await service.from('generated_contents')
+        .select('id,content,external_post_id').eq('id',id).eq('platform','facebook').eq('status','published').maybeSingle();
+      if (error) throw error;
+      if (!row || !/^\d+(?:_\d+)?$/.test(row.external_post_id || '')) return fail('삭제할 Facebook 게시물을 찾지 못했습니다.',404);
+      if (row.content?.facebookDeletedAt) return respond({ok:true});
+      const {data: saved, error: tokenError} = await service.rpc('service_get_integration',{p_provider:'facebook'});
+      if (tokenError) throw tokenError;
+      const token = JSON.parse(saved || '{}').accessToken;
+      if (!token) return fail('Facebook 페이지 연결을 먼저 확인해 주세요.',409);
+      const version = Deno.env.get('META_GRAPH_VERSION') || 'v27.0';
+      const result = await fetch(`https://graph.facebook.com/${version}/${encodeURIComponent(row.external_post_id)}`,{method:'DELETE',headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(15000)});
+      const payload = await result.json().catch(()=>({}));
+      if (!result.ok || payload.success !== true) return fail('Facebook에서 삭제를 완료하지 못했습니다. 페이지 권한을 확인하거나 Facebook 페이지에서 직접 삭제해 주세요.',409);
+      const deletedAt = new Date().toISOString();
+      const {error: updateError} = await service.from('generated_contents').update({content:{...row.content,facebookDeletedAt:deletedAt},updated_at:deletedAt}).eq('id',id);
+      if (updateError) return fail('Facebook 게시물은 삭제됐지만 시선에 삭제 기록을 저장하지 못했습니다.',500);
+      await audit('facebook_post_deleted',id,actor.id,{external_post_id:row.external_post_id});
+      return respond({ok:true});
+    }
     if (action === 'list') {
       const [{ data: rows, error }, { data: jobs, error: jobsError }] = await Promise.all([
         service.from('generated_contents').select('*').order('created_at', { ascending: false }).limit(100),
