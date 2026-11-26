@@ -824,6 +824,32 @@ async function handle(request: Request) {
       await audit('social_image_generated', row.id, actor.id, { platform: row.platform });
       return respond({ ok: true, imageUrl: publicFile.publicUrl });
     }
+    if (action === 'delete-social-post') {
+      const id = clean(body.id, 64);
+      if (!/^[0-9a-f-]{36}$/i.test(id)) return fail('홍보 글 ID가 올바르지 않습니다.');
+      const { data: row, error } = await service.from('generated_contents')
+        .select('id,platform,external_post_id').eq('id', id).eq('status', 'published')
+        .in('platform', ['threads', 'instagram']).maybeSingle();
+      if (error) throw error;
+      if (!row || !/^\d+$/.test(row.external_post_id || '')) return fail('삭제할 게시물을 찾지 못했습니다.', 404);
+      const threads = row.platform === 'threads';
+      const platformName = threads ? 'Threads' : 'Instagram';
+      const permission = threads ? 'threads_delete' : 'instagram_manage_contents';
+      const token = (await integrationSecret(row.platform)).accessToken;
+      if (!token) return fail(platformName + ' 액세스 토큰을 먼저 연결해 주세요.', 409);
+      const base = threads ? 'https://graph.threads.net/v1.0' : 'https://graph.facebook.com/v27.0';
+      const result = await fetch(base + '/' + row.external_post_id, {
+        method: 'DELETE', headers: { Authorization: 'Bearer ' + token }, signal: AbortSignal.timeout(15000)
+      });
+      const payload = await result.json().catch(() => null);
+      if (!result.ok || (payload !== true && payload?.success !== true)) {
+        return fail(platformName + '에서 삭제를 확인하지 못했습니다 (HTTP ' + result.status + '). 토큰에 ' + permission + ' 권한이 있는지 확인해 주세요.', 409);
+      }
+      const { error: deleteError } = await service.from('generated_contents').delete()
+        .eq('id', id).eq('status', 'published').eq('external_post_id', row.external_post_id);
+      if (deleteError) return fail(platformName + ' 게시물은 삭제됐지만 시선에서 발행 항목을 지우지 못했습니다.', 500);
+      return respond({ ok: true });
+    }
     if (action === 'delete-facebook-post') {
       const id = clean(body.id, 64);
       if (!/^[0-9a-f-]{36}$/i.test(id)) return fail('홍보 글 ID가 올바르지 않습니다.');
