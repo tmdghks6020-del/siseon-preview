@@ -781,7 +781,7 @@ async function handle(request: Request) {
       if (!response.ok) return fail('카카오 이미지 검색 실패 (HTTP ' + response.status + '). API 키와 앱 설정을 확인해 주세요.', 502);
       const results = (result.documents || []).filter((item: any) =>
         /^https:\/\//i.test(item.thumbnail_url || '') && /^https:\/\//i.test(item.image_url || '') && /^https:\/\//i.test(item.doc_url || '')
-      ).slice(0, 5).map((item: any) => ({
+      ).slice(0, 10).map((item: any) => ({
         thumbnailUrl: item.thumbnail_url, imageUrl: item.image_url,
         sourceName: clean(item.display_sitename, 120), sourceUrl: item.doc_url,
         dateTime: item.datetime || null, width: Number(item.width || 0), height: Number(item.height || 0)
