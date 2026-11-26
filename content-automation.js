@@ -56,6 +56,39 @@ function render() {
     <div class="content-status-strip"><span>검토 대기 <b>${counts.review_required || 0}</b></span><span>승인 <b>${counts.approved || 0}</b></span><span>예약·발행 대기 <b>${counts.queued || 0}</b></span><span>발행 완료 <b>${counts.published || 0}</b></span><span>실패 <b>${counts.failed || 0}</b></span></div>
     <div class="content-auto-list">${scoped.map(renderContent).join('') || '<p class="table-empty">아직 생성된 콘텐츠가 없습니다.</p>'}</div>`;
 }
+
+async function findPollPhotos(keywords) {
+  const query = new URLSearchParams({
+    action: 'query', generator: 'search', gsrnamespace: '6', gsrlimit: '20',
+    gsrsearch: keywords + ' filetype:bitmap', prop: 'imageinfo',
+    iiprop: 'url|extmetadata', iiurlwidth: '640',
+    iiextmetadatafilter: 'LicenseShortName', format: 'json', origin: '*'
+  });
+  const response = await fetch('https://commons.wikimedia.org/w/api.php?' + query, {
+    signal: AbortSignal.timeout(15000)
+  });
+  if (!response.ok) throw new Error('사진 검색에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+  const result = await response.json();
+  if (result.error) throw new Error('사진 검색에 실패했습니다.');
+  return Object.values(result.query?.pages || {}).sort((a,b) => a.index - b.index)
+    .map(page => page.imageinfo?.[0])
+    .filter(info => /^https:\/\/upload\.wikimedia\.org\//.test(info?.thumburl || '') &&
+      /^https:\/\/commons\.wikimedia\.org\//.test(info.descriptionurl || '') &&
+      /^(CC0(?: 1\.0)?|Public domain)$/i.test(info.extmetadata?.LicenseShortName?.value || ''))
+    .slice(0, 5);
+}
+
+async function previewPollPhoto(info, title) {
+  const response = await fetch(info.thumburl, { signal: AbortSignal.timeout(12000) });
+  if (!response.ok) throw new Error('사진을 불러오지 못했습니다.');
+  const photo = await createImageBitmap(await response.blob());
+  try {
+    return makePollShareCard({ title }, photo);
+  } finally {
+    photo.close();
+  }
+}
+
 function renderContent(item) {
   const removed = item.platform === 'facebook' && item.status === 'published' && item.content?.facebookDeletedAt;
   const statusLabel = removed ? '게시물 삭제 완료' : ({ review_required: '검토 대기', approved: '승인 완료', rejected: '반려', queued: '게시 대기', publishing: '게시 중', published: '게시 완료', failed: '게시 실패' })[item.status] || item.status;
@@ -79,10 +112,14 @@ function renderContent(item) {
     item.status === 'approved' && item.platform !== 'naver_blog' ? '<label class="content-schedule">게시 예약<input type="datetime-local" data-schedule="' + esc(item.id) + '"></label><button type="button" data-content-action="publish" data-id="' + esc(item.id) + '">예약 / 지금 게시</button>' : '',
     item.status === 'failed' ? '<button type="button" data-content-action="retry" data-id="' + esc(item.id) + '">재시도</button>' : ''
   ].filter(Boolean).join('');
+  const photoSearch = item.platform === 'facebook' && item.status === 'review_required'
+    ? `<div><label>사진 검색어<input type="search" data-photo-keywords maxlength="120" value="${esc((item.issueTitle || item.content?.title || '').slice(0,120))}"></label>
+      <button type="button" data-content-action="search-photos" data-id="${esc(item.id)}">웹에서 사진 찾기</button>
+      <div data-photo-results aria-live="polite"></div></div>` : '';
   return `<article class="content-auto-card" data-content-card="${esc(item.id)}"><div class="content-auto-card-head"><div><span class="announcement-category">${esc(platformNames[item.platform] || item.platform)}</span><small>${esc(item.issueTitle || item.issueId || '')}</small></div><span class="admin-status ${['approved','queued','published'].includes(item.status) ? 'status-good' : item.status === 'failed' || item.status === 'rejected' ? 'status-blocked' : 'status-warn'}">${esc(statusLabel)}</span></div>
     <details${item.platform === 'facebook' ? ' open' : ''}><summary>게시글 미리보기</summary>${imagePreview}<strong>${esc(item.content?.title || '')}</strong><p style="white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7">${esc(item.content?.body || item.content?.intro || '')}</p></details>
     ${editable ? `<label>플랫폼별 콘텐츠 JSON<textarea data-content-json="${esc(item.id)}" rows="12" spellcheck="false">${esc(jsonValue)}</textarea></label>` : ''}
-    ${['facebook','instagram'].includes(item.platform) && item.status === 'review_required' ? '<label>카드에 넣을 사진<input type="file" accept="image/jpeg,image/png,image/webp" data-poll-photo></label><p class="admin-footnote">사용할 수 있는 사진을 선택한 뒤 ‘투표 카드 만들기’를 누르세요. 사진 없이 만들면 시선 배경에 제목이 표시됩니다.</p>' : ''}<p class="admin-footnote">출처: ${sourceLinks}</p>${scheduleLabel}${jobState}${publishedLink}<div class="content-auto-actions">${buttons}</div></article>`;
+    ${photoSearch}${['facebook','instagram'].includes(item.platform) && item.status === 'review_required' ? '<label>카드에 넣을 사진<input type="file" accept="image/jpeg,image/png,image/webp" data-poll-photo></label><p class="admin-footnote">사용할 수 있는 사진을 선택한 뒤 ‘투표 카드 만들기’를 누르세요. 사진 없이 만들면 시선 배경에 제목이 표시됩니다.</p>' : ''}<p class="admin-footnote">출처: ${sourceLinks}</p>${scheduleLabel}${jobState}${publishedLink}<div class="content-auto-actions">${buttons}</div></article>`;
 }
 const integrationMeta = {
   openai: { title: '1. OpenAI', group: 'site', description: '첫 번째 생성 서비스 · 한도나 장애 발생 시 Gemini로 전환합니다.', fields: [{ name: 'apiKey', label: 'OpenAI API 키', type: 'password', placeholder: '저장한 키는 다시 표시되지 않습니다.' },{name:'model',label:'텍스트 모델 (선택)',type:'text',placeholder:'gpt-6.2-astra'}] },
@@ -359,6 +396,40 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       const text = [data.title, data.intro, data.body, ...(data.headings || []), ...(data.tags || []).map((tag) => `#${tag}`)].filter(Boolean).join('\n\n');
       await navigator.clipboard.writeText(text); button.textContent = '복사했어요'; setTimeout(() => { button.textContent = '네이버용 복사'; button.disabled = false; }, 1400);
     }
+
+    else if (action === 'search-photos') {
+      const card = button.closest('[data-content-card]');
+      const output = card.querySelector('[data-photo-results]');
+      const keywords = card.querySelector('[data-photo-keywords]').value.trim();
+      const item = contents.find(entry => entry.id === id);
+      if (!keywords || !item) throw new Error('사진 검색어를 입력해 주세요.');
+      output.textContent = '위키미디어 공용에서 사진을 찾고 있습니다…';
+      try {
+        const photos = await findPollPhotos(keywords);
+        const previews = await Promise.allSettled(photos.map(async (info, index) => {
+          const image = await previewPollPhoto(info, item.content?.title || item.issueTitle);
+          return `<figure style="margin:0"><label><input type="radio" name="photo-${esc(id)}" data-photo-choice> 후보 ${index + 1}
+            <img style="display:block;width:100%;height:auto" alt="제목을 얹은 사진 후보 ${index+1}" src="data:image/png;base64,${image}"></label>
+            <figcaption><a href="${esc(info.descriptionurl)}" target="_blank" rel="noopener noreferrer">사진 출처 · ${esc(info.extmetadata.LicenseShortName.value)}</a></figcaption></figure>`;
+        }));
+        const cards = previews.filter(result => result.status === 'fulfilled').map(result => result.value);
+        output.innerHTML = cards.length
+          ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(155px,100%),1fr));gap:12px">${cards.join('')}</div>
+            <button type="button" data-content-action="attach-photo" data-id="${esc(id)}">선택한 사진 첨부</button>`
+          : '<p>사용 가능한 사진을 불러오지 못했습니다. 짧은 핵심어 또는 영어 검색어를 입력하거나 사진을 직접 올려 주세요.</p>';
+      } catch (error) {
+        output.textContent = error.message || '사진 검색에 실패했습니다.';
+      } finally {
+        button.disabled = false;
+      }
+    }
+    else if (action === 'attach-photo') {
+      const selected = button.closest('[data-photo-results]').querySelector('[data-photo-choice]:checked');
+      if (!selected) throw new Error('사진 후보 한 장을 선택해 주세요.');
+      const image = selected.closest('label').querySelector('img').src.split(',')[1];
+      await call('save-poll-share-card', { id, image });
+      await loadContents();
+    }
     else if (action === 'generate-image') {
       const item = contents.find(entry => entry.id === id);
       if (!item) throw new Error('홍보 초안을 찾을 수 없습니다.');
@@ -398,7 +469,7 @@ window.addEventListener('siseon-admin-authenticated', () => {
 init();
 
 
-function makePollShareCard(issue, photo = null) {
+function makePollShareCard(issue, photo = null, photoSize = 0) {
   const canvas = document.createElement('canvas');
   canvas.width = 1080;
   canvas.height = 1080;
@@ -432,7 +503,17 @@ function makePollShareCard(issue, photo = null) {
   backdrop.addColorStop(1,'#102b24');
   ctx.fillStyle = backdrop;
   ctx.fillRect(0,0,1080,1080);
+  const originalPhoto = photo;
   if (photo) {
+    if (photoSize) {
+      const reduced = document.createElement('canvas');
+      reduced.width = reduced.height = photoSize;
+      const scale = Math.max(photoSize / photo.width, photoSize / photo.height);
+      const width = photo.width * scale, height = photo.height * scale;
+      reduced.getContext('2d').drawImage(photo, (photoSize-width)/2, (photoSize-height)/2, width, height);
+      photo = reduced;
+      ctx.imageSmoothingEnabled = false;
+    }
     const scale = Math.max(1080 / photo.width, 1080 / photo.height);
     const w = photo.width * scale, h = photo.height * scale;
     ctx.drawImage(photo,(1080-w)/2,(1080-h)/2,w,h);
@@ -447,5 +528,8 @@ function makePollShareCard(issue, photo = null) {
   font(30,800); wrap('시선 · 투표',88,106,150,1,42,'#fff');
   font(61,800);
   wrap(issue.title,68,761,944,4,70,'#fff');
-  return canvas.toDataURL('image/png').split(',')[1];
+  const image = canvas.toDataURL('image/png').split(',')[1];
+  if (image.length <= 1800000) return image;
+  if (photo && photoSize !== 360) return makePollShareCard(issue, originalPhoto, photoSize ? 360 : 540);
+  throw new Error('카드 파일이 너무 큽니다. 다른 사진을 선택해 주세요.');
 }
