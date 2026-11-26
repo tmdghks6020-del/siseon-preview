@@ -386,17 +386,13 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       output.textContent = '카카오 이미지 검색에서 국내 사진을 찾고 있습니다…';
       try {
         const photos = await findPollPhotos(keywords);
-        const previews = await Promise.allSettled(photos.map(async (info, index) => {
-          const image = await previewPollPhoto(info, item.content?.title || item.issueTitle);
-          return `<figure style="margin:0"><label><input type="radio" name="photo-${esc(id)}" data-photo-choice>
-            <img style="display:block;width:100%;height:auto" alt="제목을 얹은 사진 후보 ${index+1}" src="data:image/png;base64,${image}"></label>
-            <figcaption><strong>${esc(info.sourceName || '검색된 이미지')}</strong><br><a href="${esc(info.sourceUrl)}" target="_blank" rel="noopener noreferrer">원문 출처 확인 ↗</a></figcaption></figure>`;
-        }));
-        const cards = previews.filter(result => result.status === 'fulfilled').map(result => result.value);
+        const cards = photos.map((info, index) => `<figure style="margin:0"><label><input type="radio" name="photo-${esc(id)}" data-photo-choice data-photo-url="${esc(info.imageUrl)}">후보 ${index + 1}
+          <img style="display:block;width:100%;height:auto" alt="사진 후보 ${index + 1}" src="${esc(info.thumbnailUrl)}" referrerpolicy="no-referrer"></label>
+          <figcaption><a href="${esc(info.sourceUrl)}" target="_blank" rel="noopener noreferrer">${esc(info.sourceName || '원문 출처')} ↗</a></figcaption></figure>`);
         output.innerHTML = cards.length
           ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(155px,100%),1fr));gap:12px">${cards.join('')}</div>
             <button type="button" data-content-action="attach-photo" data-id="${esc(id)}">선택한 사진 첨부</button>`
-          : '<p>사용 가능한 사진을 불러오지 못했습니다. 짧은 핵심어 또는 영어 검색어를 입력하거나 사진을 직접 올려 주세요.</p>';
+          : '<p>카카오 이미지 검색에서 표시할 후보를 찾지 못했습니다.</p>';
       } catch (error) {
         output.textContent = error.message || '사진 검색에 실패했습니다.';
       } finally {
@@ -406,7 +402,14 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
     else if (action === 'attach-photo') {
       const selected = button.closest('[data-photo-results]').querySelector('[data-photo-choice]:checked');
       if (!selected) throw new Error('사진 후보 한 장을 선택해 주세요.');
-      const image = selected.closest('label').querySelector('img').src.split(',')[1];
+      const item = contents.find(entry => entry.id === id);
+      if (!item) throw new Error('홍보 초안을 찾을 수 없습니다.');
+      let image;
+      try {
+        image = await previewPollPhoto({ imageUrl: selected.dataset.photoUrl }, item.content?.title || item.issueTitle);
+      } catch {
+        throw new Error('이 사진은 원본 사이트에서 직접 불러올 수 없습니다. 사용 가능한 원본 파일을 내려받아 카드에 넣을 사진에서 올려 주세요.');
+      }
       await call('save-poll-share-card', { id, image });
       await loadContents();
     }
