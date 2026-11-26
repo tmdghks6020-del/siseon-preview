@@ -1781,7 +1781,8 @@ document.querySelector('#adminPageContent').addEventListener('click', async (eve
         const forView = (issue.forArguments || []).map(([heading,body]) => `${heading}: ${body}`).join('\n');
         const againstView = (issue.againstArguments || []).map(([heading,body]) => `${heading}: ${body}`).join('\n');
         try {
-          await automation.generateForPoll({ issueId, title: issue.title, summary: `${issue.intro}\n\n확인된 사실\n${facts}`, forView, againstView, sources: issue.sourceUrl ? [issue.sourceUrl] : [] }, selected);
+          const result = await automation.generateForPoll({ issueId, title: issue.title, summary: `${issue.intro}\n\n확인된 사실\n${facts}`, forView, againstView, sources: issue.sourceUrl ? [issue.sourceUrl] : [] }, selected, () => { submit.textContent = '홍보 이미지를 만들고 있습니다…'; });
+          if (result.imageErrors?.length) window.alert('글 초안은 저장했습니다. 이미지는 홍보 관리에서 다시 생성할 수 있습니다.\n' + result.imageErrors.join('\n'));
           dialog.close();
           if (history.state?.promoIssueId !== issueId) pushAppRoute('admin', {adminPage:'content-automation', promoIssueId:issueId});
           renderAdminPage('content-automation');

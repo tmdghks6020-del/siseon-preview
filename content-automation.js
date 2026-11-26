@@ -63,13 +63,13 @@ function renderContent(item) {
   const jsonValue = JSON.stringify(platformContentShape(item), null, 2);
   const jobState = item.errorMessage ? `<p class="content-error">${esc(item.errorMessage)}</p>` : '';
   const imageUrl = /^https:\/\//i.test(item.content?.imageUrl || '') ? item.content.imageUrl : '';
-  const imagePreview = item.platform === 'instagram' && imageUrl ? `<img class="content-image-preview" src="${esc(imageUrl)}" alt="Instagram 홍보 이미지 시안" loading="lazy">` : '';
+  const imagePreview = ['instagram','facebook'].includes(item.platform) && imageUrl ? `<img class="content-image-preview" src="${esc(imageUrl)}" alt="홍보 이미지 시안" loading="lazy">` : '';
   const publishedLink = item.externalPostUrl ? `<p><a href="${esc(item.externalPostUrl)}" target="_blank" rel="noopener noreferrer">게시물 확인 ↗</a></p>` : '';
   const scheduleLabel = item.scheduledAt ? `<p class="admin-footnote">게시 예약 시각: ${esc(new Date(item.scheduledAt).toLocaleString('ko-KR'))} · 작업 ${esc(item.jobStatus || '')} · 재시도 ${Number(item.retryCount || 0)}회</p>` : '';
   const buttons = [
     editable ? '<button type="button" data-content-action="save" data-id="' + esc(item.id) + '">수정 저장</button>' : '',
     editable ? '<button type="button" data-content-action="regenerate" data-id="' + esc(item.id) + '">AI 재생성</button>' : '',
-    item.platform === 'instagram' && ['review_required','rejected'].includes(item.status) ? `<button type="button" data-content-action="generate-image" data-id="${esc(item.id)}">${imageUrl ? '이미지 시안 다시 만들기' : 'Instagram 이미지 시안 생성'}</button>` : '',
+    ['instagram','facebook'].includes(item.platform) && ['review_required','rejected'].includes(item.status) ? `<button type="button" data-content-action="generate-image" data-id="${esc(item.id)}">${imageUrl ? '이미지 시안 다시 만들기' : '이미지 시안 생성'}</button>` : '',
     ['review_required', 'rejected'].includes(item.status) ? '<button type="button" data-content-action="approve" data-id="' + esc(item.id) + '">검토 후 승인</button>' : '',
     ['review_required', 'approved'].includes(item.status) ? '<button type="button" data-content-action="reject" data-id="' + esc(item.id) + '">반려</button>' : '',
     item.status === 'approved' && item.platform === 'naver_blog' ? '<label class="content-post-url">네이버 게시물 주소<input type="url" data-post-url="' + esc(item.id) + '" placeholder="수동 게시 후 URL 입력"></label><button type="button" data-content-action="manual-publish" data-id="' + esc(item.id) + '">게시 완료 기록</button>' : '',
@@ -140,11 +140,17 @@ async function init() {
       renderApiSettings,
       getIntegrations,
       async loadContents() { return loadContents(); },
-      async generateForPoll(issue, selectedPlatforms) {
+      async generateForPoll(issue, selectedPlatforms, onImages) {
         if (!isAdmin) throw new Error('운영자 로그인이 필요합니다.');
         const result = await call('generate', { ...issue, platforms: selectedPlatforms });
-        await loadContents();
-        return result;
+        const drafts = (result.drafts || []).filter(draft => ['facebook','instagram'].includes(draft.platform));
+        const imageErrors = [];
+        if (drafts.length) onImages?.();
+        for (const draft of drafts) {
+          try { await call('image-generate', {id:draft.id}); }
+          catch (error) { imageErrors.push((platformNames[draft.platform] || draft.platform) + ': ' + error.message); }
+        }
+        return {...result, imageErrors};
       }
     };
     window.SISEON_TOPIC_ADMIN = {

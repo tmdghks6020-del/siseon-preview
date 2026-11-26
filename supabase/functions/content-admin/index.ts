@@ -26,7 +26,7 @@ async function requireAdmin(request: Request) {
 }
 
 function promptFor(input: Record<string, unknown>) {
-  return `시선이라는 찬반 토론 서비스의 플랫폼별 홍보 초안을 작성한다. 사실과 해석을 구분하고, 어느 한쪽을 지지하지 않으며, 근거 없는 수치나 출처를 만들지 않는다. 입력된 출처와 웹 검색으로 확인되는 자료만 참고하고, 자료가 부족하면 needsReview=true와 확인할 점을 쓴다. 플랫폼별 문체를 달리하고 투표 참여를 과장 없이 안내한다.\n이슈: ${clean(input.title, 240)}\n요약: ${clean(input.summary, 4000)}\n찬성 관점: ${clean(input.forView, 2500)}\n반대 관점: ${clean(input.againstView, 2500)}\n참고 출처: ${(input.sources as string[]).join('\n')}\n반환 JSON: {"instagram":{"title":"","body":"","hashtags":[],"cardText":[],"imageBrief":"","needsReview":true,"reviewNotes":[]},"threads":{"title":"","body":"","hashtags":[],"needsReview":true,"reviewNotes":[]},"facebook":{"title":"","body":"","hashtags":[],"needsReview":true,"reviewNotes":[]},"naver_blog":{"title":"","intro":"","headings":[],"body":"","keywords":[],"tags":[],"thumbnailText":"","imageBrief":"","needsReview":true,"reviewNotes":[]}}`;
+  return `시선이라는 찬반 토론 서비스의 플랫폼별 홍보 초안을 작성한다. 사실과 해석을 구분하고, 어느 한쪽을 지지하지 않으며, 근거 없는 수치나 출처를 만들지 않는다. 입력된 출처와 웹 검색으로 확인되는 자료만 참고하고, 자료가 부족하면 needsReview=true와 확인할 점을 쓴다. 플랫폼별 문체를 달리하고 투표 참여를 과장 없이 안내한다. Facebook은 모바일 피드용으로 제목을 짧은 질문 한 줄, 본문을 300자 안팎으로 작성한다. 배경 1~2문장, 양측 관점 각 한 줄, 참여 문장 한 줄을 빈 줄로 나눈다. 제목을 본문에서 반복하지 않고 Markdown, URL, 확인되지 않은 수치는 본문에서 빼라. Facebook과 Instagram에는 기사 흐름을 중립적으로 표현할 imageBrief를 제공한다.\n이슈: ${clean(input.title, 240)}\n요약: ${clean(input.summary, 4000)}\n찬성 관점: ${clean(input.forView, 2500)}\n반대 관점: ${clean(input.againstView, 2500)}\n참고 출처: ${(input.sources as string[]).join('\n')}\n반환 JSON: {"instagram":{"title":"","body":"","hashtags":[],"cardText":[],"imageBrief":"","needsReview":true,"reviewNotes":[]},"threads":{"title":"","body":"","hashtags":[],"needsReview":true,"reviewNotes":[]},"facebook":{"title":"","body":"","hashtags":[],"needsReview":true,"reviewNotes":[]},"naver_blog":{"title":"","intro":"","headings":[],"body":"","keywords":[],"tags":[],"thumbnailText":"","imageBrief":"","needsReview":true,"reviewNotes":[]}}`;
 }
 
 async function getOpenAiKey() {
@@ -711,19 +711,19 @@ async function handle(request: Request) {
       const { parsed, citations } = await generate({ title, ...brief, sources });
       const finalSources = [...new Set([...sources, ...citations])];
       const rows = selectedPlatforms.map((platform) => ({ issue_id: issueId, issue_title: title, platform, content: parsed[platform] || {}, sources: finalSources, brief, status: 'review_required', created_by: actor.id }));
-      const { error } = await service.from('generated_contents').insert(rows);
+      const { data: drafts, error } = await service.from('generated_contents').insert(rows).select('id,platform');
       if (error) throw error;
       const { error: auditError } = await service.from('content_audit').insert({ action: 'generated', actor: actor.id, details: { issue_id: issueId, platforms: selectedPlatforms } });
       if (auditError) throw auditError;
-      return respond({ ok: true, platforms: selectedPlatforms, count: selectedPlatforms.length });
+      return respond({ ok: true, platforms: selectedPlatforms, count: selectedPlatforms.length, drafts });
     }
     if (action === 'image-generate') {
       const { data: row, error: readError } = await service.from('generated_contents').select('*').eq('id', body.id).single();
       if (readError || !row) throw readError || new Error('홍보 초안을 찾지 못했습니다.');
-      if (row.platform !== 'instagram' || !['review_required','rejected'].includes(row.status)) return fail('검토 대기 중인 Instagram 초안에서만 이미지 시안을 만들 수 있습니다.', 409);
+      if (!['instagram','facebook'].includes(row.platform) || !['review_required','rejected'].includes(row.status)) return fail('검토 대기 중인 Facebook·Instagram 초안에서만 이미지 시안을 만들 수 있습니다.', 409);
       const key = await getOpenAiKey();
       if (!key) throw new Error('OpenAI API 연결을 먼저 설정해 주세요.');
-      const imageBrief = clean(body.imageBrief || row.content?.imageBrief, 3000);
+      const imageBrief = clean(body.imageBrief || row.content?.imageBrief || row.issue_title, 3000);
       if (!imageBrief) throw new Error('이미지 설명이 비어 있습니다. 초안 내용을 수정한 뒤 다시 시도해 주세요.');
       const imageResponse = await fetch('https://api.openai.com/v1/images/generations', {
         method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
@@ -734,7 +734,7 @@ async function handle(request: Request) {
       const encoded = imageResult.data?.[0]?.b64_json;
       if (!encoded) throw new Error('이미지 서비스가 파일을 반환하지 않았습니다.');
       const binary = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
-      const path = `instagram/${row.id}/${Date.now()}.png`;
+      const path = `${row.platform}/${row.id}/${Date.now()}.png`;
       const { error: uploadError } = await service.storage.from('siseon-social-assets').upload(path, binary, { contentType: 'image/png', upsert: true });
       if (uploadError) throw uploadError;
       const { data: publicFile } = service.storage.from('siseon-social-assets').getPublicUrl(path);
