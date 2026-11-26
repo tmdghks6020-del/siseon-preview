@@ -840,6 +840,15 @@ async function handle(request: Request) {
       if (error) throw error; return respond({ ok: true });
     }
     if (action === 'review') {
+      if (body.decision === 'reject') {
+        const { data: row, error: readError } = await service.from('generated_contents').select('id,status,platform').eq('id', body.id).maybeSingle();
+        if (readError) throw readError;
+        if (!row || !['review_required','rejected'].includes(row.status)) return fail('검토 대기 또는 반려된 초안만 삭제할 수 있습니다.', 409);
+        const { error } = await service.from('generated_contents').delete().eq('id', row.id);
+        if (error) throw error;
+        await audit('content_rejected_deleted', row.id, actor.id);
+        return respond({ ok: true, deleted: true });
+      }
       const { error } = await service.rpc('admin_set_content_review', { p_content_id: body.id, p_actor: actor.id, p_decision: body.decision, p_note: clean(body.note, 1000) });
       if (error) throw error; return respond({ ok: true });
     }
