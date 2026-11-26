@@ -25,7 +25,21 @@ async function post(row: any) {
     const token = linked.accessToken || Deno.env.get('THREADS_ACCESS_TOKEN'); const userId = linked.accountId || Deno.env.get('META_THREADS_USER_ID');
     if (!token || !userId) throw new Error('Threads 토큰 또는 사용자 ID가 설정되지 않았습니다.');
     const api = 'https://graph.threads.net/v1.0';
-    const create = await fetch(`${api}/${userId}/threads`, { method: 'POST', body: new URLSearchParams({ access_token: token, media_type: 'TEXT', text: text.slice(0, 500) }) });
+    const title = plain(data.title).slice(0, 85);
+    const link = '투표 참여하기\n' + url;
+    const budget = Math.max(0, 500 - title.length - link.length - 4);
+    let threadBody = plain(data.body);
+    if (!threadBody.includes('\n\n')) {
+      threadBody = (threadBody.match(/[^.!?。！？]+[.!?。！？]+(?=\s|$)|.+$/gs) || [threadBody])
+        .map(sentence => sentence.trim()).filter(Boolean).join('\n\n');
+    }
+    if (threadBody.length > budget) {
+      const clipped = threadBody.slice(0, Math.max(0, budget - 1));
+      const lastParagraph = clipped.lastIndexOf('\n\n');
+      threadBody = lastParagraph >= budget * 0.6 ? clipped.slice(0, lastParagraph) : clipped.trimEnd() + '…';
+    }
+    const threadText = [title, budget ? threadBody : '', link].filter(Boolean).join('\n\n');
+    const create = await fetch(`${api}/${userId}/threads`, { method: 'POST', body: new URLSearchParams({ access_token: token, media_type: 'TEXT', text: threadText }) });
     const container = await create.json(); if (!create.ok || !container.id) throw new Error(container.error?.message || 'Threads 컨테이너 생성 실패');
     const publish = await fetch(`${api}/${userId}/threads_publish`, { method: 'POST', body: new URLSearchParams({ access_token: token, creation_id: container.id }) });
     const result = await publish.json(); if (!publish.ok || !result.id) throw new Error(result.error?.message || 'Threads 게시 실패');
