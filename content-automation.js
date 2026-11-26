@@ -183,8 +183,13 @@ async function init() {
         return call('topics-manage', { id, managementAction });
       }
     };
-    supabase.auth.onAuthStateChange((_event, session) => {
+    supabase.auth.onAuthStateChange((event, session) => {
       const user = session?.user || null;
+      // Supabase may emit SIGNED_IN again when the same tab regains focus.
+      if (isAdmin && user && currentUser?.id === user.id && ['SIGNED_IN', 'TOKEN_REFRESHED'].includes(event)) {
+        currentUser = user;
+        return;
+      }
       currentUser = user; isAdmin = false;
       const updateAuthView = async () => {
         if (user) {

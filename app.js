@@ -1922,11 +1922,13 @@ document.addEventListener('click', (event) => {
   if (event.target.closest('[data-close-admin-login]')) document.querySelector('#adminLoginDialog')?.close();
 });
 window.addEventListener('siseon-admin-authenticated', () => {
+  const wasVerified = isVerifiedAdmin;
   isVerifiedAdmin = true;
   adminEntryButton.classList.remove('hidden');
   const dialog = document.querySelector('#adminLoginDialog');
-  if (dialog?.open) dialog.close();
-  showAdminView();
+  const isLoggingIn = Boolean(dialog?.open);
+  if (isLoggingIn) dialog.close();
+  if (!wasVerified || isLoggingIn) showAdminView();
 });
 window.addEventListener('siseon-admin-signed-out', () => {
   isVerifiedAdmin = false;
