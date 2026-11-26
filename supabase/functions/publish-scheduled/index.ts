@@ -39,7 +39,14 @@ async function post(row: any) {
       threadBody = lastParagraph >= budget * 0.6 ? clipped.slice(0, lastParagraph) : clipped.trimEnd() + '…';
     }
     const threadText = [title, budget ? threadBody : '', link].filter(Boolean).join('\n\n');
-    const create = await fetch(`${api}/${userId}/threads`, { method: 'POST', body: new URLSearchParams({ access_token: token, media_type: 'TEXT', text: threadText }) });
+    const imageUrl = clean(data.imageUrl, 1500);
+    const hasImage = /^https:\/\//i.test(imageUrl);
+    const threadParams = new URLSearchParams({ access_token: token, media_type: hasImage ? 'IMAGE' : 'TEXT', text: threadText });
+    if (hasImage) {
+      threadParams.set('image_url', imageUrl);
+      if (title) threadParams.set('alt_text', title);
+    }
+    const create = await fetch(`${api}/${userId}/threads`, { method: 'POST', body: threadParams });
     const container = await create.json(); if (!create.ok || !container.id) throw new Error(container.error?.message || 'Threads 컨테이너 생성 실패');
     const publish = await fetch(`${api}/${userId}/threads_publish`, { method: 'POST', body: new URLSearchParams({ access_token: token, creation_id: container.id }) });
     const result = await publish.json(); if (!publish.ok || !result.id) throw new Error(result.error?.message || 'Threads 게시 실패');

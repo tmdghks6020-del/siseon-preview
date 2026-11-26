@@ -805,7 +805,7 @@ async function handle(request: Request) {
       if (!jpeg && (!size || size.getUint32(0) !== 0x89504e47 || size.getUint32(4) !== 0x0d0a1a0a || size.getUint32(16) !== 1080 || size.getUint32(20) !== 1080)) return fail('1080×1080 PNG 또는 JPEG 카드가 필요합니다.');
       const {data:row,error} = await service.from('generated_contents').select('id,platform,status,content,updated_at').eq('id',clean(body.id,64)).maybeSingle();
       if (error) throw error;
-      if (!row || !['facebook','instagram'].includes(row.platform) || !['review_required','failed'].includes(row.status)) return fail('검토 대기 또는 발행 실패 상태인 초안만 카드를 바꿀 수 있습니다.',409);
+      if (!row || !['facebook','instagram','threads'].includes(row.platform) || !['review_required','failed'].includes(row.status)) return fail('검토 대기 또는 발행 실패 상태인 초안만 카드를 바꿀 수 있습니다.',409);
       const path = `${row.platform}/${row.id}/${crypto.randomUUID()}.${jpeg ? 'jpg' : 'png'}`;
       const bucket = service.storage.from('siseon-social-assets');
       const {error:uploadError} = await bucket.upload(path,image,{contentType:jpeg ? 'image/jpeg' : 'image/png'});

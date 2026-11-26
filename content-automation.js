@@ -79,11 +79,11 @@ function renderContent(item) {
   const jsonValue = JSON.stringify(platformContentShape(item), null, 2);
   const jobState = item.errorMessage ? `<p class="content-error">${esc(item.errorMessage)}</p>` : '';
   const imageUrl = /^https:\/\//i.test(item.content?.imageUrl || '') ? item.content.imageUrl : '';
-  const imagePreview = ['instagram','facebook'].includes(item.platform) && imageUrl ? `<img class="content-image-preview" src="${esc(imageUrl)}" alt="홍보 이미지 시안" loading="lazy">` : '';
+  const imagePreview = ['instagram','facebook','threads'].includes(item.platform) && imageUrl ? `<img class="content-image-preview" src="${esc(imageUrl)}" alt="홍보 이미지 시안" loading="lazy">` : '';
   const publishedLink = item.externalPostUrl && !removed ? `<p><a href="${esc(item.externalPostUrl)}" target="_blank" rel="noopener noreferrer">게시물 확인 ↗</a></p>` : '';
   const scheduleLabel = item.scheduledAt ? `<p class="admin-footnote">게시 예약 시각: ${esc(new Date(item.scheduledAt).toLocaleString('ko-KR'))} · 작업 ${esc(item.jobStatus || '')} · 재시도 ${Number(item.retryCount || 0)}회</p>` : '';
   const buttons = [
-    ['facebook','instagram'].includes(item.platform) && ['review_required','failed'].includes(item.status)
+    ['facebook','instagram','threads'].includes(item.platform) && ['review_required','failed'].includes(item.status)
       ? `<button type="button" data-content-action="attach-finished-image" data-id="${esc(item.id)}">완성 이미지로 첨부</button>` : '',
     ['threads','instagram'].includes(item.platform) && item.status === 'published' && item.external_post_id ? `<button type="button" data-content-action="delete-social-post" data-id="${esc(item.id)}">게시물 삭제</button>` : '',
     item.platform === 'facebook' && item.status === 'published' && item.external_post_id && !removed ? `<button type="button" data-content-action="delete-facebook-post" data-id="${esc(item.id)}">Facebook 게시물 삭제</button>` : '',
@@ -104,7 +104,7 @@ function renderContent(item) {
   return `<article class="content-auto-card" data-content-card="${esc(item.id)}"><div class="content-auto-card-head"><div><span class="announcement-category">${esc(platformNames[item.platform] || item.platform)}</span><small>${esc(item.issueTitle || item.issueId || '')}</small></div><span class="admin-status ${['approved','queued','published'].includes(item.status) ? 'status-good' : item.status === 'failed' || item.status === 'rejected' ? 'status-blocked' : 'status-warn'}">${esc(statusLabel)}</span></div>
     <details${['facebook','instagram'].includes(item.platform) ? ' open' : ''}><summary>게시글 미리보기</summary>${imagePreview}<strong>${esc(item.content?.title || '')}</strong><p style="white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7">${esc(item.content?.body || item.content?.intro || '')}</p></details>
     ${editable ? `<label>플랫폼별 콘텐츠 JSON<textarea data-content-json="${esc(item.id)}" rows="12" spellcheck="false">${esc(jsonValue)}</textarea></label>` : ''}
-    ${photoSearch}${['facebook','instagram'].includes(item.platform) && ['review_required','failed'].includes(item.status) ? '<label>카드에 넣을 사진<input type="file" accept="image/jpeg,image/png,image/webp" data-poll-photo></label><p class="admin-footnote">사용할 수 있는 사진을 선택한 뒤 ‘투표 카드 만들기’를 누르세요. 사진 없이 만들면 시선 배경에 제목이 표시됩니다.</p>' : ''}<p class="admin-footnote">출처: ${sourceLinks}</p>${scheduleLabel}${jobState}${publishedLink}<div class="content-auto-actions">${buttons}</div></article>`;
+    ${photoSearch}${['facebook','instagram','threads'].includes(item.platform) && ['review_required','failed'].includes(item.status) ? '<label>카드에 넣을 사진<input type="file" accept="image/jpeg,image/png,image/webp" data-poll-photo></label><p class="admin-footnote">사용할 수 있는 사진을 선택한 뒤 ‘투표 카드 만들기’를 누르세요. 사진 없이 만들면 시선 배경에 제목이 표시됩니다.</p>' : ''}<p class="admin-footnote">출처: ${sourceLinks}</p>${scheduleLabel}${jobState}${publishedLink}<div class="content-auto-actions">${buttons}</div></article>`;
 }
 const integrationMeta = {
   openai: { title: '1. OpenAI', group: 'site', description: '첫 번째 생성 서비스 · 한도나 장애 발생 시 Gemini로 전환합니다.', fields: [{ name: 'apiKey', label: 'OpenAI API 키', type: 'password', placeholder: '저장한 키는 다시 표시되지 않습니다.' },{name:'model',label:'텍스트 모델 (선택)',type:'text',placeholder:'gpt-6.2-astra'}] },
@@ -465,7 +465,7 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       try {
         const title = item.content?.title || item.issueTitle;
         const image = action === 'attach-finished-image'
-          ? encodeFinishedCard(photo, item.platform === 'instagram' ? 'image/jpeg' : 'image/png')
+          ? encodeFinishedCard(photo, ['instagram','threads'].includes(item.platform) ? 'image/jpeg' : 'image/png')
           : makePollShareCard({title, format: item.platform === 'instagram' ? 'image/jpeg' : 'image/png', color: button.closest('[data-content-card]')?.querySelector('[data-photo-palette]')?.value},photo);
         await call('save-poll-share-card', {id, image});
       } finally { photo?.close(); }
