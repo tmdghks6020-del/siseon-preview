@@ -1596,7 +1596,13 @@ function renderAdminPage(page = currentAdminPage) {
   const auditRows = (entries) => entries.length ? entries.map((entry) => `<div class="activity-row"><span class="activity-dot"></span><div><strong>${escapeAdminHtml(entry.action)} · ${escapeAdminHtml(entry.target)}</strong><small>${escapeAdminHtml(entry.operator || '운영 편집')} · ${new Date(entry.at).toLocaleString('ko-KR')}${entry.reason ? ` · ${escapeAdminHtml(entry.reason)}` : ''}</small></div></div>`).join('') : '<p class="table-empty">아직 운영 기록이 없습니다.</p>';
   const header = (eyebrow, title, description, action = '') => `<div class="admin-page-heading"><div><span class="section-kicker">${eyebrow}</span><h1>${title}</h1><p>${description}</p></div>${action}</div>`;
   if (page === 'content-automation') {
-    content.innerHTML = `${header('CONTENT AUTOMATION', '홍보 콘텐츠 관리', '이슈별 플랫폼 콘텐츠를 만들고, 검토·승인한 뒤 발행 상태를 관리합니다.')}<section class="admin-card"><div id="contentAutomationRoot"><p>관리자 인증과 콘텐츠 목록을 불러오는 중입니다.</p></div></section>`;
+    const issueId = history.state?.promoIssueId;
+    const issue = issueId && getIssueData(issueId);
+    if (!issue) { renderAdminPage('polls'); return; }
+    content.innerHTML = `<button class="table-action" type="button" data-admin-page="polls">← 투표 관리</button>
+      ${header('PROMOTION', escapeAdminHtml(issue.title), '이 안건의 채널별 초안, 예약과 발행 결과를 확인합니다.', `<button class="primary-button" type="button" data-poll-promo="${escapeAdminHtml(issueId)}">새 홍보 초안 만들기</button>`)}
+      <section class="admin-card"><div id="contentAutomationRoot" data-issue-id="${escapeAdminHtml(issueId)}"><p>홍보 기록을 불러오는 중입니다.</p></div></section>`;
+    window.SISEON_CONTENT_AUTOMATION?.loadContents();
     return;
   } else if (page === 'api-settings') {
     content.innerHTML = `${header('API & CHANNEL SETTINGS', 'API 설정', '사이트 기능과 마케팅 채널 연결을 분리해 관리합니다. 키와 토큰은 서버에 암호화해 보관합니다.')}<section class="admin-card"><div id="apiSettingsRoot"><p>연결 상태를 확인하고 있습니다.</p></div></section>`;
@@ -1612,7 +1618,8 @@ function renderAdminPage(page = currentAdminPage) {
     renderReviewQueue();
     return;
   } else if (page === 'polls') {
-    content.innerHTML = `${header('POLL MANAGEMENT', '투표 관리', `진행 중인 안건 ${activeIssueIds.length}건 · 안건별로 보관 또는 삭제를 선택할 수 있습니다.`)}<div class="table-toolbar"><span>진행 중 <b>${activeIssueIds.length}</b>건</span><input id="pollSearch" placeholder="투표 제목 검색" aria-label="투표 검색" /></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>주제</th><th>분야</th><th>상태</th><th>출처</th><th>관리</th></tr></thead><tbody>${activeIssueIds.map((id) => { const item = issues[id]; return `<tr><td><strong>${escapeAdminHtml(item.title)}</strong><small>${formatPollDeadline(item)} 마감 · 진행 중</small></td><td>${escapeAdminHtml(item.category)}</td><td><span class="admin-status status-good">진행 중</span></td><td>${escapeAdminHtml(item.source)}</td><td><div class="row-actions"><button data-poll-promo="${escapeAdminHtml(id)}" class="table-action">홍보 콘텐츠 만들기</button><button data-poll-management="archive" data-id="${escapeAdminHtml(id)}" class="table-action">지난 투표로 이동</button><button data-poll-management="delete" data-id="${escapeAdminHtml(id)}" class="table-action danger-action" style="color:#a74d3a;border-color:#ead1ca">삭제</button></div></td></tr>`; }).join('')}</tbody></table></div><p class="admin-footnote">‘지난 투표로 이동’은 공개 투표 목록에서 내리고 보관함에 남깁니다. ‘삭제’는 사용자 화면과 검색용 페이지에서 내립니다. 승인된 Supabase 안건은 서버에 저장되며, 서버 작업 시 운영 기록도 남습니다.</p>`;
+    content.innerHTML = `${header('POLL MANAGEMENT', '투표 관리', `진행 중인 안건 ${activeIssueIds.length}건 · 안건별로 보관 또는 삭제를 선택할 수 있습니다.`)}<div class="table-toolbar"><span>진행 중 <b>${activeIssueIds.length}</b>건</span><input id="pollSearch" placeholder="투표 제목 검색" aria-label="투표 검색" /></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>주제</th><th>분야</th><th>상태</th><th>출처</th><th>관리</th></tr></thead><tbody>${activeIssueIds.map((id) => { const item = issues[id]; return `<tr><td><strong>${escapeAdminHtml(item.title)}</strong><small>${formatPollDeadline(item)} 마감 · 진행 중</small></td><td>${escapeAdminHtml(item.category)}</td><td><span class="admin-status status-good">진행 중</span></td><td>${escapeAdminHtml(item.source)}</td><td><div class="row-actions"><button data-poll-promo-manage="${escapeAdminHtml(id)}" class="table-action">홍보 관리</button><button data-poll-management="archive" data-id="${escapeAdminHtml(id)}" class="table-action">지난 투표로 이동</button><button data-poll-management="delete" data-id="${escapeAdminHtml(id)}" class="table-action danger-action" style="color:#a74d3a;border-color:#ead1ca">삭제</button></div><div class="poll-promo-status" data-promo-status="${escapeAdminHtml(id)}">홍보 상태 확인 중</div></td></tr>`; }).join('')}</tbody></table></div><p class="admin-footnote">‘지난 투표로 이동’은 공개 투표 목록에서 내리고 보관함에 남깁니다. ‘삭제’는 사용자 화면과 검색용 페이지에서 내립니다. 승인된 Supabase 안건은 서버에 저장되며, 서버 작업 시 운영 기록도 남습니다.</p>`;
+    window.SISEON_CONTENT_AUTOMATION?.loadContents();
   } else if (page === 'archive') {
     content.innerHTML = `${header('PAST CONVERSATIONS', '지난 투표 보관함', '종료된 투표의 결과와 토론을 확인합니다. 보관 기간이 지난 투표는 읽기 전용으로 표시됩니다.')}<div class="archive-list admin-archive-list" id="adminArchiveList"></div>`;
     const adminList = document.querySelector('#adminArchiveList');
@@ -1738,6 +1745,12 @@ document.querySelector('#adminPageContent').addEventListener('click', async (eve
     managePollFromAdmin(pollManagementButton.dataset.id, pollManagementButton.dataset.pollManagement, pollManagementButton);
     return;
   }
+  const promoManage = event.target.closest('[data-poll-promo-manage]');
+  if (promoManage) {
+    pushAppRoute('admin', { adminPage:'content-automation', promoIssueId:promoManage.dataset.pollPromoManage });
+    renderAdminPage('content-automation');
+    return;
+  }
   const pollPromoButton = event.target.closest('[data-poll-promo]');
   if (pollPromoButton) {
     const issueId = pollPromoButton.dataset.pollPromo; const issue = issues[issueId];
@@ -1769,8 +1782,9 @@ document.querySelector('#adminPageContent').addEventListener('click', async (eve
         const againstView = (issue.againstArguments || []).map(([heading,body]) => `${heading}: ${body}`).join('\n');
         try {
           await automation.generateForPoll({ issueId, title: issue.title, summary: `${issue.intro}\n\n확인된 사실\n${facts}`, forView, againstView, sources: issue.sourceUrl ? [issue.sourceUrl] : [] }, selected);
-          dialog.close(); pushAppRoute('admin', { adminPage: 'content-automation' }); renderAdminPage('content-automation');
-          window.SISEON_CONTENT_AUTOMATION.loadContents();
+          dialog.close();
+          if (history.state?.promoIssueId !== issueId) pushAppRoute('admin', {adminPage:'content-automation', promoIssueId:issueId});
+          renderAdminPage('content-automation');
         } catch (error) { window.alert(error.message || '콘텐츠 초안을 만들지 못했습니다.'); submit.disabled = false; submit.textContent = '초안 생성 및 검토'; }
       });
     }).catch((error) => window.alert(`연결 상태를 확인하지 못했습니다: ${error.message}`)).finally(() => { pollPromoButton.disabled = false; });

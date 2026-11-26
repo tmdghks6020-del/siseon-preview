@@ -31,22 +31,30 @@ async function call(action, data = {}) {
   return result;
 }
 function platformContentShape(item) { return item.content || {}; }
+const promoStatus = {review_required:'검토 대기', approved:'승인 완료', rejected:'반려', queued:'발행 예약', publishing:'발행 중', published:'발행 완료', failed:'발행 실패'};
+function renderPollPromotionStatuses(error = false) {
+  for (const target of document.querySelectorAll('[data-promo-status]')) {
+    if (error) { target.textContent='홍보 상태를 불러오지 못했습니다.'; continue; }
+    const latest = new Map();
+    for (const item of contents) {
+      if (item.issueId !== target.dataset.promoStatus) continue;
+      const key = item.platform + ':' + item.status;
+      const record = latest.get(key) || {item,count:0};
+      record.count++;
+      latest.set(key,record);
+    }
+    target.innerHTML = [...latest.values()].map(({item,count}) => `<span class="admin-status ${item.status==='failed'?'status-blocked':item.status==='published'?'status-good':'status-warn'}">${esc(platformNames[item.platform] || item.platform)} · ${esc(promoStatus[item.status] || item.status)}${count>1?' '+count+'건':''}</span>`).join('') || '홍보 기록 없음';
+  }
+}
 function render() {
+  renderPollPromotionStatuses();
   const target = root(); if (!target) return;
-  const counts = contents.reduce((acc, item) => (acc[item.status] = (acc[item.status] || 0) + 1, acc), {});
+  const scoped = contents.filter(item => item.issueId === target.dataset.issueId);
+  const counts = scoped.reduce((acc, item) => (acc[item.status] = (acc[item.status] || 0) + 1, acc), {});
   target.innerHTML = `
     <div class="content-auto-toolbar"><div><strong>승인 전 자동 발행 차단</strong><p>게시물은 관리자 검토·승인 후에만 예약 대기열에 들어갑니다. 네이버 블로그는 복사·수동 게시 방식입니다.</p><p>서비스 키와 계정 토큰은 API 설정에서 서버에 암호화 저장합니다.</p></div><button type="button" class="table-action" data-content-action="refresh">새로고침</button></div>
-    <form id="contentGenerationForm" class="announcement-editor content-generation-form">
-      <h2>이슈 콘텐츠 만들기</h2>
-      <div class="content-form-grid"><label>이슈 ID<input name="issueId" maxlength="100" required placeholder="예: issue-week-four-day"></label><label>이슈 제목<input name="title" maxlength="240" required placeholder="이슈 제목"></label></div>
-      <label>이슈 요약<textarea name="summary" rows="3" maxlength="4000" placeholder="배경과 쟁점"></textarea></label>
-      <div class="content-form-grid"><label>찬성 관점<textarea name="forView" rows="3" maxlength="2500"></textarea></label><label>반대 관점<textarea name="againstView" rows="3" maxlength="2500"></textarea></label></div>
-      <label>확인한 출처 URL (한 줄에 하나씩)<textarea name="sources" rows="3" placeholder="https://..." required></textarea></label>
-      <button class="primary-button" type="submit">AI 플랫폼별 초안 생성</button>
-      <p class="admin-footnote">생성 결과는 검토 대기 상태로만 저장됩니다. 출처·사실 관계를 직접 확인하세요. 콘텐츠 생성은 OpenAI 사용량에 따라 비용이 발생합니다.</p>
-    </form>
     <div class="content-status-strip"><span>검토 대기 <b>${counts.review_required || 0}</b></span><span>승인 <b>${counts.approved || 0}</b></span><span>예약·발행 대기 <b>${counts.queued || 0}</b></span><span>발행 완료 <b>${counts.published || 0}</b></span><span>실패 <b>${counts.failed || 0}</b></span></div>
-    <div class="content-auto-list">${contents.map(renderContent).join('') || '<p class="table-empty">아직 생성된 콘텐츠가 없습니다.</p>'}</div>`;
+    <div class="content-auto-list">${scoped.map(renderContent).join('') || '<p class="table-empty">아직 생성된 콘텐츠가 없습니다.</p>'}</div>`;
 }
 function renderContent(item) {
   const statusLabel = ({ review_required: '검토 대기', approved: '승인 완료', rejected: '반려', queued: '게시 대기', publishing: '게시 중', published: '게시 완료', failed: '게시 실패' })[item.status] || item.status;
@@ -70,7 +78,7 @@ function renderContent(item) {
     item.status === 'failed' ? '<button type="button" data-content-action="retry" data-id="' + esc(item.id) + '">재시도</button>' : ''
   ].filter(Boolean).join('');
   return `<article class="content-auto-card" data-content-card="${esc(item.id)}"><div class="content-auto-card-head"><div><span class="announcement-category">${esc(platformNames[item.platform] || item.platform)}</span><small>${esc(item.issueTitle || item.issueId || '')}</small></div><span class="admin-status ${['approved','queued','published'].includes(item.status) ? 'status-good' : item.status === 'failed' || item.status === 'rejected' ? 'status-blocked' : 'status-warn'}">${esc(statusLabel)}</span></div>
-    <details><summary>초안 미리보기 · JSON 수정</summary><pre class="content-preview">${esc(JSON.stringify(platformContentShape(item), null, 2))}</pre></details>
+    <details><summary>게시글 미리보기</summary><strong>${esc(item.content?.title || '')}</strong><p style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(item.content?.body || item.content?.intro || '')}</p></details>
     ${editable ? `<label>플랫폼별 콘텐츠 JSON<textarea data-content-json="${esc(item.id)}" rows="12" spellcheck="false">${esc(jsonValue)}</textarea></label>` : ''}
     ${imagePreview}<p class="admin-footnote">출처: ${sourceLinks}</p>${scheduleLabel}${jobState}${publishedLink}<div class="content-auto-actions">${buttons}</div></article>`;
 }
@@ -109,10 +117,11 @@ async function loadContents() {
   if (!isAdmin) return;
   renderNotice('콘텐츠와 게시 이력을 불러오는 중입니다.');
   try { ({ contents } = await call('list')); render(); }
-  catch (error) { renderNotice(error.message || '콘텐츠를 불러오지 못했습니다.', true); }
+  catch (error) { renderPollPromotionStatuses(true); renderNotice(error.message || '콘텐츠를 불러오지 못했습니다.', true); }
 }
 function renderAuthState() {
-  const target = root(); if (!target) return;
+  const target = root();
+  if (!target) { if (isAdmin && document.querySelector('[data-promo-status]')) loadContents(); return; }
   if (!currentUser) {
     target.innerHTML = '<div class="content-auth-panel"><h2>운영자 인증</h2><p>Supabase Auth 운영자 계정으로 로그인합니다. 승인된 관리자 계정만 콘텐츠를 관리할 수 있습니다.</p><form id="contentAdminLogin"><label>이메일<input name="email" type="email" autocomplete="username" required></label><label>비밀번호<input name="password" type="password" autocomplete="current-password" required></label><button class="primary-button" type="submit">관리자 로그인</button></form></div>';
   } else if (!isAdmin) {

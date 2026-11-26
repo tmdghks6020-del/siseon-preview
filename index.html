@@ -65,6 +65,7 @@
  .shared-perspective-grid{grid-template-columns:1fr;gap:9px}
 }
 </style>
+<style>.poll-promo-status{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;font-size:12px;color:#52685d}</style>
 </head>
 <body>
   <header class="topbar">
@@ -164,7 +165,6 @@
           <button class="admin-nav active" data-admin-page="overview">▦ <span>대시보드</span></button>
           <button class="admin-nav" data-admin-page="polls">◉ <span>투표 관리</span><b id="navPollCount">0</b></button>
           <button class="admin-nav" data-admin-page="reviews">✦ <span>AI 안건 검토</span><b id="navPendingCount">0</b></button>
-          <button class="admin-nav" data-admin-page="content-automation">↗ <span>콘텐츠 자동화</span></button>
           <button class="admin-nav" data-admin-page="api-settings">⚙ <span>API 설정</span></button>
           <span class="admin-nav-caption">사이트 안내</span>
           <button class="admin-nav" data-admin-page="archive">▤ <span>지난 투표 보관함</span></button>
@@ -388,8 +388,8 @@
   <script src="ai-candidates.js"></script>
   <script src="supabase-config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=share-page-layout"></script>
-  <script type="module" src="content-automation.js?v=topic-options-20261125"></script>
+  <script src="app.js?v=poll-promotion"></script>
+  <script type="module" src="content-automation.js?v=poll-promotion"></script>
 </body>
 </html>
 
