@@ -89,6 +89,18 @@ async function previewPollPhoto(info, title) {
   }
 }
 
+async function findPollPhotos(query) {
+  const result = await call('search-kakao-images', { query });
+  return result.results || [];
+}
+
+async function previewPollPhoto(info, title) {
+  const response = await fetch(info.imageUrl, { signal: AbortSignal.timeout(12000) });
+  if (!response.ok) throw new Error('사진을 불러오지 못했습니다.');
+  const photo = await createImageBitmap(await response.blob());
+  try { return makePollShareCard({ title }, photo); } finally { photo.close(); }
+}
+
 function renderContent(item) {
   const removed = item.platform === 'facebook' && item.status === 'published' && item.content?.facebookDeletedAt;
   const statusLabel = removed ? '게시물 삭제 완료' : ({ review_required: '검토 대기', approved: '승인 완료', rejected: '반려', queued: '게시 대기', publishing: '게시 중', published: '게시 완료', failed: '게시 실패' })[item.status] || item.status;
@@ -403,14 +415,14 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       const keywords = card.querySelector('[data-photo-keywords]').value.trim();
       const item = contents.find(entry => entry.id === id);
       if (!keywords || !item) throw new Error('사진 검색어를 입력해 주세요.');
-      output.textContent = '위키미디어 공용에서 사진을 찾고 있습니다…';
+      output.textContent = '카카오 이미지 검색에서 국내 사진을 찾고 있습니다…';
       try {
         const photos = await findPollPhotos(keywords);
         const previews = await Promise.allSettled(photos.map(async (info, index) => {
           const image = await previewPollPhoto(info, item.content?.title || item.issueTitle);
-          return `<figure style="margin:0"><label><input type="radio" name="photo-${esc(id)}" data-photo-choice> 후보 ${index + 1}
+          return `<figure style="margin:0"><label><input type="radio" name="photo-${esc(id)}" data-photo-choice>
             <img style="display:block;width:100%;height:auto" alt="제목을 얹은 사진 후보 ${index+1}" src="data:image/png;base64,${image}"></label>
-            <figcaption><a href="${esc(info.descriptionurl)}" target="_blank" rel="noopener noreferrer">사진 출처 · ${esc(info.extmetadata.LicenseShortName.value)}</a></figcaption></figure>`;
+            <figcaption><strong>${esc(info.sourceName || '검색된 이미지')}</strong><br><a href="${esc(info.sourceUrl)}" target="_blank" rel="noopener noreferrer">원문 출처 확인 ↗</a></figcaption></figure>`;
         }));
         const cards = previews.filter(result => result.status === 'fulfilled').map(result => result.value);
         output.innerHTML = cards.length

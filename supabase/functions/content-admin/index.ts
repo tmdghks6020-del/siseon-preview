@@ -768,6 +768,26 @@ async function handle(request: Request) {
       if (auditError) throw auditError;
       return respond({ ok: true, platforms: selectedPlatforms, count: selectedPlatforms.length, drafts });
     }
+    if (action === 'search-kakao-images') {
+      const query = clean(body.query, 120);
+      if (!query) return fail('사진 검색어를 입력해 주세요.');
+      const key = Deno.env.get('KAKAO_REST_API_KEY');
+      if (!key) return fail('카카오 이미지 검색 API 키가 등록되지 않았습니다. Supabase Edge Functions Secrets에 KAKAO_REST_API_KEY를 추가해 주세요.', 503);
+      const params = new URLSearchParams({ query, sort: 'accuracy', size: '20', page: '1' });
+      const response = await fetch('https://dapi.kakao.com/v2/search/image?' + params, {
+        headers: { authorization: 'KakaoAK ' + key }, signal: AbortSignal.timeout(15000)
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) return fail('카카오 이미지 검색 실패 (HTTP ' + response.status + '). API 키와 앱 설정을 확인해 주세요.', 502);
+      const results = (result.documents || []).filter((item: any) =>
+        /^https:\/\//i.test(item.thumbnail_url || '') && /^https:\/\//i.test(item.image_url || '') && /^https:\/\//i.test(item.doc_url || '')
+      ).slice(0, 5).map((item: any) => ({
+        thumbnailUrl: item.thumbnail_url, imageUrl: item.image_url,
+        sourceName: clean(item.display_sitename, 120), sourceUrl: item.doc_url,
+        dateTime: item.datetime || null, width: Number(item.width || 0), height: Number(item.height || 0)
+      }));
+      return respond({ results });
+    }
     if (action === 'save-poll-share-card') {
       const encoded = typeof body.image === 'string' ? body.image : '';
       if (!encoded || encoded.length > 1800000) return fail('카드 이미지 크기가 올바르지 않습니다.');
