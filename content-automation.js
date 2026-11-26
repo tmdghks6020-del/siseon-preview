@@ -181,6 +181,23 @@ async function init() {
         return {...result, imageErrors};
       }
     };
+    window.SISEON_CLEAR_TOPICS_LISTENER?.abort();
+    document.querySelector('#clearPendingTopics')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      if (!window.confirm('모든 분야의 검토 대기 후보를 영구 삭제할까요?')) return;
+      button.disabled = true;
+      const status = document.querySelector('#topicGenerationStatus');
+      try {
+        const { deletedCount } = await call('topics-clear-pending');
+        if (status) status.textContent = `검토 대기 후보 ${deletedCount}개를 삭제했습니다.`;
+        try { await window.SISEON_TOPIC_ADMIN.list(); }
+        catch { if (status) status.textContent += ' 목록을 갱신하려면 페이지를 새로고침하세요.'; }
+      } catch (error) {
+        if (status) status.textContent = error.message || '후보안건을 비우지 못했습니다.';
+      } finally {
+        button.disabled = false;
+      }
+    }, { signal: (window.SISEON_CLEAR_TOPICS_LISTENER = new AbortController()).signal });
     window.SISEON_TOPIC_ADMIN = {
       async list() {
         const { candidates, scheduled, guidelines } = await call('topics-list');

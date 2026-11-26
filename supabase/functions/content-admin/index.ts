@@ -608,6 +608,12 @@ async function handle(request: Request) {
   let actor: { id: string };
   try { actor = await requireAdmin(request); } catch (error) { return fail((error as Error).message, 403); }
   try {
+    if (action === 'topics-clear-pending') {
+      const { error, count } = await service.from('topic_candidates')
+        .delete({ count: 'exact' }).eq('status', 'pending');
+      if (error) throw error;
+      return respond({ deletedCount: count ?? 0 });
+    }
     if (action === 'topics-list') {
       const { data, error } = await service.from('topic_candidates').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100);
       if (error) throw error;
