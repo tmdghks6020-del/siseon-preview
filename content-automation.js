@@ -80,9 +80,9 @@ function renderContent(item) {
     item.status === 'failed' ? '<button type="button" data-content-action="retry" data-id="' + esc(item.id) + '">재시도</button>' : ''
   ].filter(Boolean).join('');
   return `<article class="content-auto-card" data-content-card="${esc(item.id)}"><div class="content-auto-card-head"><div><span class="announcement-category">${esc(platformNames[item.platform] || item.platform)}</span><small>${esc(item.issueTitle || item.issueId || '')}</small></div><span class="admin-status ${['approved','queued','published'].includes(item.status) ? 'status-good' : item.status === 'failed' || item.status === 'rejected' ? 'status-blocked' : 'status-warn'}">${esc(statusLabel)}</span></div>
-    <details><summary>게시글 미리보기</summary><strong>${esc(item.content?.title || '')}</strong><p style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(item.content?.body || item.content?.intro || '')}</p></details>
+    <details><summary>게시글 미리보기</summary><strong>${esc(item.content?.title || '')}</strong><p style="white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7">${esc(item.content?.body || item.content?.intro || '')}</p></details>
     ${editable ? `<label>플랫폼별 콘텐츠 JSON<textarea data-content-json="${esc(item.id)}" rows="12" spellcheck="false">${esc(jsonValue)}</textarea></label>` : ''}
-    ${imagePreview}<p class="admin-footnote">출처: ${sourceLinks}</p>${scheduleLabel}${jobState}${publishedLink}<div class="content-auto-actions">${buttons}</div></article>`;
+    ${imagePreview}${['facebook','instagram'].includes(item.platform) && item.status === 'review_required' ? '<label>카드에 넣을 사진<input type="file" accept="image/jpeg,image/png,image/webp" data-poll-photo></label><p class="admin-footnote">사용할 수 있는 사진을 선택한 뒤 ‘투표 카드 만들기’를 누르세요. 사진 없이 만들면 시선 배경에 제목이 표시됩니다.</p>' : ''}<p class="admin-footnote">출처: ${sourceLinks}</p>${scheduleLabel}${jobState}${publishedLink}<div class="content-auto-actions">${buttons}</div></article>`;
 }
 const integrationMeta = {
   openai: { title: '1. OpenAI', group: 'site', description: '첫 번째 생성 서비스 · 한도나 장애 발생 시 Gemini로 전환합니다.', fields: [{ name: 'apiKey', label: 'OpenAI API 키', type: 'password', placeholder: '저장한 키는 다시 표시되지 않습니다.' },{name:'model',label:'텍스트 모델 (선택)',type:'text',placeholder:'gpt-6.2-astra'}] },
@@ -362,7 +362,15 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
     else if (action === 'generate-image') {
       const item = contents.find(entry => entry.id === id);
       if (!item) throw new Error('홍보 초안을 찾을 수 없습니다.');
-      await call('save-poll-share-card', {id, image:makePollShareCard({title:item.issueTitle, ...item.brief})});
+      const input = button.closest('[data-content-card]')?.querySelector('[data-poll-photo]');
+      const file = input?.files?.[0];
+      if (file && (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 12000000)) throw new Error('12MB 이하의 JPG, PNG, WebP 사진을 선택해 주세요.');
+      const photo = file ? await createImageBitmap(file) : null;
+      if (file && !photo) throw new Error('사진을 열 수 없습니다.');
+      try {
+        const title = item.content?.title || item.issueTitle;
+        await call('save-poll-share-card', {id, image:makePollShareCard({title},photo)});
+      } finally { photo?.close(); }
       await loadContents();
     } else if (action === 'save') {
       const field = document.querySelector(`[data-content-json="${CSS.escape(id)}"]`);
@@ -390,7 +398,7 @@ window.addEventListener('siseon-admin-authenticated', () => {
 init();
 
 
-function makePollShareCard(issue) {
+function makePollShareCard(issue, photo = null) {
   const canvas = document.createElement('canvas');
   canvas.width = 1080;
   canvas.height = 1080;
@@ -419,18 +427,25 @@ function makePollShareCard(issue) {
     ctx.fillStyle=color;
     lines.slice(0,maxLines).forEach((entry,i)=>ctx.fillText(entry,x,y+i*lineHeight));
   };
-  ctx.fillStyle='#edf2ec'; ctx.fillRect(0,0,1080,1080);
-  panel(48,45,984,459,'#fff');
-  font(29,800); wrap('시선  ·  의견 투표',82,106,900,1,35,'#1b5344');
-  font(53,800); wrap(issue.title,82,190,900,3,64,'#15382e');
-  const summary=String(issue.summary || '').split(/\n\s*확인된 사실/)[0];
-  font(30); wrap(summary,82,398,900,2,45,'#466257');
-  const viewpoint=(value)=>String(value || '').replace(/^주요 논거:\s*/,'').replace(/^[-•]\s*/,'');
-  panel(48,530,480,382,'#e2eef3');
-  panel(552,530,480,382,'#f6eae1');
-  font(34,800); wrap('고려할 관점 1',80,594,416,1,42,'#244d60'); wrap('고려할 관점 2',584,594,416,1,42,'#7e4735');
-  font(30); wrap(viewpoint(issue.forView),80,658,416,5,45,'#263b35'); wrap(viewpoint(issue.againstView),584,658,416,5,45,'#263b35');
-  panel(48,939,984,90,'#153e35');
-  font(36,800); wrap('시선에서 안건을 읽고 투표하기  →',82,994,900,1,42,'#fff');
+  const backdrop = ctx.createLinearGradient(0,0,1080,1080);
+  backdrop.addColorStop(0,'#426c5a');
+  backdrop.addColorStop(1,'#102b24');
+  ctx.fillStyle = backdrop;
+  ctx.fillRect(0,0,1080,1080);
+  if (photo) {
+    const scale = Math.max(1080 / photo.width, 1080 / photo.height);
+    const w = photo.width * scale, h = photo.height * scale;
+    ctx.drawImage(photo,(1080-w)/2,(1080-h)/2,w,h);
+  }
+  const shade = ctx.createLinearGradient(0,300,0,1080);
+  shade.addColorStop(0,'rgba(9,24,19,0)');
+  shade.addColorStop(.57,'rgba(9,24,19,.78)');
+  shade.addColorStop(1,'rgba(9,24,19,.98)');
+  ctx.fillStyle = shade;
+  ctx.fillRect(0,300,1080,780);
+  panel(68,66,176,60,'#143d32');
+  font(30,800); wrap('시선 · 투표',88,106,150,1,42,'#fff');
+  font(61,800);
+  wrap(issue.title,68,761,944,4,70,'#fff');
   return canvas.toDataURL('image/png').split(',')[1];
 }
