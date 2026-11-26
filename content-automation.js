@@ -62,11 +62,11 @@ async function findPollPhotos(query) {
   return result.results || [];
 }
 
-async function previewPollPhoto(info, title, color) {
+async function previewPollPhoto(info, title, color, format) {
   const response = await fetch(info.imageUrl, { signal: AbortSignal.timeout(12000) });
   if (!response.ok) throw new Error('사진을 불러오지 못했습니다.');
   const photo = await createImageBitmap(await response.blob());
-  try { return makePollShareCard({ title, color, credit: info.sourceName }, photo); } finally { photo.close(); }
+  try { return makePollShareCard({ title, color, format, credit: info.sourceName }, photo); } finally { photo.close(); }
 }
 
 const searchedDrafts = new Set();
@@ -83,7 +83,7 @@ function renderContent(item) {
   const publishedLink = item.externalPostUrl && !removed ? `<p><a href="${esc(item.externalPostUrl)}" target="_blank" rel="noopener noreferrer">게시물 확인 ↗</a></p>` : '';
   const scheduleLabel = item.scheduledAt ? `<p class="admin-footnote">게시 예약 시각: ${esc(new Date(item.scheduledAt).toLocaleString('ko-KR'))} · 작업 ${esc(item.jobStatus || '')} · 재시도 ${Number(item.retryCount || 0)}회</p>` : '';
   const buttons = [
-    ['facebook','instagram'].includes(item.platform) && item.status === 'review_required'
+    ['facebook','instagram'].includes(item.platform) && ['review_required','failed'].includes(item.status)
       ? `<button type="button" data-content-action="attach-finished-image" data-id="${esc(item.id)}">완성 이미지로 첨부</button>` : '',
     ['threads','instagram'].includes(item.platform) && item.status === 'published' && item.external_post_id ? `<button type="button" data-content-action="delete-social-post" data-id="${esc(item.id)}">게시물 삭제</button>` : '',
     item.platform === 'facebook' && item.status === 'published' && item.external_post_id && !removed ? `<button type="button" data-content-action="delete-facebook-post" data-id="${esc(item.id)}">Facebook 게시물 삭제</button>` : '',
@@ -104,7 +104,7 @@ function renderContent(item) {
   return `<article class="content-auto-card" data-content-card="${esc(item.id)}"><div class="content-auto-card-head"><div><span class="announcement-category">${esc(platformNames[item.platform] || item.platform)}</span><small>${esc(item.issueTitle || item.issueId || '')}</small></div><span class="admin-status ${['approved','queued','published'].includes(item.status) ? 'status-good' : item.status === 'failed' || item.status === 'rejected' ? 'status-blocked' : 'status-warn'}">${esc(statusLabel)}</span></div>
     <details${['facebook','instagram'].includes(item.platform) ? ' open' : ''}><summary>게시글 미리보기</summary>${imagePreview}<strong>${esc(item.content?.title || '')}</strong><p style="white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7">${esc(item.content?.body || item.content?.intro || '')}</p></details>
     ${editable ? `<label>플랫폼별 콘텐츠 JSON<textarea data-content-json="${esc(item.id)}" rows="12" spellcheck="false">${esc(jsonValue)}</textarea></label>` : ''}
-    ${photoSearch}${['facebook','instagram'].includes(item.platform) && item.status === 'review_required' ? '<label>카드에 넣을 사진<input type="file" accept="image/jpeg,image/png,image/webp" data-poll-photo></label><p class="admin-footnote">사용할 수 있는 사진을 선택한 뒤 ‘투표 카드 만들기’를 누르세요. 사진 없이 만들면 시선 배경에 제목이 표시됩니다.</p>' : ''}<p class="admin-footnote">출처: ${sourceLinks}</p>${scheduleLabel}${jobState}${publishedLink}<div class="content-auto-actions">${buttons}</div></article>`;
+    ${photoSearch}${['facebook','instagram'].includes(item.platform) && ['review_required','failed'].includes(item.status) ? '<label>카드에 넣을 사진<input type="file" accept="image/jpeg,image/png,image/webp" data-poll-photo></label><p class="admin-footnote">사용할 수 있는 사진을 선택한 뒤 ‘투표 카드 만들기’를 누르세요. 사진 없이 만들면 시선 배경에 제목이 표시됩니다.</p>' : ''}<p class="admin-footnote">출처: ${sourceLinks}</p>${scheduleLabel}${jobState}${publishedLink}<div class="content-auto-actions">${buttons}</div></article>`;
 }
 const integrationMeta = {
   openai: { title: '1. OpenAI', group: 'site', description: '첫 번째 생성 서비스 · 한도나 장애 발생 시 Gemini로 전환합니다.', fields: [{ name: 'apiKey', label: 'OpenAI API 키', type: 'password', placeholder: '저장한 키는 다시 표시되지 않습니다.' },{name:'model',label:'텍스트 모델 (선택)',type:'text',placeholder:'gpt-6.2-astra'}] },
@@ -175,9 +175,8 @@ async function init() {
         const drafts = (result.drafts || []).filter(draft => ['facebook','instagram'].includes(draft.platform));
         const imageErrors = [];
         if (drafts.length) onImages?.();
-        let card;
         for (const draft of drafts) {
-          try { card ||= makePollShareCard(issue); await call('save-poll-share-card', {id:draft.id, image:card}); }
+          try { await call('save-poll-share-card', {id:draft.id, image:makePollShareCard({...issue, format:draft.platform === 'instagram' ? 'image/jpeg' : 'image/png'})}); }
           catch (error) { imageErrors.push((platformNames[draft.platform] || draft.platform) + ': ' + error.message); }
         }
         return {...result, imageErrors};
@@ -447,7 +446,7 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       if (!item) throw new Error('홍보 초안을 찾을 수 없습니다.');
       let image;
       try {
-        image = await previewPollPhoto({ imageUrl: selected.dataset.photoUrl, sourceName: selected.dataset.photoCredit }, item.content?.title || item.issueTitle, button.closest('[data-content-card]').querySelector('[data-photo-palette]').value);
+        image = await previewPollPhoto({ imageUrl: selected.dataset.photoUrl, sourceName: selected.dataset.photoCredit }, item.content?.title || item.issueTitle, button.closest('[data-content-card]').querySelector('[data-photo-palette]').value, item.platform === 'instagram' ? 'image/jpeg' : 'image/png');
       } catch {
         throw new Error('이 사진은 원본 사이트에서 직접 불러올 수 없습니다. 사용 가능한 원본 파일을 내려받아 카드에 넣을 사진에서 올려 주세요.');
       }
@@ -466,8 +465,8 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       try {
         const title = item.content?.title || item.issueTitle;
         const image = action === 'attach-finished-image'
-          ? encodeFinishedCard(photo)
-          : makePollShareCard({title, color: button.closest('[data-content-card]')?.querySelector('[data-photo-palette]')?.value},photo);
+          ? encodeFinishedCard(photo, item.platform === 'instagram' ? 'image/jpeg' : 'image/png')
+          : makePollShareCard({title, format: item.platform === 'instagram' ? 'image/jpeg' : 'image/png', color: button.closest('[data-content-card]')?.querySelector('[data-photo-palette]')?.value},photo);
         await call('save-poll-share-card', {id, image});
       } finally { photo?.close(); }
       await loadContents();
@@ -497,7 +496,7 @@ window.addEventListener('siseon-admin-authenticated', () => {
 init();
 
 
-function encodeFinishedCard(photo) {
+function encodeFinishedCard(photo, format = 'image/png') {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 1080;
   const ctx = canvas.getContext('2d');
@@ -514,7 +513,7 @@ function encodeFinishedCard(photo) {
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(reduced, 0, 0, 1080, 1080);
     }
-    const encoded = canvas.toDataURL('image/png').split(',')[1];
+    const encoded = canvas.toDataURL(format, 0.9).split(',')[1];
     if (encoded.length <= 1800000) return encoded;
   }
   throw new Error('이미지 파일이 너무 큽니다. 더 작은 이미지를 선택해 주세요.');
@@ -580,7 +579,7 @@ function makePollShareCard(issue, photo = null, photoSize = 0) {
   font(61,800);
   wrap(issue.title,68,730,944,4,70,'#fff');
   if (issue.credit) { font(21,600); wrap('사진 · ' + issue.credit,68,1030,944,1,25,'#fff'); }
-  const image = canvas.toDataURL('image/png').split(',')[1];
+  const image = canvas.toDataURL(issue.format || 'image/png', 0.9).split(',')[1];
   if (image.length <= 1800000) return image;
   if (photo && photoSize !== 360) return makePollShareCard(issue, originalPhoto, photoSize ? 360 : 540);
   throw new Error('카드 파일이 너무 큽니다. 다른 사진을 선택해 주세요.');

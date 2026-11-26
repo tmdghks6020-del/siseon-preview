@@ -801,16 +801,17 @@ async function handle(request: Request) {
       try { image = Uint8Array.from(atob(encoded), char => char.charCodeAt(0)); }
       catch { return fail('카드 이미지 형식이 올바르지 않습니다.'); }
       const size = image.length >= 24 ? new DataView(image.buffer) : null;
-      if (!size || size.getUint32(0) !== 0x89504e47 || size.getUint32(4) !== 0x0d0a1a0a || size.getUint32(16) !== 1080 || size.getUint32(20) !== 1080) return fail('1080×1080 PNG 카드가 필요합니다.');
+      const jpeg = image[0] === 255 && image[1] === 216 && image[2] === 255 && image.at(-2) === 255 && image.at(-1) === 217;
+      if (!jpeg && (!size || size.getUint32(0) !== 0x89504e47 || size.getUint32(4) !== 0x0d0a1a0a || size.getUint32(16) !== 1080 || size.getUint32(20) !== 1080)) return fail('1080×1080 PNG 또는 JPEG 카드가 필요합니다.');
       const {data:row,error} = await service.from('generated_contents').select('id,platform,status,content,updated_at').eq('id',clean(body.id,64)).maybeSingle();
       if (error) throw error;
-      if (!row || !['facebook','instagram'].includes(row.platform) || row.status !== 'review_required') return fail('검토 대기 상태인 초안만 카드를 바꿀 수 있습니다.',409);
-      const path = `${row.platform}/${row.id}/${crypto.randomUUID()}.png`;
+      if (!row || !['facebook','instagram'].includes(row.platform) || !['review_required','failed'].includes(row.status)) return fail('검토 대기 또는 발행 실패 상태인 초안만 카드를 바꿀 수 있습니다.',409);
+      const path = `${row.platform}/${row.id}/${crypto.randomUUID()}.${jpeg ? 'jpg' : 'png'}`;
       const bucket = service.storage.from('siseon-social-assets');
-      const {error:uploadError} = await bucket.upload(path,image,{contentType:'image/png'});
+      const {error:uploadError} = await bucket.upload(path,image,{contentType:jpeg ? 'image/jpeg' : 'image/png'});
       if (uploadError) throw uploadError;
       const imageUrl = bucket.getPublicUrl(path).data.publicUrl;
-      const {data:updated,error:saveError} = await service.from('generated_contents').update({content:{...row.content,imageUrl,imageProvider:'siseon-card'},updated_at:new Date().toISOString()}).eq('id',row.id).eq('status','review_required').eq('updated_at',row.updated_at).select('id').maybeSingle();
+      const {data:updated,error:saveError} = await service.from('generated_contents').update({content:{...row.content,imageUrl,imageProvider:'siseon-card'},updated_at:new Date().toISOString()}).eq('id',row.id).eq('status',row.status).eq('updated_at',row.updated_at).select('id').maybeSingle();
       if (saveError || !updated) { await bucket.remove([path]); throw saveError || new Error('초안 상태가 변경됐습니다. 목록을 새로고침해 주세요.'); }
       return respond({ok:true,imageUrl});
     }
