@@ -1,5 +1,5 @@
 // Dependency-injected transport permits offline failure/recovery tests without keys.
-export const AI_ORDER = ['openai', 'openrouter', 'groq', 'cloudflare'] as const;
+export const AI_ORDER = ['groq', 'openai', 'openrouter', 'cloudflare'] as const;
 export type Provider = typeof AI_ORDER[number];
 export type Credentials = { apiKey: string; model?: string; accountId?: string };
 export const DEFAULT_MODELS: Record<Provider,string> = {
