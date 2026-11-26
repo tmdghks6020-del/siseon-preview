@@ -89,7 +89,7 @@ function renderContent(item) {
     item.platform === 'facebook' && item.status === 'published' && item.external_post_id && !removed ? `<button type="button" data-content-action="delete-facebook-post" data-id="${esc(item.id)}">Facebook 게시물 삭제</button>` : '',
     editable ? '<button type="button" data-content-action="save" data-id="' + esc(item.id) + '">수정 저장</button>' : '',
     editable ? '<button type="button" data-content-action="regenerate" data-id="' + esc(item.id) + '">AI 재생성</button>' : '',
-    ['instagram','facebook'].includes(item.platform) && ['review_required','rejected'].includes(item.status) ? `<button type="button" data-content-action="generate-image" data-id="${esc(item.id)}">${imageUrl ? '투표 카드 다시 만들기' : '투표 카드 만들기'}</button>` : '',
+    ['instagram','facebook','threads'].includes(item.platform) && ['review_required','failed'].includes(item.status) ? `<button type="button" data-content-action="generate-image" data-id="${esc(item.id)}">${imageUrl ? '투표 카드 다시 만들기' : '투표 카드 만들기'}</button>` : '',
     ['review_required', 'rejected'].includes(item.status) ? '<button type="button" data-content-action="approve" data-id="' + esc(item.id) + '">검토 후 승인</button>' : '',
     ['review_required', 'approved'].includes(item.status) ? '<button type="button" data-content-action="reject" data-id="' + esc(item.id) + '">반려</button>' : '',
     item.status === 'approved' && item.platform === 'naver_blog' ? '<label class="content-post-url">네이버 게시물 주소<input type="url" data-post-url="' + esc(item.id) + '" placeholder="수동 게시 후 URL 입력"></label><button type="button" data-content-action="manual-publish" data-id="' + esc(item.id) + '">게시 완료 기록</button>' : '',
@@ -466,7 +466,7 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
         const title = item.content?.title || item.issueTitle;
         const image = action === 'attach-finished-image'
           ? encodeFinishedCard(photo, ['instagram','threads'].includes(item.platform) ? 'image/jpeg' : 'image/png')
-          : makePollShareCard({title, format: item.platform === 'instagram' ? 'image/jpeg' : 'image/png', color: button.closest('[data-content-card]')?.querySelector('[data-photo-palette]')?.value},photo);
+          : makePollShareCard({title, format: ['instagram','threads'].includes(item.platform) ? 'image/jpeg' : 'image/png', color: button.closest('[data-content-card]')?.querySelector('[data-photo-palette]')?.value},photo);
         await call('save-poll-share-card', {id, image});
       } finally { photo?.close(); }
       await loadContents();
