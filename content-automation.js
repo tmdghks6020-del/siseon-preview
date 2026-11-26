@@ -83,6 +83,8 @@ function renderContent(item) {
   const publishedLink = item.externalPostUrl && !removed ? `<p><a href="${esc(item.externalPostUrl)}" target="_blank" rel="noopener noreferrer">게시물 확인 ↗</a></p>` : '';
   const scheduleLabel = item.scheduledAt ? `<p class="admin-footnote">게시 예약 시각: ${esc(new Date(item.scheduledAt).toLocaleString('ko-KR'))} · 작업 ${esc(item.jobStatus || '')} · 재시도 ${Number(item.retryCount || 0)}회</p>` : '';
   const buttons = [
+    ['facebook','instagram'].includes(item.platform) && item.status === 'review_required'
+      ? `<button type="button" data-content-action="attach-finished-image" data-id="${esc(item.id)}">완성 이미지로 첨부</button>` : '',
     ['threads','instagram'].includes(item.platform) && item.status === 'published' && item.external_post_id ? `<button type="button" data-content-action="delete-social-post" data-id="${esc(item.id)}">게시물 삭제</button>` : '',
     item.platform === 'facebook' && item.status === 'published' && item.external_post_id && !removed ? `<button type="button" data-content-action="delete-facebook-post" data-id="${esc(item.id)}">Facebook 게시물 삭제</button>` : '',
     editable ? '<button type="button" data-content-action="save" data-id="' + esc(item.id) + '">수정 저장</button>' : '',
@@ -452,17 +454,21 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       await call('save-poll-share-card', { id, image });
       await loadContents();
     }
-    else if (action === 'generate-image') {
+    else if (action === 'generate-image' || action === 'attach-finished-image') {
       const item = contents.find(entry => entry.id === id);
       if (!item) throw new Error('홍보 초안을 찾을 수 없습니다.');
       const input = button.closest('[data-content-card]')?.querySelector('[data-poll-photo]');
       const file = input?.files?.[0];
+      if (action === 'attach-finished-image' && !file) throw new Error('카드에 넣을 사진에서 완성 이미지 파일을 선택해 주세요.');
       if (file && (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 12000000)) throw new Error('12MB 이하의 JPG, PNG, WebP 사진을 선택해 주세요.');
       const photo = file ? await createImageBitmap(file) : null;
       if (file && !photo) throw new Error('사진을 열 수 없습니다.');
       try {
         const title = item.content?.title || item.issueTitle;
-        await call('save-poll-share-card', {id, image:makePollShareCard({title, color: button.closest('[data-content-card]')?.querySelector('[data-photo-palette]')?.value},photo)});
+        const image = action === 'attach-finished-image'
+          ? encodeFinishedCard(photo)
+          : makePollShareCard({title, color: button.closest('[data-content-card]')?.querySelector('[data-photo-palette]')?.value},photo);
+        await call('save-poll-share-card', {id, image});
       } finally { photo?.close(); }
       await loadContents();
     } else if (action === 'save') {
@@ -490,6 +496,29 @@ window.addEventListener('siseon-admin-authenticated', () => {
 
 init();
 
+
+function encodeFinishedCard(photo) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 1080;
+  const ctx = canvas.getContext('2d');
+  const scale = Math.min(1080 / photo.width, 1080 / photo.height);
+  const width = photo.width * scale, height = photo.height * scale;
+  ctx.fillStyle = '#102b24';
+  ctx.fillRect(0, 0, 1080, 1080);
+  ctx.drawImage(photo, (1080 - width) / 2, (1080 - height) / 2, width, height);
+  const reduced = document.createElement('canvas');
+  for (const size of [1080, 540, 360]) {
+    if (size < 1080) {
+      reduced.width = reduced.height = size;
+      reduced.getContext('2d').drawImage(canvas, 0, 0, size, size);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(reduced, 0, 0, 1080, 1080);
+    }
+    const encoded = canvas.toDataURL('image/png').split(',')[1];
+    if (encoded.length <= 1800000) return encoded;
+  }
+  throw new Error('이미지 파일이 너무 큽니다. 더 작은 이미지를 선택해 주세요.');
+}
 
 function makePollShareCard(issue, photo = null, photoSize = 0) {
   const canvas = document.createElement('canvas');
