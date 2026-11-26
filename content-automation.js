@@ -553,20 +553,32 @@ function makePollShareCard(issue, photo = null, photoSize = 0) {
   ctx.fillRect(0,0,1080,1080);
   const originalPhoto = photo;
   if (photo) {
-    const strip = document.createElement('canvas');
-    strip.width = photoSize || 1080;
-    strip.height = Math.round(strip.width * 0.3);
-    const scale = Math.max(strip.width / photo.width, strip.height / photo.height);
+    const photoHeight = 414;
+    const scale = Math.min(1080 / photo.width, photoHeight / photo.height);
     const width = photo.width * scale, height = photo.height * scale;
-    strip.getContext('2d').drawImage(photo,(strip.width-width)/2,(strip.height-height)/2,width,height);
-    ctx.imageSmoothingEnabled = !photoSize;
-    ctx.drawImage(strip,0,90,1080,324);
+    const left = (1080 - width) / 2, top = (photoHeight - height) / 2;
+    ctx.fillStyle = '#142821';
+    ctx.fillRect(0, 0, 1080, photoHeight);
+    if (photoSize) {
+      const reduced = document.createElement('canvas');
+      reduced.width = Math.max(1, Math.round(width * photoSize / 1080));
+      reduced.height = Math.max(1, Math.round(height * photoSize / 1080));
+      reduced.getContext('2d').drawImage(photo, 0, 0, reduced.width, reduced.height);
+      ctx.imageSmoothingEnabled = false;
+      photo = reduced;
+    }
+    ctx.drawImage(photo, left, top, width, height);
+    ctx.imageSmoothingEnabled = true;
+    ctx.translate(left + width - 104 - 965, top + 9);
   }
+  ctx.save();
   panel(965,15,70,65,'#123d35');
   ctx.strokeStyle='#dcebdc'; ctx.lineWidth=3;
   ctx.beginPath(); ctx.moveTo(976,48); ctx.quadraticCurveTo(1000,21,1024,48); ctx.quadraticCurveTo(1000,75,976,48); ctx.stroke();
   ctx.fillStyle='#d7ee83'; ctx.beginPath(); ctx.arc(1000,48,9,0,Math.PI*2); ctx.fill();
   ctx.fillStyle='#123d35'; ctx.beginPath(); ctx.arc(1000,48,3,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   const top = photo ? 420 : 160;
   if (issue.credit) { font(21,600); wrap('사진 · ' + issue.credit,55,top+23,950,1,25,accent); }
   font(52,800); wrap(issue.title,55,top+91,970,3,58,accent);
