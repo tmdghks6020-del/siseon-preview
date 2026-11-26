@@ -37,7 +37,7 @@ function renderPollPromotionStatuses(error = false) {
     if (error) { target.textContent='홍보 상태를 불러오지 못했습니다.'; continue; }
     const latest = new Map();
     for (const item of contents) {
-      if (item.issueId !== target.dataset.promoStatus) continue;
+      if (item.issueId !== target.dataset.promoStatus || item.status === 'rejected') continue;
       const key = item.platform + ':' + (item.content?.facebookDeletedAt ? 'removed' : item.status);
       const record = latest.get(key) || {item,count:0};
       record.count++;
@@ -49,7 +49,7 @@ function renderPollPromotionStatuses(error = false) {
 function render() {
   renderPollPromotionStatuses();
   const target = root(); if (!target) return;
-  const scoped = contents.filter(item => item.issueId === target.dataset.issueId);
+  const scoped = contents.filter(item => item.issueId === target.dataset.issueId && item.status !== 'rejected');
   const counts = scoped.reduce((acc, item) => (acc[item.status] = (acc[item.status] || 0) + 1, acc), {});
   target.innerHTML = `
     <div class="content-auto-toolbar"><div><strong>승인 전 자동 발행 차단</strong><p>게시물은 관리자 검토·승인 후에만 예약 대기열에 들어갑니다. 네이버 블로그는 복사·수동 게시 방식입니다.</p><p>서비스 키와 계정 토큰은 API 설정에서 서버에 암호화 저장합니다.</p></div><button type="button" class="table-action" data-content-action="refresh">새로고침</button></div>
@@ -369,8 +369,8 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       if (!window.confirm('이 플랫폼 초안을 다시 생성할까요? 현재 수정본과 승인은 새 초안으로 바뀝니다.')) return;
       await call('regenerate', { id }); await loadContents();
     } else if (action === 'approve' || action === 'reject') {
-      const note = window.prompt(action === 'approve' ? '출처와 균형을 확인했습니다. 검토 메모를 남길 수 있습니다.' : '반려 사유를 입력해 주세요.', '');
-      if (note === null || (action === 'reject' && !note.trim())) return;
+      const note = window.prompt(action === 'approve' ? '출처와 균형을 확인했습니다. 검토 메모를 남길 수 있습니다.' : '이 초안을 검토 목록에서 제외할까요? 반려 사유는 비워도 됩니다.', '');
+      if (note === null) { button.disabled = false; return; }
       await call('review', { id, decision: action === 'approve' ? 'approve' : 'reject', note }); await loadContents();
     } else if (action === 'publish' || action === 'manual-publish') {
       const scheduleInput = document.querySelector(`[data-schedule="${CSS.escape(id)}"]`);
