@@ -29,6 +29,55 @@ function promptFor(input: Record<string, unknown>) {
   return `시선이라는 찬반 토론 서비스의 플랫폼별 홍보 초안을 작성한다. 사실과 해석을 구분하고, 어느 한쪽을 지지하지 않으며, 근거 없는 수치나 출처를 만들지 않는다. 입력된 출처와 웹 검색으로 확인되는 자료만 참고하고, 자료가 부족하면 needsReview=true와 확인할 점을 쓴다. 플랫폼별 문체를 달리하고 투표 참여를 과장 없이 안내한다. Facebook은 모바일 피드용으로 제목을 짧은 질문 한 줄, 본문을 300자 안팎으로 작성한다. 배경 1~2문장, 양측 관점 각 한 줄, 참여 문장 한 줄을 빈 줄로 나눈다. 제목을 본문에서 반복하지 않고 Markdown, URL, 확인되지 않은 수치는 본문에서 빼라. Facebook과 Instagram에는 기사 흐름을 중립적으로 표현할 imageBrief를 제공한다.\n이슈: ${clean(input.title, 240)}\n요약: ${clean(input.summary, 4000)}\n찬성 관점: ${clean(input.forView, 2500)}\n반대 관점: ${clean(input.againstView, 2500)}\n참고 출처: ${(input.sources as string[]).join('\n')}\n반환 JSON: {"instagram":{"title":"","body":"","hashtags":[],"cardText":[],"imageBrief":"","needsReview":true,"reviewNotes":[]},"threads":{"title":"","body":"","hashtags":[],"needsReview":true,"reviewNotes":[]},"facebook":{"title":"","body":"","hashtags":[],"needsReview":true,"reviewNotes":[]},"naver_blog":{"title":"","intro":"","headings":[],"body":"","keywords":[],"tags":[],"thumbnailText":"","imageBrief":"","needsReview":true,"reviewNotes":[]}}`;
 }
 
+async function generateSocialImage(prompt: string) {
+  const attempts: string[] = [];
+  for (const provider of ['openai','gemini','cloudflare']) {
+    const {data: state, error: stateError} = await service.from('integration_connections').select('enabled').eq('provider',provider).maybeSingle();
+    if (stateError) throw stateError;
+    if (state?.enabled === false) continue;
+    const {data: stored} = await service.rpc('service_get_integration',{p_provider:provider});
+    const credentials = JSON.parse(stored || '{}');
+    const key = credentials.apiKey || (provider === 'openai' ? Deno.env.get('OPENAI_API_KEY') : provider === 'gemini' ? Deno.env.get('GEMINI_API_KEY') : Deno.env.get('CLOUDFLARE_API_TOKEN'));
+    if (!key) continue;
+    try {
+      let endpoint: string;
+      let headers: Record<string,string> = {'content-type':'application/json'};
+      let payload: unknown;
+      if (provider === 'openai') {
+        endpoint='https://api.openai.com/v1/images/generations';
+        headers.authorization='Bearer '+key;
+        payload={model:Deno.env.get('OPENAI_IMAGE_MODEL') || 'gpt-image-1',prompt,size:'1024x1024',quality:'medium',output_format:'png'};
+      } else if (provider === 'gemini') {
+        const model=Deno.env.get('GEMINI_IMAGE_MODEL') || 'gemini-2.5-flash-image';
+        endpoint='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent';
+        headers['x-goog-api-key']=key;
+        payload={contents:[{parts:[{text:prompt}]}],generationConfig:{responseModalities:['IMAGE']}};
+      } else {
+        const accountId=credentials.accountId || Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
+        if (!/^[a-f0-9]{32}$/i.test(accountId || '')) continue;
+        endpoint='https://api.cloudflare.com/client/v4/accounts/'+accountId+'/ai/run/@cf/black-forest-labs/flux-1-schnell';
+        headers.authorization='Bearer '+key;
+        payload={prompt,steps:4};
+      }
+      const response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify(payload),signal:AbortSignal.timeout(35000)});
+      if (!response.ok) {
+        await response.body?.cancel();
+        attempts.push(provider+' (HTTP '+response.status+')');
+        continue;
+      }
+      const result=await response.json();
+      const encoded=provider==='openai' ? result.data?.[0]?.b64_json : provider==='gemini' ? result.candidates?.flatMap((item:any)=>item.content?.parts || []).find((part:any)=>part.inlineData?.data)?.inlineData.data : result.result?.image;
+      if (typeof encoded!=='string' || encoded.length>14000000) throw new Error('image_missing');
+      const binary=Uint8Array.from(atob(encoded),(char)=>char.charCodeAt(0));
+      const png=binary[0]===137 && binary[1]===80 && binary[2]===78 && binary[3]===71;
+      const jpeg=binary[0]===255 && binary[1]===216 && binary[2]===255;
+      if (!png && !jpeg) throw new Error('image_format');
+      return {binary,provider,extension:png?'png':'jpg',contentType:png?'image/png':'image/jpeg'};
+    } catch { attempts.push(provider+' (시간 초과 또는 이미지 응답 오류)'); }
+  }
+  throw new Error(attempts.length ? '이미지 생성에 실패했습니다. '+attempts.join(' → ') : '이미지 생성에 사용할 OpenAI, Gemini 또는 Cloudflare 연결을 먼저 설정해 주세요.');
+}
+
 async function getOpenAiKey() {
   const { data: state } = await service.from('integration_connections').select('enabled').eq('provider','openai').maybeSingle();
   if(state?.enabled === false) return '';
@@ -721,24 +770,13 @@ async function handle(request: Request) {
       const { data: row, error: readError } = await service.from('generated_contents').select('*').eq('id', body.id).single();
       if (readError || !row) throw readError || new Error('홍보 초안을 찾지 못했습니다.');
       if (!['instagram','facebook'].includes(row.platform) || !['review_required','rejected'].includes(row.status)) return fail('검토 대기 중인 Facebook·Instagram 초안에서만 이미지 시안을 만들 수 있습니다.', 409);
-      const key = await getOpenAiKey();
-      if (!key) throw new Error('OpenAI API 연결을 먼저 설정해 주세요.');
       const imageBrief = clean(body.imageBrief || row.content?.imageBrief || row.issue_title, 3000);
-      if (!imageBrief) throw new Error('이미지 설명이 비어 있습니다. 초안 내용을 수정한 뒤 다시 시도해 주세요.');
-      const imageResponse = await fetch('https://api.openai.com/v1/images/generations', {
-        method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ model: Deno.env.get('OPENAI_IMAGE_MODEL') || 'gpt-image-1', prompt: `Create a polished, neutral Korean editorial discussion card image for the Siseon community. Do not include text, logos, political campaign material, or a preferred answer. Use this visual direction: ${imageBrief}`, size: '1024x1024', quality: 'medium', output_format: 'png' })
-      });
-      const imageResult = await imageResponse.json();
-      if (!imageResponse.ok) throw new Error(imageResult.error?.message || `이미지 생성 오류 ${imageResponse.status}`);
-      const encoded = imageResult.data?.[0]?.b64_json;
-      if (!encoded) throw new Error('이미지 서비스가 파일을 반환하지 않았습니다.');
-      const binary = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
-      const path = `${row.platform}/${row.id}/${Date.now()}.png`;
-      const { error: uploadError } = await service.storage.from('siseon-social-assets').upload(path, binary, { contentType: 'image/png', upsert: true });
+      const generated = await generateSocialImage(`Create a polished square editorial image for a Korean discussion community. Use a neutral framing. Do not include text or logos. Subject: ${imageBrief}`);
+      const path = `${row.platform}/${row.id}/${crypto.randomUUID()}.${generated.extension}`;
+      const {error: uploadError} = await service.storage.from('siseon-social-assets').upload(path,generated.binary,{contentType:generated.contentType});
       if (uploadError) throw uploadError;
       const { data: publicFile } = service.storage.from('siseon-social-assets').getPublicUrl(path);
-      const content = { ...(row.content || {}), imageUrl: publicFile.publicUrl };
+      const content = { ...(row.content || {}), imageUrl: publicFile.publicUrl, imageProvider: generated.provider };
       const { error: updateError } = await service.from('generated_contents').update({ content, updated_at: new Date().toISOString() }).eq('id', row.id);
       if (updateError) throw updateError;
       await audit('social_image_generated', row.id, actor.id, { platform: row.platform });
