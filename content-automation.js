@@ -57,38 +57,6 @@ function render() {
     <div class="content-auto-list">${scoped.map(renderContent).join('') || '<p class="table-empty">아직 생성된 콘텐츠가 없습니다.</p>'}</div>`;
 }
 
-async function findPollPhotos(keywords) {
-  const query = new URLSearchParams({
-    action: 'query', generator: 'search', gsrnamespace: '6', gsrlimit: '20',
-    gsrsearch: keywords + ' filetype:bitmap', prop: 'imageinfo',
-    iiprop: 'url|extmetadata', iiurlwidth: '640',
-    iiextmetadatafilter: 'LicenseShortName', format: 'json', origin: '*'
-  });
-  const response = await fetch('https://commons.wikimedia.org/w/api.php?' + query, {
-    signal: AbortSignal.timeout(15000)
-  });
-  if (!response.ok) throw new Error('사진 검색에 실패했습니다. 잠시 후 다시 시도해 주세요.');
-  const result = await response.json();
-  if (result.error) throw new Error('사진 검색에 실패했습니다.');
-  return Object.values(result.query?.pages || {}).sort((a,b) => a.index - b.index)
-    .map(page => page.imageinfo?.[0])
-    .filter(info => /^https:\/\/upload\.wikimedia\.org\//.test(info?.thumburl || '') &&
-      /^https:\/\/commons\.wikimedia\.org\//.test(info.descriptionurl || '') &&
-      /^(CC0(?: 1\.0)?|Public domain)$/i.test(info.extmetadata?.LicenseShortName?.value || ''))
-    .slice(0, 5);
-}
-
-async function previewPollPhoto(info, title) {
-  const response = await fetch(info.thumburl, { signal: AbortSignal.timeout(12000) });
-  if (!response.ok) throw new Error('사진을 불러오지 못했습니다.');
-  const photo = await createImageBitmap(await response.blob());
-  try {
-    return makePollShareCard({ title }, photo);
-  } finally {
-    photo.close();
-  }
-}
-
 async function findPollPhotos(query) {
   const result = await call('search-kakao-images', { query });
   return result.results || [];
