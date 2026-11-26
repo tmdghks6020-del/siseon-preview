@@ -71,7 +71,7 @@ function renderContent(item) {
     item.platform === 'facebook' && item.status === 'published' && item.external_post_id && !removed ? `<button type="button" data-content-action="delete-facebook-post" data-id="${esc(item.id)}">Facebook 게시물 삭제</button>` : '',
     editable ? '<button type="button" data-content-action="save" data-id="' + esc(item.id) + '">수정 저장</button>' : '',
     editable ? '<button type="button" data-content-action="regenerate" data-id="' + esc(item.id) + '">AI 재생성</button>' : '',
-    ['instagram','facebook'].includes(item.platform) && ['review_required','rejected'].includes(item.status) ? `<button type="button" data-content-action="generate-image" data-id="${esc(item.id)}">${imageUrl ? '이미지 시안 다시 만들기' : '이미지 시안 생성'}</button>` : '',
+    ['instagram','facebook'].includes(item.platform) && ['review_required','rejected'].includes(item.status) ? `<button type="button" data-content-action="generate-image" data-id="${esc(item.id)}">${imageUrl ? '투표 카드 다시 만들기' : '투표 카드 만들기'}</button>` : '',
     ['review_required', 'rejected'].includes(item.status) ? '<button type="button" data-content-action="approve" data-id="' + esc(item.id) + '">검토 후 승인</button>' : '',
     ['review_required', 'approved'].includes(item.status) ? '<button type="button" data-content-action="reject" data-id="' + esc(item.id) + '">반려</button>' : '',
     item.status === 'approved' && item.platform === 'naver_blog' ? '<label class="content-post-url">네이버 게시물 주소<input type="url" data-post-url="' + esc(item.id) + '" placeholder="수동 게시 후 URL 입력"></label><button type="button" data-content-action="manual-publish" data-id="' + esc(item.id) + '">게시 완료 기록</button>' : '',
@@ -148,8 +148,9 @@ async function init() {
         const drafts = (result.drafts || []).filter(draft => ['facebook','instagram'].includes(draft.platform));
         const imageErrors = [];
         if (drafts.length) onImages?.();
+        let card;
         for (const draft of drafts) {
-          try { await call('image-generate', {id:draft.id}); }
+          try { card ||= makePollShareCard(issue); await call('save-poll-share-card', {id:draft.id, image:card}); }
           catch (error) { imageErrors.push((platformNames[draft.platform] || draft.platform) + ': ' + error.message); }
         }
         return {...result, imageErrors};
@@ -359,9 +360,10 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       await navigator.clipboard.writeText(text); button.textContent = '복사했어요'; setTimeout(() => { button.textContent = '네이버용 복사'; button.disabled = false; }, 1400);
     }
     else if (action === 'generate-image') {
-      const field = document.querySelector(`[data-content-json="${CSS.escape(id)}"]`);
-      const content = field ? JSON.parse(field.value) : {};
-      await call('image-generate', { id, imageBrief: content.imageBrief || '' }); await loadContents();
+      const item = contents.find(entry => entry.id === id);
+      if (!item) throw new Error('홍보 초안을 찾을 수 없습니다.');
+      await call('save-poll-share-card', {id, image:makePollShareCard({title:item.issueTitle, ...item.brief})});
+      await loadContents();
     } else if (action === 'save') {
       const field = document.querySelector(`[data-content-json="${CSS.escape(id)}"]`);
       await call('save', { id, content: JSON.parse(field.value) }); await loadContents();
@@ -387,3 +389,48 @@ window.addEventListener('siseon-admin-authenticated', () => {
 
 init();
 
+
+function makePollShareCard(issue) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1080;
+  canvas.height = 1080;
+  const ctx = canvas.getContext('2d');
+  const font = (size, weight=500) => { ctx.font = weight+' '+size+'px "Malgun Gothic","Apple SD Gothic Neo",sans-serif'; };
+  const panel = (x,y,w,h,color) => {
+    ctx.fillStyle=color;
+    ctx.beginPath();
+    ctx.roundRect(x,y,w,h,24);
+    ctx.fill();
+  };
+  const wrap = (value,x,y,width,maxLines,lineHeight,color) => {
+    const chars=Array.from(String(value || '').replace(/\s+/g,' ').trim());
+    const lines=[];
+    let line='';
+    for(const char of chars) {
+      if(line && ctx.measureText(line+char).width>width) { lines.push(line.trimEnd()); line=''; }
+      line+=char;
+    }
+    if(line.trim()) lines.push(line.trimEnd());
+    if(lines.length>maxLines) {
+      let last=lines[maxLines-1];
+      while(last && ctx.measureText(last+'…').width>width) last=last.slice(0,-1);
+      lines[maxLines-1]=last.trimEnd()+'…';
+    }
+    ctx.fillStyle=color;
+    lines.slice(0,maxLines).forEach((entry,i)=>ctx.fillText(entry,x,y+i*lineHeight));
+  };
+  ctx.fillStyle='#edf2ec'; ctx.fillRect(0,0,1080,1080);
+  panel(48,45,984,459,'#fff');
+  font(29,800); wrap('시선  ·  의견 투표',82,106,900,1,35,'#1b5344');
+  font(53,800); wrap(issue.title,82,190,900,3,64,'#15382e');
+  const summary=String(issue.summary || '').split(/\n\s*확인된 사실/)[0];
+  font(30); wrap(summary,82,398,900,2,45,'#466257');
+  const viewpoint=(value)=>String(value || '').replace(/^주요 논거:\s*/,'').replace(/^[-•]\s*/,'');
+  panel(48,530,480,382,'#e2eef3');
+  panel(552,530,480,382,'#f6eae1');
+  font(34,800); wrap('고려할 관점 1',80,594,416,1,42,'#244d60'); wrap('고려할 관점 2',584,594,416,1,42,'#7e4735');
+  font(30); wrap(viewpoint(issue.forView),80,658,416,5,45,'#263b35'); wrap(viewpoint(issue.againstView),584,658,416,5,45,'#263b35');
+  panel(48,939,984,90,'#153e35');
+  font(36,800); wrap('시선에서 안건을 읽고 투표하기  →',82,994,900,1,42,'#fff');
+  return canvas.toDataURL('image/png').split(',')[1];
+}
