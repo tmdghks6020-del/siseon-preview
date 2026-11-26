@@ -62,12 +62,14 @@ async function findPollPhotos(query) {
   return result.results || [];
 }
 
-async function previewPollPhoto(info, title) {
+async function previewPollPhoto(info, title, color) {
   const response = await fetch(info.imageUrl, { signal: AbortSignal.timeout(12000) });
   if (!response.ok) throw new Error('사진을 불러오지 못했습니다.');
   const photo = await createImageBitmap(await response.blob());
-  try { return makePollShareCard({ title }, photo); } finally { photo.close(); }
+  try { return makePollShareCard({ title, color, credit: info.sourceName }, photo); } finally { photo.close(); }
 }
+
+const searchedDrafts = new Set();
 
 function renderContent(item) {
   const removed = item.platform === 'facebook' && item.status === 'published' && item.content?.facebookDeletedAt;
@@ -93,12 +95,12 @@ function renderContent(item) {
     item.status === 'approved' && item.platform !== 'naver_blog' ? '<label class="content-schedule">게시 예약<input type="datetime-local" data-schedule="' + esc(item.id) + '"></label><button type="button" data-content-action="publish" data-id="' + esc(item.id) + '">예약 / 지금 게시</button>' : '',
     item.status === 'failed' ? '<button type="button" data-content-action="retry" data-id="' + esc(item.id) + '">재시도</button>' : ''
   ].filter(Boolean).join('');
-  const photoSearch = item.platform === 'facebook' && item.status === 'review_required'
+  const photoSearch = ['facebook', 'instagram'].includes(item.platform) && item.status === 'review_required'
     ? `<div><label>사진 검색어<input type="search" data-photo-keywords maxlength="120" value="${esc((item.issueTitle || item.content?.title || '').slice(0,120))}"></label>
       <button type="button" data-content-action="search-photos" data-id="${esc(item.id)}">웹에서 사진 찾기</button>
-      <div data-photo-results aria-live="polite"></div></div>` : '';
+      <label>카드 색상<select data-photo-palette><option value="#102b24">딥그린</option><option value="#152742">네이비</option><option value="#352719">웜브라운</option></select></label><div data-photo-results aria-live="polite"></div></div>` : '';
   return `<article class="content-auto-card" data-content-card="${esc(item.id)}"><div class="content-auto-card-head"><div><span class="announcement-category">${esc(platformNames[item.platform] || item.platform)}</span><small>${esc(item.issueTitle || item.issueId || '')}</small></div><span class="admin-status ${['approved','queued','published'].includes(item.status) ? 'status-good' : item.status === 'failed' || item.status === 'rejected' ? 'status-blocked' : 'status-warn'}">${esc(statusLabel)}</span></div>
-    <details${item.platform === 'facebook' ? ' open' : ''}><summary>게시글 미리보기</summary>${imagePreview}<strong>${esc(item.content?.title || '')}</strong><p style="white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7">${esc(item.content?.body || item.content?.intro || '')}</p></details>
+    <details${['facebook','instagram'].includes(item.platform) ? ' open' : ''}><summary>게시글 미리보기</summary>${imagePreview}<strong>${esc(item.content?.title || '')}</strong><p style="white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7">${esc(item.content?.body || item.content?.intro || '')}</p></details>
     ${editable ? `<label>플랫폼별 콘텐츠 JSON<textarea data-content-json="${esc(item.id)}" rows="12" spellcheck="false">${esc(jsonValue)}</textarea></label>` : ''}
     ${photoSearch}${['facebook','instagram'].includes(item.platform) && item.status === 'review_required' ? '<label>카드에 넣을 사진<input type="file" accept="image/jpeg,image/png,image/webp" data-poll-photo></label><p class="admin-footnote">사용할 수 있는 사진을 선택한 뒤 ‘투표 카드 만들기’를 누르세요. 사진 없이 만들면 시선 배경에 제목이 표시됩니다.</p>' : ''}<p class="admin-footnote">출처: ${sourceLinks}</p>${scheduleLabel}${jobState}${publishedLink}<div class="content-auto-actions">${buttons}</div></article>`;
 }
@@ -136,7 +138,12 @@ async function renderApiSettings() {
 async function loadContents() {
   if (!isAdmin) return;
   renderNotice('콘텐츠와 게시 이력을 불러오는 중입니다.');
-  try { ({ contents } = await call('list')); render(); }
+  try { ({ contents } = await call('list')); render();
+    for (const button of root()?.querySelectorAll('[data-content-action="search-photos"]') || []) {
+      if (searchedDrafts.has(button.dataset.id)) continue;
+      searchedDrafts.add(button.dataset.id);
+      button.click();
+    } }
   catch (error) { renderPollPromotionStatuses(true); renderNotice(error.message || '콘텐츠를 불러오지 못했습니다.', true); }
 }
 function renderAuthState() {
@@ -394,13 +401,20 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       output.textContent = '카카오 이미지 검색에서 국내 사진을 찾고 있습니다…';
       try {
         const photos = await findPollPhotos(keywords);
-        const cards = photos.map((info, index) => `<figure style="margin:0"><label><input type="radio" name="photo-${esc(id)}" data-photo-choice data-photo-url="${esc(info.imageUrl)}">후보 ${index + 1}
+        const cards = photos.map((info, index) => `<figure style="margin:0"><label><input type="radio" name="photo-${esc(id)}" data-photo-choice data-photo-url="${esc(info.imageUrl)}" data-photo-credit="${esc(info.sourceName || new URL(info.sourceUrl).hostname)}">후보 ${index + 1}
           <img style="display:block;width:100%;height:auto" alt="사진 후보 ${index + 1}" src="${esc(info.thumbnailUrl)}" referrerpolicy="no-referrer"></label>
           <figcaption><a href="${esc(info.sourceUrl)}" target="_blank" rel="noopener noreferrer">${esc(info.sourceName || '원문 출처')} ↗</a></figcaption></figure>`);
         output.innerHTML = cards.length
           ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(155px,100%),1fr));gap:12px">${cards.join('')}</div>
             <button type="button" data-content-action="attach-photo" data-id="${esc(id)}">선택한 사진 첨부</button>`
           : '<p>카카오 이미지 검색에서 표시할 후보를 찾지 못했습니다.</p>';
+        if (photos.length) {
+          try {
+            const first = photos[0];
+            const preview = await previewPollPhoto(first, item.content?.title || item.issueTitle, card.querySelector('[data-photo-palette]').value);
+            output.insertAdjacentHTML('afterbegin', '<p>첫 번째 사진으로 만든 카드 시안</p><img class="content-image-preview" alt="사진 카드 시안" src="data:image/png;base64,' + preview + '">');
+          } catch { /* Thumbnails and original source links remain available. */ }
+        }
       } catch (error) {
         output.textContent = error.message || '사진 검색에 실패했습니다.';
       } finally {
@@ -414,7 +428,7 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       if (!item) throw new Error('홍보 초안을 찾을 수 없습니다.');
       let image;
       try {
-        image = await previewPollPhoto({ imageUrl: selected.dataset.photoUrl }, item.content?.title || item.issueTitle);
+        image = await previewPollPhoto({ imageUrl: selected.dataset.photoUrl, sourceName: selected.dataset.photoCredit }, item.content?.title || item.issueTitle, button.closest('[data-content-card]').querySelector('[data-photo-palette]').value);
       } catch {
         throw new Error('이 사진은 원본 사이트에서 직접 불러올 수 없습니다. 사용 가능한 원본 파일을 내려받아 카드에 넣을 사진에서 올려 주세요.');
       }
@@ -431,7 +445,7 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       if (file && !photo) throw new Error('사진을 열 수 없습니다.');
       try {
         const title = item.content?.title || item.issueTitle;
-        await call('save-poll-share-card', {id, image:makePollShareCard({title},photo)});
+        await call('save-poll-share-card', {id, image:makePollShareCard({title, color: button.closest('[data-content-card]')?.querySelector('[data-photo-palette]')?.value},photo)});
       } finally { photo?.close(); }
       await loadContents();
     } else if (action === 'save') {
@@ -511,14 +525,15 @@ function makePollShareCard(issue, photo = null, photoSize = 0) {
   }
   const shade = ctx.createLinearGradient(0,300,0,1080);
   shade.addColorStop(0,'rgba(9,24,19,0)');
-  shade.addColorStop(.57,'rgba(9,24,19,.78)');
-  shade.addColorStop(1,'rgba(9,24,19,.98)');
+  shade.addColorStop(.57,(issue.color || '#102b24') + 'd9');
+  shade.addColorStop(1,issue.color || '#102b24');
   ctx.fillStyle = shade;
   ctx.fillRect(0,300,1080,780);
   panel(68,66,176,60,'#143d32');
   font(30,800); wrap('시선 · 투표',88,106,150,1,42,'#fff');
   font(61,800);
-  wrap(issue.title,68,761,944,4,70,'#fff');
+  wrap(issue.title,68,730,944,4,70,'#fff');
+  if (issue.credit) { font(21,600); wrap('사진 · ' + issue.credit,68,1030,944,1,25,'#fff'); }
   const image = canvas.toDataURL('image/png').split(',')[1];
   if (image.length <= 1800000) return image;
   if (photo && photoSize !== 360) return makePollShareCard(issue, originalPhoto, photoSize ? 360 : 540);
