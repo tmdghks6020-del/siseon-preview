@@ -31,13 +31,13 @@ function promptFor(input: Record<string, unknown>) {
 
 async function generateSocialImage(prompt: string) {
   const attempts: string[] = [];
-  for (const provider of ['openai','gemini','cloudflare']) {
+  for (const provider of ['openai','cloudflare']) {
     const {data: state, error: stateError} = await service.from('integration_connections').select('enabled').eq('provider',provider).maybeSingle();
     if (stateError) throw stateError;
     if (state?.enabled === false) continue;
     const {data: stored} = await service.rpc('service_get_integration',{p_provider:provider});
     const credentials = JSON.parse(stored || '{}');
-    const key = credentials.apiKey || (provider === 'openai' ? Deno.env.get('OPENAI_API_KEY') : provider === 'gemini' ? Deno.env.get('GEMINI_API_KEY') : Deno.env.get('CLOUDFLARE_API_TOKEN'));
+    const key = credentials.apiKey || (provider === 'openai' ? Deno.env.get('OPENAI_API_KEY') : Deno.env.get('CLOUDFLARE_API_TOKEN'));
     if (!key) continue;
     try {
       let endpoint: string;
@@ -47,11 +47,6 @@ async function generateSocialImage(prompt: string) {
         endpoint='https://api.openai.com/v1/images/generations';
         headers.authorization='Bearer '+key;
         payload={model:Deno.env.get('OPENAI_IMAGE_MODEL') || 'gpt-image-1',prompt,size:'1024x1024',quality:'medium',output_format:'png'};
-      } else if (provider === 'gemini') {
-        const model=Deno.env.get('GEMINI_IMAGE_MODEL') || 'gemini-2.5-flash-image';
-        endpoint='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent';
-        headers['x-goog-api-key']=key;
-        payload={contents:[{parts:[{text:prompt}]}],generationConfig:{responseModalities:['IMAGE']}};
       } else {
         const accountId=credentials.accountId || Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
         if (!/^[a-f0-9]{32}$/i.test(accountId || '')) continue;
@@ -68,7 +63,7 @@ async function generateSocialImage(prompt: string) {
         continue;
       }
       const result=await response.json();
-      const encoded=provider==='openai' ? result.data?.[0]?.b64_json : provider==='gemini' ? result.candidates?.flatMap((item:any)=>item.content?.parts || []).find((part:any)=>part.inlineData?.data)?.inlineData.data : result.result?.image;
+      const encoded=provider==='openai' ? result.data?.[0]?.b64_json : result.result?.image;
       if (typeof encoded!=='string' || encoded.length>14000000) throw new Error('image_missing');
       const binary=Uint8Array.from(atob(encoded),(char)=>char.charCodeAt(0));
       const png=binary[0]===137 && binary[1]===80 && binary[2]===78 && binary[3]===71;
@@ -109,7 +104,7 @@ async function loadAi(provider:Provider) {
   const {data,error}=await service.rpc('service_get_integration',{p_provider:provider});
   if(error) throw new Error('AI 키 저장소를 읽지 못했습니다.');
   const saved=data?JSON.parse(data):{};
-  const envKey=Deno.env.get(({openai:'OPENAI_API_KEY',gemini:'GEMINI_API_KEY',groq:'GROQ_API_KEY',cloudflare:'CLOUDFLARE_API_TOKEN'})[provider]);
+  const envKey=Deno.env.get(({openai:'OPENAI_API_KEY',openrouter:'OPENROUTER_API_KEY',groq:'GROQ_API_KEY',cloudflare:'CLOUDFLARE_API_TOKEN'})[provider]);
   const apiKey=saved.apiKey || envKey || '';
   const model=saved.model || Deno.env.get(`${provider.toUpperCase()}_MODEL`) || DEFAULT_MODELS[provider];
   return {credentials:apiKey?{apiKey,model,accountId:saved.accountId || Deno.env.get('CLOUDFLARE_ACCOUNT_ID')}:null,cooldownUntil:state?.cooldown_until};
