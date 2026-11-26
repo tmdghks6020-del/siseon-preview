@@ -62,11 +62,11 @@ async function findPollPhotos(query) {
   return result.results || [];
 }
 
-async function previewPollPhoto(info, title, color, format) {
+async function previewPollPhoto(info, title, color, format, brief) {
   const response = await fetch(info.imageUrl, { signal: AbortSignal.timeout(12000) });
   if (!response.ok) throw new Error('사진을 불러오지 못했습니다.');
   const photo = await createImageBitmap(await response.blob());
-  try { return makePollShareCard({ title, color, format, credit: info.sourceName }, photo); } finally { photo.close(); }
+  try { return makePollShareCard({ ...brief, title, color, format, credit: info.sourceName }, photo); } finally { photo.close(); }
 }
 
 const searchedDrafts = new Set();
@@ -429,7 +429,7 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
         if (photos.length) {
           try {
             const first = photos[0];
-            const preview = await previewPollPhoto(first, item.content?.title || item.issueTitle, card.querySelector('[data-photo-palette]').value);
+            const preview = await previewPollPhoto(first, item.content?.title || item.issueTitle, card.querySelector('[data-photo-palette]').value, undefined, item.brief);
             output.insertAdjacentHTML('afterbegin', '<p>첫 번째 사진으로 만든 카드 시안</p><img class="content-image-preview" alt="사진 카드 시안" src="data:image/png;base64,' + preview + '">');
           } catch { /* Thumbnails and original source links remain available. */ }
         }
@@ -446,7 +446,7 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       if (!item) throw new Error('홍보 초안을 찾을 수 없습니다.');
       let image;
       try {
-        image = await previewPollPhoto({ imageUrl: selected.dataset.photoUrl, sourceName: selected.dataset.photoCredit }, item.content?.title || item.issueTitle, button.closest('[data-content-card]').querySelector('[data-photo-palette]').value, item.platform === 'instagram' ? 'image/jpeg' : 'image/png');
+        image = await previewPollPhoto({ imageUrl: selected.dataset.photoUrl, sourceName: selected.dataset.photoCredit }, item.content?.title || item.issueTitle, button.closest('[data-content-card]').querySelector('[data-photo-palette]').value, item.platform === 'instagram' ? 'image/jpeg' : 'image/png', item.brief);
       } catch {
         throw new Error('이 사진은 원본 사이트에서 직접 불러올 수 없습니다. 사용 가능한 원본 파일을 내려받아 카드에 넣을 사진에서 올려 주세요.');
       }
@@ -466,7 +466,7 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
         const title = item.content?.title || item.issueTitle;
         const image = action === 'attach-finished-image'
           ? encodeFinishedCard(photo, ['instagram','threads'].includes(item.platform) ? 'image/jpeg' : 'image/png')
-          : makePollShareCard({title, format: ['instagram','threads'].includes(item.platform) ? 'image/jpeg' : 'image/png', color: button.closest('[data-content-card]')?.querySelector('[data-photo-palette]')?.value},photo);
+          : makePollShareCard({...item.brief, title, format: ['instagram','threads'].includes(item.platform) ? 'image/jpeg' : 'image/png', color: button.closest('[data-content-card]')?.querySelector('[data-photo-palette]')?.value},photo);
         await call('save-poll-share-card', {id, image});
       } finally { photo?.close(); }
       await loadContents();
@@ -548,37 +548,38 @@ function makePollShareCard(issue, photo = null, photoSize = 0) {
     ctx.fillStyle=color;
     lines.slice(0,maxLines).forEach((entry,i)=>ctx.fillText(entry,x,y+i*lineHeight));
   };
-  const backdrop = ctx.createLinearGradient(0,0,1080,1080);
-  backdrop.addColorStop(0,'#426c5a');
-  backdrop.addColorStop(1,'#102b24');
-  ctx.fillStyle = backdrop;
+  const accent = issue.color || '#075239';
+  ctx.fillStyle = '#faf5e9';
   ctx.fillRect(0,0,1080,1080);
   const originalPhoto = photo;
   if (photo) {
-    if (photoSize) {
-      const reduced = document.createElement('canvas');
-      reduced.width = reduced.height = photoSize;
-      const scale = Math.max(photoSize / photo.width, photoSize / photo.height);
-      const width = photo.width * scale, height = photo.height * scale;
-      reduced.getContext('2d').drawImage(photo, (photoSize-width)/2, (photoSize-height)/2, width, height);
-      photo = reduced;
-      ctx.imageSmoothingEnabled = false;
-    }
-    const scale = Math.max(1080 / photo.width, 1080 / photo.height);
-    const w = photo.width * scale, h = photo.height * scale;
-    ctx.drawImage(photo,(1080-w)/2,(1080-h)/2,w,h);
+    const strip = document.createElement('canvas');
+    strip.width = photoSize || 1080;
+    strip.height = Math.round(strip.width * 0.3);
+    const scale = Math.max(strip.width / photo.width, strip.height / photo.height);
+    const width = photo.width * scale, height = photo.height * scale;
+    strip.getContext('2d').drawImage(photo,(strip.width-width)/2,(strip.height-height)/2,width,height);
+    ctx.imageSmoothingEnabled = !photoSize;
+    ctx.drawImage(strip,0,90,1080,324);
   }
-  const shade = ctx.createLinearGradient(0,300,0,1080);
-  shade.addColorStop(0,'rgba(9,24,19,0)');
-  shade.addColorStop(.57,(issue.color || '#102b24') + 'd9');
-  shade.addColorStop(1,issue.color || '#102b24');
-  ctx.fillStyle = shade;
-  ctx.fillRect(0,300,1080,780);
-  panel(68,66,176,60,'#143d32');
-  font(30,800); wrap('시선 · 투표',88,106,150,1,42,'#fff');
-  font(61,800);
-  wrap(issue.title,68,730,944,4,70,'#fff');
-  if (issue.credit) { font(21,600); wrap('사진 · ' + issue.credit,68,1030,944,1,25,'#fff'); }
+  panel(965,15,70,65,'#123d35');
+  ctx.strokeStyle='#dcebdc'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(976,48); ctx.quadraticCurveTo(1000,21,1024,48); ctx.quadraticCurveTo(1000,75,976,48); ctx.stroke();
+  ctx.fillStyle='#d7ee83'; ctx.beginPath(); ctx.arc(1000,48,9,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#123d35'; ctx.beginPath(); ctx.arc(1000,48,3,0,Math.PI*2); ctx.fill();
+  const top = photo ? 420 : 160;
+  if (issue.credit) { font(21,600); wrap('사진 · ' + issue.credit,55,top+23,950,1,25,accent); }
+  font(52,800); wrap(issue.title,55,top+91,970,3,58,accent);
+  const rows = [['배경',issue.summary],['찬성 의견',issue.forView],['반대 의견',issue.againstView]].filter(([,value])=>String(value || '').trim());
+  rows.forEach(([label,value],index)=>{
+    const y=top+250+index*99;
+    panel(55,y-10,148,57,accent);
+    font(25,800); wrap(label,68,y+27,128,1,30,'#fff');
+    font(29,600); wrap(value,224,y+15,793,2,34,'#20342c');
+    ctx.fillStyle='#d8ded1'; ctx.fillRect(55,y+66,970,1);
+  });
+  panel(265,986,550,64,accent);
+  font(32,800); wrap('시선에서 안건 읽기',405,1028,380,1,36,'#fff');
   const image = canvas.toDataURL(issue.format || 'image/png', 0.9).split(',')[1];
   if (image.length <= 1800000) return image;
   if (photo && photoSize !== 360) return makePollShareCard(issue, originalPhoto, photoSize ? 360 : 540);
