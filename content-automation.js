@@ -79,7 +79,11 @@ function renderContent(item) {
   const jsonValue = JSON.stringify(platformContentShape(item), null, 2);
   const jobState = item.errorMessage ? `<p class="content-error">${esc(item.errorMessage)}</p>` : '';
   const imageUrl = /^https:\/\//i.test(item.content?.imageUrl || '') ? item.content.imageUrl : '';
-  const imagePreview = ['instagram','facebook','threads'].includes(item.platform) && imageUrl ? `<img class="content-image-preview" src="${esc(imageUrl)}" alt="홍보 이미지 시안" loading="lazy">` : '';
+  const facebookCards = item.platform === 'facebook' && Array.isArray(item.content?.imageUrls)
+    ? item.content.imageUrls.filter(url => /^https:\/\//i.test(url)) : [];
+  const imagePreview = facebookCards.length === 3
+    ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:10px">' + facebookCards.map((url,index) => `<figure style="margin:0"><img class="content-image-preview" src="${esc(url)}" alt="${['표지','팩트 체크','안건 참여'][index]}"><figcaption>${['표지','팩트 체크','안건 참여'][index]}</figcaption></figure>`).join('') + '</div>'
+    : ['instagram','facebook','threads'].includes(item.platform) && imageUrl ? `<img class="content-image-preview" src="${esc(imageUrl)}" alt="홍보 이미지 시안" loading="lazy">` : '';
   const publishedLink = item.externalPostUrl && !removed ? `<p><a href="${esc(item.externalPostUrl)}" target="_blank" rel="noopener noreferrer">게시물 확인 ↗</a></p>` : '';
   const scheduleLabel = item.scheduledAt ? `<p class="admin-footnote">게시 예약 시각: ${esc(new Date(item.scheduledAt).toLocaleString('ko-KR'))} · 작업 ${esc(item.jobStatus || '')} · 재시도 ${Number(item.retryCount || 0)}회</p>` : '';
   const buttons = [
@@ -174,7 +178,7 @@ async function init() {
         const result = await call('generate', { ...issue, platforms: selectedPlatforms });
         const drafts = (result.drafts || []).filter(draft => ['facebook','instagram','threads'].includes(draft.platform));
         const imageErrors = [];
-        let photo;
+        let photo, detailPhoto;
         let palette;
         if (drafts.length) {
           onImages?.();
@@ -187,15 +191,26 @@ async function init() {
             sessionStorage.setItem('siseon-last-card-color', palette);
           } catch (error) { imageErrors.push('AI 배경 · ' + error.message); }
         }
+        if (drafts.some(draft => draft.platform === 'facebook')) {
+          try {
+            const detail = await call('promo-background', {title:issue.title,summary:issue.summary,detail:true});
+            detailPhoto = await createImageBitmap(await (await fetch(detail.image)).blob());
+          } catch (error) { imageErrors.push('Facebook 팩트 체크 배경 · ' + error.message); }
+        }
         try {
           for (const draft of drafts) {
             try {
               const title = draft.content?.title || issue.title;
+              if (draft.platform === 'facebook') {
+                const images = makeFacebookCards({...issue,title,color:palette}, photo, detailPhoto);
+                await call('save-poll-share-card', {id:draft.id,images});
+                continue;
+              }
               const image = makePollShareCard({...issue,title,color:palette,credit:photo ? 'AI 생성 이미지' : '',format:draft.platform === 'facebook' ? 'image/png' : 'image/jpeg'},photo);
               await call('save-poll-share-card', {id:draft.id,image});
             } catch (error) { imageErrors.push((platformNames[draft.platform] || draft.platform) + ': ' + error.message); }
           }
-        } finally { photo?.close(); }
+        } finally { photo?.close(); detailPhoto?.close(); }
         return {...result, imageErrors};
       }
     };
@@ -623,4 +638,53 @@ function makePollShareCard(issue, photo = null, photoSize = 0) {
   if (image.length <= 1800000) return image;
   if (photo && photoSize !== 360) return makePollShareCard(issue, originalPhoto, photoSize ? 360 : 540);
   throw new Error('카드 파일이 너무 큽니다. 다른 사진을 선택해 주세요.');
+}
+
+function makeFacebookCards(issue, cover, detail) {
+  const accent = issue.color || '#075239';
+  const source = issue.sources?.[0];
+  const facts = String(issue.summary || '').split('확인된 사실\n')[1]?.split('\n').map(line => line.replace(/^\s*•\s*/, '').trim()).filter(Boolean) || [];
+  const render = (eyebrow, heading, lines, photo) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1080;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#faf5e9'; ctx.fillRect(0,0,1080,1080);
+    if (photo) {
+      const ratio = Math.max(1080/photo.width, 475/photo.height);
+      ctx.drawImage(photo, (photo.width-1080/ratio)/2, 0, 1080/ratio, 475/ratio, 0,0,1080,475);
+    } else {
+      ctx.fillStyle = accent; ctx.fillRect(0,0,1080,photo === cover && eyebrow === '오늘의 안건' ? 475 : 220);
+    }
+    const top = photo || eyebrow === '오늘의 안건' ? 520 : 295;
+    ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(960,28,82,82,22); ctx.fill();
+    ctx.strokeStyle = '#dcebdc'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(976,69); ctx.quadraticCurveTo(1001,41,1026,69); ctx.quadraticCurveTo(1001,97,976,69); ctx.stroke();
+    ctx.fillStyle='#d7ee83'; ctx.beginPath(); ctx.arc(1001,69,9,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=accent; ctx.beginPath(); ctx.arc(1001,69,3,0,Math.PI*2); ctx.fill();
+    const write = (value,y,size,maxLines,weight=700) => {
+      ctx.font = weight + ' ' + size + 'px "Malgun Gothic",sans-serif';
+      ctx.fillStyle = accent;
+      const chars = Array.from(String(value).replace(/\s+/g,' ').trim());
+      let line = '', used = 0;
+      for (const char of chars) {
+        if (line && ctx.measureText(line+char).width > 930) {
+          if (used === maxLines-1) { ctx.fillText(line.slice(0,-1)+'…',72,y); return y+size*1.25; }
+          ctx.fillText(line,72,y); y+=size*1.25; used++; line='';
+        }
+        line+=char;
+      }
+      ctx.fillText(line,72,y); return y+size*1.25;
+    };
+    write(eyebrow,top+20,28,1);
+    let y = write(heading,top+112,eyebrow==='오늘의 안건'?76:60,3)+25;
+    for (const line of lines) y = write(line,y,34,eyebrow==='팩트 체크'?2:1,500)+12;
+    if (photo) write('AI 생성 이미지',1030,21,1,500);
+    return canvas.toDataURL('image/jpeg',0.88).split(',')[1];
+  };
+  const factLines = source && facts.length ? [facts[0], '자료 출처 · ' + new URL(source).hostname] : ['확인할 자료는 안건 페이지에서 확인해 주세요.'];
+  return [
+    render('오늘의 안건',issue.title,[],cover),
+    render('팩트 체크','먼저 확인할 내용',factLines,detail),
+    render('당신의 시선','다른 사람들은 어떤 선택을 했을까요?',['시선에서 안건 읽고 투표 확인하기'],null)
+  ];
 }

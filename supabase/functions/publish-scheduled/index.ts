@@ -58,7 +58,19 @@ async function post(row: any) {
   if (row.platform === 'facebook') {
     const pageId = linked.accountId || Deno.env.get('META_FACEBOOK_PAGE_ID'); if (!pageId) throw new Error('Facebook 페이지 ID가 없습니다.');
     const imageUrl = clean(data.imageUrl, 1500);
-    if (/^https:\/\//i.test(imageUrl)) {
+    const images = Array.isArray(data.imageUrls) ? data.imageUrls : [];
+    if (images.length === 3 && images.every((url: unknown) => typeof url === 'string' && /^https:\/\//i.test(url))) {
+      for (const [index, image] of images.entries()) {
+        const upload = await fetch(`${base}/${pageId}/photos`, {
+          method: 'POST', body: new URLSearchParams({access_token:token,url:image,published:'false'})
+        });
+        const photo = await upload.json();
+        if (!upload.ok || !photo.id) throw new Error('Facebook 카드 ' + (index + 1) + '장 준비 실패 · ' + (photo.error?.message || upload.status));
+        body.set('attached_media[' + index + ']', JSON.stringify({media_fbid:photo.id}));
+      }
+      endpoint = `${base}/${pageId}/feed`;
+      body.set('message', text);
+    } else if (/^https:\/\//i.test(imageUrl)) {
       endpoint = `${base}/${pageId}/photos`;
       body.set('url', imageUrl);
       body.set('caption', text);
