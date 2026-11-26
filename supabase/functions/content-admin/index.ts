@@ -57,12 +57,14 @@ async function generateSocialImage(prompt: string) {
         if (!/^[a-f0-9]{32}$/i.test(accountId || '')) continue;
         endpoint='https://api.cloudflare.com/client/v4/accounts/'+accountId+'/ai/run/@cf/black-forest-labs/flux-1-schnell';
         headers.authorization='Bearer '+key;
-        payload={prompt,steps:4};
+        payload={prompt:Array.from(prompt).slice(0,2048).join(''),steps:4};
       }
       const response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify(payload),signal:AbortSignal.timeout(35000)});
       if (!response.ok) {
-        await response.body?.cancel();
-        attempts.push(provider+' (HTTP '+response.status+')');
+        const failure = provider === 'cloudflare' ? await response.json().catch(() => null) : null;
+        if (provider !== 'cloudflare') await response.body?.cancel();
+        const message = clean(failure?.errors?.[0]?.message, 160).replaceAll(key, '[숨김]').replace(/https?:\/\/\S+/gi, '[링크]').replace(/[\r\n]+/g, ' ');
+        attempts.push(provider+' (HTTP '+response.status+(message ? ' · '+message : '')+')');
         continue;
       }
       const result=await response.json();
