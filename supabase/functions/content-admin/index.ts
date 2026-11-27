@@ -836,7 +836,7 @@ async function handle(request: Request) {
     if (action === 'save-poll-share-card') {
       const group = Array.isArray(body.images);
       const encodings = group ? body.images : [body.image];
-      if (group && encodings.length !== 3) return fail('Facebook 카드 세 장이 필요합니다.');
+      if (group && encodings.length !== 3) return fail('홍보 카드 세 장이 필요합니다.');
       const cards = [];
       for (const encoded of encodings) {
       if (typeof encoded !== 'string' || !encoded || encoded.length > 1800000) return fail('카드 이미지 크기가 올바르지 않습니다.');
@@ -851,7 +851,6 @@ async function handle(request: Request) {
       const {data:row,error} = await service.from('generated_contents').select('id,platform,status,content,updated_at').eq('id',clean(body.id,64)).maybeSingle();
       if (error) throw error;
       if (!row || !['facebook','instagram','threads'].includes(row.platform) || !['review_required','failed'].includes(row.status)) return fail('검토 대기 또는 발행 실패 상태인 초안만 카드를 바꿀 수 있습니다.',409);
-      if (group && row.platform !== 'facebook') return fail('이 채널은 카드 묶음을 지원하지 않습니다.');
       const bucket = service.storage.from('siseon-social-assets');
       const paths: string[] = [];
       const urls: string[] = [];
@@ -883,7 +882,12 @@ async function handle(request: Request) {
         choices = readImageKeywords(topic?.vote_options);
       }
       const scene = [
-        detail ? 'Use a close-up composition.' : 'Use a clear main composition with some clean space above the subjects for a headline.',
+        body.cardRole === 'choice'
+          ? 'Show the objects at the moment of a decision: arranging, comparing or reviewing the options. Leave clear negative space and avoid implying a winning side.'
+          : detail || body.cardRole === 'conflict'
+            ? 'Use a close-up or side-by-side composition of the concrete subjects that show the central trade-off.'
+            : 'Show the setting and the concrete objects that establish the main situation in a wide composition with room for a headline.',
+        'Depict an illustrative scene supported by the supplied context. Do not invent identifiable people, documents, or evidence of an actual incident.',
         keywords.length
           ? 'Depict every listed visual subject clearly and prominently, together in one realistic scene.'
           : 'Identify the concrete visual subjects from the topic and choices. Show both compared subjects prominently when applicable.',
