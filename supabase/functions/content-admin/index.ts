@@ -45,6 +45,8 @@ function openAiImagePayload(prompt: string) {
 }
 
 async function generateSocialImage(prompt: string) {
+  const noText = 'Generate only a plain background photograph. Zero typography anywhere: no captions, titles, letters, digits, logos, watermarks, signs, or writing-like marks, including gibberish and fake Korean characters. All packaging, documents, labels, and signage must be blank and unbranded. Leave clear empty space for the app to add text later. Never reproduce words from the subject description.';
+  prompt = noText + '\nVisual subject reference only: ' + prompt + '\n' + noText;
   const attempts: string[] = [];
   for (const provider of ['openai','openrouter','cloudflare']) {
     const {data: state, error: stateError} = await service.from('integration_connections').select('enabled').eq('provider',provider).maybeSingle();
