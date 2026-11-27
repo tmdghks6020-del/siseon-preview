@@ -34,6 +34,12 @@ function promptFor(input: Record<string, unknown>) {
   return `시선이라는 찬반 토론 서비스의 플랫폼별 홍보 초안을 작성한다. 사실과 해석을 구분하고, 어느 한쪽을 지지하지 않으며, 근거 없는 수치나 출처를 만들지 않는다. 입력된 출처와 웹 검색으로 확인되는 자료만 참고하고, 자료가 부족하면 needsReview=true와 확인할 점을 쓴다. 플랫폼별 문체를 달리하고 투표 참여를 과장 없이 안내한다. Threads는 제목을 짧은 질문 한 줄로 쓰고, 본문은 230자 이내로 작성한다. 배경 한 문장, 두 관점 각 한 문장, 참여 질문 한 줄을 빈 줄로 나눈다. 두 관점은 ‘기대’와 ‘우려’ 또는 주제에 맞는 짧은 이름으로 표시하며 균형 있게 요약한다. Threads 본문에서 제목 반복, Markdown, 링크, 해시태그를 빼고 hashtags는 빈 배열로 둔다. Facebook은 모바일 피드용으로 제목을 짧은 질문 한 줄, 본문을 300자 안팎으로 작성한다. 배경 1~2문장, 양측 관점 각 한 줄, 참여 문장 한 줄을 빈 줄로 나눈다. 제목을 본문에서 반복하지 않고 Markdown, URL, 확인되지 않은 수치는 본문에서 빼라. Facebook과 Instagram에는 기사 흐름을 중립적으로 표현할 imageBrief를 제공한다.\n이슈: ${clean(input.title, 240)}\n요약: ${clean(input.summary, 4000)}\n찬성 관점: ${clean(input.forView, 2500)}\n반대 관점: ${clean(input.againstView, 2500)}\n참고 출처: ${(input.sources as string[]).join('\n')}\n반환 JSON: {"instagram":{"title":"","body":"","hashtags":[],"cardText":[],"imageBrief":"","needsReview":true,"reviewNotes":[]},"threads":{"title":"","body":"","hashtags":[],"needsReview":true,"reviewNotes":[]},"facebook":{"title":"","body":"","hashtags":[],"needsReview":true,"reviewNotes":[]},"naver_blog":{"title":"","intro":"","headings":[],"body":"","keywords":[],"tags":[],"thumbnailText":"","imageBrief":"","needsReview":true,"reviewNotes":[]}}`;
 }
 
+function openAiImagePayload(prompt: string) {
+  const configured = Deno.env.get('OPENAI_IMAGE_MODEL');
+  const model = configured && configured !== 'gpt-image-1' ? configured : 'gpt-image-2.5-flare';
+  return { model, prompt, size: '1024x1024', quality: 'low', output_format: 'png' };
+}
+
 async function generateSocialImage(prompt: string) {
   const attempts: string[] = [];
   for (const provider of ['openai','openrouter','cloudflare']) {
@@ -55,7 +61,7 @@ async function generateSocialImage(prompt: string) {
       } else if (provider === 'openai') {
         endpoint='https://api.openai.com/v1/images/generations';
         headers.authorization='Bearer '+key;
-        payload={model:Deno.env.get('OPENAI_IMAGE_MODEL') || 'gpt-image-1',prompt,size:'1024x1024',quality:'medium',output_format:'png'};
+        payload=openAiImagePayload(prompt);
       } else {
         const accountId=credentials.accountId || Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
         if (!/^[a-f0-9]{32}$/i.test(accountId || '')) continue;
@@ -136,6 +142,22 @@ async function integrationSecret(provider: string) {
 }
 
 async function checkIntegration(provider: string, credentials: {apiKey?:string;model?:string;accountId?:string;accessToken?:string}) {
+  if (provider === 'openai') {
+    const payload = openAiImagePayload('A single plain blue circle on a white background.');
+    const response = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + credentials.apiKey },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(45000)
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      const code = String(result?.error?.code || '').replace(/[^a-z0-9_]/gi, '').slice(0, 80);
+      throw new Error(`OpenAI 이미지 생성 실패 (HTTP ${response.status}${code ? ' · ' + code : ''})`);
+    }
+    if (!result.data?.[0]?.b64_json) throw new Error('OpenAI 이미지 응답이 비어 있습니다.');
+    return { accountLabel: `OpenAI 이미지 · ${payload.model}`, accountId: '' };
+  }
   if(isAi(provider)) {
     const result=await requestAi(provider,{apiKey:credentials.apiKey || '',model:credentials.model,accountId:credentials.accountId},{prompt:'Return exactly {"ok":true}.',maxTokens:2048,timeoutMs:22000});
     if(result.parsed.ok!==true) throw new Error('AI 테스트 응답을 확인하지 못했습니다.');
