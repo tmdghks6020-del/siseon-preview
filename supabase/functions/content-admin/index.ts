@@ -838,7 +838,11 @@ async function handle(request: Request) {
       const benefits = /실업급여|구직급여/.test(title);
       const construction = benefits && /건설|공사|일용직/.test(title);
       let scene: string;
-      if (construction) {
+      if (/라면/.test(title) && /통조림/.test(title)) {
+        scene = detail
+          ? 'Top-down close-up of dry instant ramen noodles, an opened pull-tab food can and a small sealed bottle of water arranged side by side on a plain kitchen table, illustrating emergency food preparation. The noodles and canned food together dominate the frame.'
+          : 'Photograph of an emergency food kit on a simple Korean kitchen table. Show a plain instant ramen packet with a visible block of dry curly noodles, next to two clearly recognizable metal pull-tab food cans. Both food choices are large and centered, with a muted uncluttered upper area for a headline. No people, restaurant, landscape, weapons, or lettering.';
+      } else if (construction) {
         scene = detail
           ? 'Close-up of a worn yellow construction hard hat, work gloves and a blank attendance clipboard on a plywood workbench at a South Korean construction site. The hard hat and clipboard are the main subjects.'
           : 'Wide view of an active South Korean apartment construction site with scaffolding, an unfinished concrete building and a worker in a hard hat seen from behind. The construction site fills the frame.';
