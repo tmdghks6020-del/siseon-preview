@@ -1979,7 +1979,7 @@ document.querySelector('#approveDraftButton').addEventListener('click', async (e
     ['출처 이름과 날짜', draft.source], ['찬성 관점', draft.forText], ['반대 관점', draft.againstText]
   ];
   const missing = requiredFields.find(([, value]) => !String(value || '').trim());
-  const sourceUrl = safeHttpsUrl(draft.sourceUrl) || (draft.dataSignals?.generationMode === 'fun' && draft.title.startsWith('[가상 사례]'));
+  const sourceUrl = safeHttpsUrl(draft.sourceUrl) || (draft.dataSignals?.generationMode === 'fun' && !String(draft.sourceUrl || '').trim());
   const factsValid = draft.facts.length >= 2 && draft.facts.length <= 3;
   if (missing || !sourceUrl || !factsValid) {
     const reason = missing ? `${missing[0]}을 입력해 주세요.` : !factsValid ? '사실 또는 가정 조건을 2~3개 입력해 주세요.' : '출처 링크는 https:// 주소여야 합니다.';
@@ -2030,7 +2030,7 @@ document.querySelector('#publishDraftNowButton').addEventListener('click', async
     ['출처 이름과 날짜', draft.source], ['찬성 관점', draft.forText], ['반대 관점', draft.againstText]
   ];
   const missing = requiredFields.find(([, value]) => !String(value || '').trim());
-  const sourceUrl = safeHttpsUrl(draft.sourceUrl) || (draft.dataSignals?.generationMode === 'fun' && draft.title.startsWith('[가상 사례]'));
+  const sourceUrl = safeHttpsUrl(draft.sourceUrl) || (draft.dataSignals?.generationMode === 'fun' && !String(draft.sourceUrl || '').trim());
   const factsValid = draft.facts.length >= 2 && draft.facts.length <= 3;
   if (missing || !sourceUrl || !factsValid) {
     const reason = missing ? `${missing[0]}을 입력해 주세요.` : !factsValid ? '확인된 사실을 2~3개 입력해 주세요.' : '출처 링크는 https:// 주소여야 합니다.';
