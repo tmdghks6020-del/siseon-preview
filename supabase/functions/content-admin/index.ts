@@ -743,7 +743,7 @@ async function handle(request: Request) {
       return respond({ integrations: data || [] });
     }
     if(action==='ai-fallback-test') {
-      const result=await runAi({prompt:'Return exactly {"ok":true}.',maxTokens:1024,timeoutMs:15000},value=>{if(value.ok!==true)throw new Error('테스트 응답 오류');}, ['openai','exaone','groq','openrouter','cloudflare']);
+      const result=await runAi({prompt:'Return exactly {"ok":true}.',maxTokens:1024,timeoutMs:15000},value=>{if(value.ok!==true)throw new Error('테스트 응답 오류');});
       return respond({ok:true,provider:result.provider,model:result.model,attempts:result.attempts});
     }
     if (action === 'integration-save' || action === 'integration-test') {
