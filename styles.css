@@ -272,9 +272,16 @@ button:disabled{cursor:not-allowed;opacity:.58}
   font-weight: 800;
   white-space: nowrap;
 }
-#homeView .home-board-actions .home-board-write {
-  background: var(--brand-accent);
-  border-color: var(--brand-accent);
-  color: #fff;
-}
 .community-compose-card { scroll-margin-top: 84px; }
+
+.community-board-tools { display:grid; gap:12px; margin:20px 0 12px; }
+.community-board-tools nav, .community-board-search { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; }
+.community-board-tools :is(button, select, input) { min-height:44px; border-radius:8px; }
+.community-board-tools :is(nav button, .community-board-search > *) {
+  border:1px solid var(--line); background:var(--white); color:var(--ink); padding:6px 10px;
+}
+.community-board-tools nav button[aria-current="page"] { background:var(--brand-accent); border-color:var(--brand-accent); color:white; }
+.community-board-search input { min-width:100px; flex:1 1 120px; max-width:380px; }
+.community-board-write { display:flex; justify-content:flex-end; }
+
+#openTalkList, #topicSuggestionList { scroll-margin-top:84px; }
