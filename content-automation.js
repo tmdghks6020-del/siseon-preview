@@ -686,9 +686,10 @@ function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, lab
     ctx.font = weight + ' ' + size + 'px ' + fontFamily;
     const rows = [];
     let line = '';
-    for (const char of Array.from(String(value || '').replace(/\s+/g,' ').trim())) {
-      if (line && ctx.measureText(line+char).width > 890) { rows.push(line.trim()); line=''; }
-      line += char;
+    for (const word of String(value || '').trim().split(/\s+/).filter(Boolean)) {
+      const next = line ? line + ' ' + word : word;
+      if (line && ctx.measureText(next).width > 890) { rows.push(line); line = word; }
+      else line = next;
     }
     if (line) rows.push(line.trim());
     if (rows.length > maxLines) {
@@ -728,10 +729,11 @@ function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, lab
       const y=firstY+i*step;
       const at = highlighted || !phrase ? -1 : line.indexOf(phrase);
       ctx.fillStyle='#fff';
-      ctx.fillText(line,94,y);
+      ctx.fillText(line,94,y,890);
       if (at < 0) return;
       ctx.fillStyle=theme.highlight;
-      ctx.fillText(phrase,94+ctx.measureText(line.slice(0,at)).width,y);
+      const scale = Math.min(1,890 / ctx.measureText(line).width);
+      ctx.fillText(phrase,94+ctx.measureText(line.slice(0,at)).width*scale,y,ctx.measureText(phrase).width*scale);
       highlighted=true;
     });
   };
