@@ -1143,7 +1143,7 @@ async function loadMemberIssueData(issueId) {
   if (ownVote?.choice) memberVoteChoices.set(issueId, ownVote.choice); else memberVoteChoices.delete(issueId);
   const choice = ownVote?.choice;
   if (choice || activeIssueIsArchived) {
-    const { data: counts, error: resultError } = await memberAuth.rpc('get_topic_vote_results', { p_topic_id: topicId });
+    const { data: counts, error: resultError } = await memberAuth.rpc('get_beta_poll_results', { p_topic_id: topicId });
     if (!resultError) memberVoteResults.set(issueId, counts || []);
     else console.warn('투표 결과를 불러오지 못했습니다:', resultError.message);
   }
@@ -1434,7 +1434,7 @@ function renderDemoResults(visible) {
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
   const percent = (choice) => total ? Math.round((counts[choice] || 0) * 100 / total) : 0;
   const options = getIssueData(activeIssueId)?.voteOptions || ['찬성','반대','판단 보류'];
-  target.innerHTML = `<div class="result-heading"><strong>현재 결과</strong><span>참여자 ${total}명</span></div>${options.map(option=>`<div class="option-result"><div><b>${escapeSiteText(option)}</b><span>${counts[option] || 0}표 · ${percent(option)}%</span></div><progress max="100" value="${percent(option)}" aria-label="${escapeSiteText(option)}"></progress></div>`).join('')}<small>시선 참여자의 의견이며 전체 여론을 대표하지 않습니다. 반올림으로 합계가 100%와 다를 수 있습니다.</small>`;
+  target.innerHTML = `<div class="result-heading"><strong>현재 결과</strong><span>총 ${total}표</span></div>${options.map(option=>`<div class="option-result"><div><b>${escapeSiteText(option)}</b><span>${counts[option] || 0}표 · ${percent(option)}%</span></div><progress max="100" value="${percent(option)}" aria-label="${escapeSiteText(option)}"></progress></div>`).join('')}<small>베타테스트 동안 AI 표가 합계에 포함될 수 있습니다. 전체 여론을 대표하지 않습니다. 반올림으로 합계가 100%와 다를 수 있습니다.</small>`;
 
 }
 
@@ -1894,7 +1894,7 @@ function renderAdminPage(page = currentAdminPage) {
     renderReviewQueue();
     return;
   } else if (page === 'polls') {
-    content.innerHTML = `${header('POLL MANAGEMENT', '투표 관리', `진행 중인 안건 ${activeIssueIds.length}건 · 안건별로 보관 또는 삭제를 선택할 수 있습니다.`)}<div class="table-toolbar"><span>진행 중 <b>${activeIssueIds.length}</b>건</span><input id="pollSearch" placeholder="투표 제목 검색" aria-label="투표 검색" /></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>주제</th><th>분야</th><th>상태</th><th>출처</th><th>관리</th></tr></thead><tbody>${activeIssueIds.map((id) => { const item = issues[id]; return `<tr><td><strong>${escapeAdminHtml(item.title)}</strong><small>${formatPollDeadline(item)} 마감 · 진행 중</small></td><td>${escapeAdminHtml(item.category)}</td><td><span class="admin-status status-good">진행 중</span></td><td>${escapeAdminHtml(item.source)}</td><td><div class="row-actions"><button data-poll-promo-manage="${escapeAdminHtml(id)}" class="table-action">홍보 관리</button><button data-poll-management="archive" data-id="${escapeAdminHtml(id)}" class="table-action">지난 투표로 이동</button><button data-poll-management="delete" data-id="${escapeAdminHtml(id)}" class="table-action danger-action" style="color:#a74d3a;border-color:#ead1ca">삭제</button></div><div class="poll-promo-status" data-promo-status="${escapeAdminHtml(id)}">홍보 상태 확인 중</div></td></tr>`; }).join('')}</tbody></table></div><p class="admin-footnote">‘지난 투표로 이동’은 공개 투표 목록에서 내리고 보관함에 남깁니다. ‘삭제’는 사용자 화면과 검색용 페이지에서 내립니다. 승인된 Supabase 안건은 서버에 저장되며, 서버 작업 시 운영 기록도 남습니다.</p>`;
+    content.innerHTML = `${header('POLL MANAGEMENT', '투표 관리', `진행 중인 안건 ${activeIssueIds.length}건 · 안건별로 보관 또는 삭제를 선택할 수 있습니다.`)}<div class="table-toolbar"><span>진행 중 <b>${activeIssueIds.length}</b>건</span><input id="pollSearch" placeholder="투표 제목 검색" aria-label="투표 검색" /></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>주제</th><th>분야</th><th>상태</th><th>출처</th><th>관리</th></tr></thead><tbody>${activeIssueIds.map((id) => { const item = issues[id]; return `<tr><td><strong>${escapeAdminHtml(item.title)}</strong><small>${formatPollDeadline(item)} 마감 · 진행 중</small></td><td>${escapeAdminHtml(item.category)}</td><td><span class="admin-status status-good">진행 중</span></td><td>${escapeAdminHtml(item.source)}</td><td><div class="row-actions"><button data-poll-promo-manage="${escapeAdminHtml(id)}" class="table-action">홍보 관리</button><button data-poll-management="archive" data-id="${escapeAdminHtml(id)}" class="table-action">지난 투표로 이동</button><button data-poll-management="delete" data-id="${escapeAdminHtml(id)}" class="table-action danger-action" style="color:#a74d3a;border-color:#ead1ca">삭제</button></div><button type="button" class="table-action" data-beta-tally="${escapeAdminHtml(id)}">회원·AI 집계 보기</button><div class="poll-promo-status" role="status" data-beta-tally-result></div><div class="poll-promo-status" data-promo-status="${escapeAdminHtml(id)}">홍보 상태 확인 중</div></td></tr>`; }).join('')}</tbody></table></div><p class="admin-footnote">‘지난 투표로 이동’은 공개 투표 목록에서 내리고 보관함에 남깁니다. ‘삭제’는 사용자 화면과 검색용 페이지에서 내립니다. 승인된 Supabase 안건은 서버에 저장되며, 서버 작업 시 운영 기록도 남습니다.</p>`;
     window.SISEON_CONTENT_AUTOMATION?.loadContents();
   } else if (page === 'archive') {
     content.innerHTML = `${header('PAST CONVERSATIONS', '지난 투표 보관함', '종료된 투표의 결과와 토론을 확인합니다. 보관 기간이 지난 투표는 읽기 전용으로 표시됩니다.')}<div class="archive-list admin-archive-list" id="adminArchiveList"></div>`;
@@ -2016,6 +2016,27 @@ document.querySelector('.admin-sidebar').addEventListener('click', (event) => {
   if (button) { pushAppRoute('admin', { adminPage: button.dataset.adminPage }); renderAdminPage(button.dataset.adminPage); }
 });
 document.querySelector('#adminPageContent').addEventListener('click', async (event) => {
+  const tallyButton = event.target.closest('[data-beta-tally]');
+  if (tallyButton) {
+    const target = tallyButton.nextElementSibling;
+    const topicId = getPersistedTopicUuid(tallyButton.dataset.betaTally);
+    if (!topicId) { target.textContent = '서버에 저장된 투표가 없습니다.'; return; }
+    tallyButton.disabled = true;
+    target.textContent = '집계를 불러오는 중입니다.';
+    try {
+      const {data, error} = await memberAuth.rpc('admin_beta_poll_breakdown', { p_topic_id: topicId });
+      if (error) throw error;
+      target.textContent = data?.length
+        ? data.map(row => row.choice + ' · 회원 ' + row.member_votes + '표, AI ' + row.ai_votes + '표').join(' / ')
+        : '집계된 표가 없습니다.';
+    } catch {
+      target.textContent = '집계를 불러오지 못했습니다. 다시 시도해 주세요.';
+    } finally {
+      tallyButton.disabled = false;
+    }
+    return;
+  }
+
   const pollManagementButton = event.target.closest('[data-poll-management]');
   if (pollManagementButton) {
     managePollFromAdmin(pollManagementButton.dataset.id, pollManagementButton.dataset.pollManagement, pollManagementButton);
@@ -3001,11 +3022,11 @@ async function showPublicSharedPoll(uuid) {
     document.title=topic.title+' | 시선';
     if (!archived) return;
     const target = content.querySelector('[data-final-results]');
-    const {data,error} = await memberAuth.rpc('get_archived_share_results',{p_topics:[uuid]});
+    const {data,error} = await memberAuth.rpc('get_beta_poll_results',{p_topic_id:uuid});
     if(error){target.querySelector('p').textContent='최종 집계를 불러오지 못했습니다.';return;}
     const counts=new Map((data || []).map(row=>[row.choice,Number(row.vote_count)]));
     const total=[...counts.values()].reduce((sum,n)=>sum+n,0);
-    target.innerHTML='<h2>최종 투표 결과</h2><p>총 '+total+'명 참여</p><ul>'+options.map(option=>{
+    target.innerHTML='<h2>최종 투표 결과</h2><p>총 '+total+'표 · 베타테스트 동안 AI 표가 포함될 수 있습니다.</p><ul>'+options.map(option=>{
       const count=counts.get(option)||0;
       return '<li>'+escape(option)+' · '+count+'표 ('+(total?100*count/total:0).toFixed(1)+'%)</li>';
     }).join('')+'</ul>';
