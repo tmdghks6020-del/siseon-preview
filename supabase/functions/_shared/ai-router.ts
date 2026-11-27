@@ -1,9 +1,9 @@
 // Dependency-injected transport permits offline failure/recovery tests without keys.
-export const AI_ORDER = ['groq', 'openai', 'openrouter', 'cloudflare'] as const;
+export const AI_ORDER = ['exaone', 'groq', 'openai', 'openrouter', 'cloudflare'] as const;
 export type Provider = typeof AI_ORDER[number];
 export type Credentials = { apiKey: string; model?: string; accountId?: string };
 export const DEFAULT_MODELS: Record<Provider,string> = {
-  openai: 'gpt-6.2-astra', openrouter: 'openrouter/auto',
+  openai: 'gpt-6.2-astra', openrouter: 'openrouter/auto', exaone: 'k-exaone_v2.5',
   groq: 'openai/gpt-oss-120b', cloudflare: '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
 };
 export class AiFailure extends Error {
@@ -31,7 +31,10 @@ export async function requestAi(provider: Provider, credentials: Credentials,
     body={model,instructions,input:task.prompt,max_output_tokens:max,...(grounded?{tools:[{type:'web_search'}],tool_choice:'required'}:{})};
   } else {
     headers.authorization=`Bearer ${credentials.apiKey}`;
-    if(provider==='openrouter') {
+    if(provider==='exaone') {
+      endpoint='https://api.exaone.ai/v1/chat/completions';
+      body={model,messages,max_tokens:max,stream:false};
+    } else if(provider==='openrouter') {
       endpoint='https://openrouter.ai/api/v1/chat/completions';
       body={model,messages,max_tokens:max};
     } else if(provider==='groq') { endpoint='https://api.groq.com/openai/v1/chat/completions'; body={model,messages,max_completion_tokens:max}; }
@@ -62,7 +65,7 @@ export async function requestAi(provider: Provider, credentials: Credentials,
       if(chunks.some((x:any)=>x.type==='refusal')) throw new AiFailure('제공자가 콘텐츠 생성을 거절했습니다. 입력을 검토하세요.',422,60,true);
       text=chunks.filter((x:any)=>x.type==='output_text').map((x:any)=>x.text).join('\n');
       citations=chunks.flatMap((x:any)=>x.annotations||[]).filter((x:any)=>x.type==='url_citation').map((x:any)=>x.url);
-    } else if(provider==='groq' || provider==='openrouter') {
+    } else if(provider==='groq' || provider==='openrouter' || provider==='exaone') {
       if(data?.choices?.[0]?.finish_reason==='content_filter') throw new AiFailure('제공자가 콘텐츠 생성을 거절했습니다.',422,60,true);
       text=data?.choices?.[0]?.message?.content || '';
     } else {

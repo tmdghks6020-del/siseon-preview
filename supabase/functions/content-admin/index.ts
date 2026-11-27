@@ -31,7 +31,7 @@ function promptFor(input: Record<string, unknown>) {
 
 async function generateSocialImage(prompt: string) {
   const attempts: string[] = [];
-  for (const provider of ['openrouter','openai','cloudflare']) {
+  for (const provider of ['openai','openrouter','cloudflare']) {
     const {data: state, error: stateError} = await service.from('integration_connections').select('enabled').eq('provider',provider).maybeSingle();
     if (stateError) throw stateError;
     if (state?.enabled === false) continue;
@@ -110,13 +110,13 @@ async function loadAi(provider:Provider) {
   const {data,error}=await service.rpc('service_get_integration',{p_provider:provider});
   if(error) throw new Error('AI 키 저장소를 읽지 못했습니다.');
   const saved=data?JSON.parse(data):{};
-  const envKey=Deno.env.get(({openai:'OPENAI_API_KEY',openrouter:'OPENROUTER_API_KEY',groq:'GROQ_API_KEY',cloudflare:'CLOUDFLARE_API_TOKEN'})[provider]);
+  const envKey=Deno.env.get(({openai:'OPENAI_API_KEY',openrouter:'OPENROUTER_API_KEY',exaone:'EXAONE_API_KEY',groq:'GROQ_API_KEY',cloudflare:'CLOUDFLARE_API_TOKEN'})[provider]);
   const apiKey=saved.apiKey || envKey || '';
   const model=saved.model || Deno.env.get(`${provider.toUpperCase()}_MODEL`) || DEFAULT_MODELS[provider];
   return {credentials:apiKey?{apiKey,model,accountId:saved.accountId || Deno.env.get('CLOUDFLARE_ACCOUNT_ID')}:null,cooldownUntil:state?.cooldown_until};
 }
-async function runAi(task:Parameters<typeof requestAi>[2], validate?:(value:any)=>void) {
-  return routeAi(task,{load:loadAi,validate,record:async(provider,error,model)=>{
+async function runAi(task:Parameters<typeof requestAi>[2], validate?:(value:any)=>void, order?:readonly Provider[]) {
+  return routeAi(task,{load:loadAi,validate,order,record:async(provider,error,model)=>{
     const {error:dbError}=await service.from('integration_connections').upsert({provider,connection_group:'site',status:error?'error':'connected',account_label:model?`${provider} · ${model}`:provider,last_tested_at:new Date().toISOString(),last_error:error?.message || null,cooldown_until:error?new Date(Date.now()+error.retryAfter*1000).toISOString():null,updated_at:new Date().toISOString()},{onConflict:'provider'});
     if(dbError) throw new Error('AI 연결 결과 저장에 실패했습니다.');
   }});
@@ -709,7 +709,7 @@ async function handle(request: Request) {
       return respond({ integrations: data || [] });
     }
     if(action==='ai-fallback-test') {
-      const result=await runAi({prompt:'Return exactly {"ok":true}.',maxTokens:1024,timeoutMs:15000},value=>{if(value.ok!==true)throw new Error('테스트 응답 오류');});
+      const result=await runAi({prompt:'Return exactly {"ok":true}.',maxTokens:1024,timeoutMs:15000},value=>{if(value.ok!==true)throw new Error('테스트 응답 오류');}, ['openai','exaone','groq','openrouter','cloudflare']);
       return respond({ok:true,provider:result.provider,model:result.model,attempts:result.attempts});
     }
     if (action === 'integration-save' || action === 'integration-test') {
