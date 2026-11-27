@@ -179,12 +179,12 @@
         <nav class="admin-sidebar" aria-label="관리 메뉴">
           <span class="admin-nav-caption">운영</span>
           <button class="admin-nav active" data-admin-page="overview">▦ <span>대시보드</span></button>
+          <button type="button" class="admin-nav" data-admin-page="announcements">▤ <span>공지사항 관리</span></button>
           <button class="admin-nav" data-admin-page="polls">◉ <span>투표 관리</span><b id="navPollCount">0</b></button>
           <button class="admin-nav" data-admin-page="reviews">✦ <span>AI 안건 검토</span><b id="navPendingCount">0</b></button>
           <button class="admin-nav" data-admin-page="api-settings">⚙ <span>API 설정</span></button>
           <span class="admin-nav-caption">사이트 안내</span>
           <button class="admin-nav" data-admin-page="archive">▤ <span>지난 투표 보관함</span></button>
-          <button class="admin-nav" data-admin-page="announcements">▤ <span>공지사항 관리</span></button>
           <button class="admin-nav" data-admin-page="topic-suggestions">✦ <span>이용자 주제 제안</span><b id="navTopicSuggestionCount">2</b></button>
           <button class="admin-nav" data-admin-page="open-talk">◌ <span>자유게시판 관리</span><b id="navOpenTalkCount">2</b></button>
           <span class="admin-nav-caption">커뮤니티 관리</span>
@@ -410,7 +410,7 @@
   <script src="ai-candidates.js"></script>
   <script src="supabase-config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=named-boards"></script>
+  <script src="app.js?v=admin-announcements"></script>
   <script type="module" src="content-automation.js?v=rss-topic-workflow"></script>
 <style>
 .admin-demo-notice { display: block; }

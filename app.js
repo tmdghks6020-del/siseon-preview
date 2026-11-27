@@ -206,11 +206,13 @@ function routeUrl(route, params = {}) {
   url.searchParams.delete('view');
   url.searchParams.delete('notice');
   url.searchParams.delete('share');
+  url.searchParams.delete('adminPage');
   if (route === 'public-share') { url.searchParams.set('share', params.uuid); return url.pathname + url.search; }
   url.hash = '';
   if (route === 'issue' && params.issueId) url.searchParams.set('issue', params.issueId);
   else if (route !== 'home') url.searchParams.set('view', route);
   if (params.noticeId) url.searchParams.set('notice', params.noticeId);
+  if (route === 'admin' && params.adminPage === 'announcements') url.searchParams.set('adminPage','announcements');
   return `${url.pathname}${url.search}${params.hash || ''}`;
 }
 
@@ -990,6 +992,7 @@ async function refreshAnnouncementsFromSupabase(admin=false) {
   if(!admin)query=query.eq('published',true);
   const {data,error}=await query;
   if(error){console.warn('공지 동기화 실패:',error.message);return;}
+  if (!admin && isVerifiedAdmin) return;
   adminOperations.announcements=(data||[]).map(row=>({id:row.id,category:row.category,title:row.title,summary:row.summary,body:row.body,published:row.published,pinned:row.pinned,createdAt:row.created_at}));
   renderAnnouncementTicker();renderAnnouncementList();
 }
@@ -1611,6 +1614,7 @@ const adminEntryButton = document.querySelector('#adminEntryButton');
 const editorialForm = document.querySelector('#editorialForm');
 const editorialFieldNames = ['category', 'title', 'intro', 'facts', 'imageKeywords', 'source', 'sourceUrl', 'forText', 'againstText'];
 let isVerifiedAdmin = false;
+let requestedAdminPage = new URLSearchParams(window.location.search).get('adminPage') === 'announcements' ? 'announcements' : 'overview';
 
 function showAdminView(pushHistory = true) {
   document.querySelector('#publicSharedPoll')?.classList.add('hidden');
@@ -1627,9 +1631,11 @@ function showAdminView(pushHistory = true) {
   announcementsView.classList.add('hidden'); archiveView.classList.add('hidden');
   openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden');
   adminView.classList.remove('hidden');
-  currentAdminPage = 'overview';
+  currentAdminPage = requestedAdminPage;
+  requestedAdminPage = 'overview';
+  renderAdminPage(currentAdminPage);
   refreshAdminOperations().then(()=>{renderAdminDashboard();renderAdminPage(currentAdminPage);}).catch((error)=>{console.error('관리자 데이터를 불러오지 못했습니다:',error);showUserActionToast(`운영 데이터를 불러오지 못했습니다: ${error.message}`);renderAdminDashboard();});
-  if (pushHistory) pushAppRoute('admin', { adminPage: 'overview' });
+  if (pushHistory || currentAdminPage === 'announcements') pushAppRoute('admin', { adminPage: currentAdminPage }, !pushHistory);
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
@@ -1930,7 +1936,8 @@ function renderAdminPage(page = currentAdminPage) {
     content.innerHTML = `${header(isInquiry ? 'SUPPORT INBOX' : 'PARTNERSHIPS', isInquiry ? '회원 문의' : '제휴 문의', isInquiry ? '접수 내용을 확인하고 답변 진행 상태를 관리하세요.' : '협력 목적과 기대 효과를 확인하고 내부 검토 상태를 기록하세요.')}<div class="table-toolbar"><span>전체 <b>${items.length}</b>건 접수</span><select id="inboxStatusFilter"><option>전체</option><option>미답변</option><option>답변 중</option><option>미확인</option><option>검토 중</option><option>완료</option></select></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>접수 내용</th><th>분류</th><th>보낸 사람</th><th>접수 시각</th><th>상태·처리</th></tr></thead><tbody>${items.map((item) => `<tr><td><strong>${escapeAdminHtml(item.title)}</strong><small>접수번호 ${escapeAdminHtml(item.id)}</small><details class="inbox-message"><summary>접수 내용${item.reply ? ' · 답변/메모 확인' : ' 보기'}</summary><p>${escapeAdminHtml(item.message || '기존 시연 문의의 상세 본문입니다.')}</p>${item.reply ? `<p class="saved-reply"><b>운영 답변·메모</b>${escapeAdminHtml(item.reply)}</p>` : ''}</details></td><td>${escapeAdminHtml(item.type)}</td><td>${escapeAdminHtml(item.sender)}</td><td>${escapeAdminHtml(item.received)}</td><td><span class="admin-status status-warn">${escapeAdminHtml(item.status)}</span><div class="row-actions"><button data-admin-action="progress-${page}" data-id="${item.id}">검토 시작</button><button data-admin-action="${isInquiry ? 'reply-inquiries' : 'note-partnerships'}" data-id="${item.id}">${isInquiry ? '답변하기' : '내부 메모'}</button><button data-admin-action="complete-${page}" data-id="${item.id}">완료 처리</button></div></td></tr>`).join('')}</tbody></table></div>`;
   } else if (page === 'announcements') {
     const edit = adminOperations.announcements.find((item) => item.id === editingAnnouncementId);
-    content.innerHTML = `${header('PUBLIC INFORMATION', '공지사항 관리', '게시할 공지를 작성하고 사용자 화면 노출과 상단 고정을 관리합니다.')}<div class="admin-announcement-layout"><form class="announcement-editor" id="announcementEditor"><h2>${edit ? '공지 수정' : '새 공지 작성'}</h2><label for="announcementTitle">제목</label><input id="announcementTitle" name="title" maxlength="100" required value="${escapeAdminHtml(edit?.title || '')}" placeholder="공지 제목"/><label for="announcementCategory">분류</label><select id="announcementCategory" name="category"><option ${edit?.category === '운영 원칙' ? 'selected' : ''}>운영 원칙</option><option ${edit?.category === '이용 안내' ? 'selected' : ''}>이용 안내</option><option ${edit?.category === '신고와 제재' ? 'selected' : ''}>신고와 제재</option><option ${edit?.category === '투표 안내' ? 'selected' : ''}>투표 안내</option><option ${edit?.category === '안전과 개인정보' ? 'selected' : ''}>안전과 개인정보</option><option ${edit?.category === '서비스 소식' ? 'selected' : ''}>서비스 소식</option></select><label for="announcementSummary">목록 요약</label><input id="announcementSummary" name="summary" maxlength="180" required value="${escapeAdminHtml(edit?.summary || '')}" placeholder="목록과 상단 공지에 보일 한 줄 요약"/><label for="announcementBody">본문</label><textarea id="announcementBody" name="body" required placeholder="공지 내용을 입력하세요">${escapeAdminHtml(edit?.body || '')}</textarea><label class="announcement-check"><input type="checkbox" name="pinned" ${edit?.pinned ? 'checked' : ''}/> 상단 공지로 고정</label><div class="announcement-editor-actions"><button class="primary-button" type="submit">${edit ? '수정 저장' : '저장하고 게시'}</button>${edit ? '<button type="button" data-announcement-action="cancel-edit">취소</button>' : ''}</div><p class="admin-footnote">게시된 공지는 사용자 화면 상단 한 줄 공지와 공지 목록에 바로 반영됩니다.</p></form><section class="announcement-admin-list"><h2>등록 공지 ${adminOperations.announcements.length}건</h2>${[...adminOperations.announcements].sort((a,b) => new Date(b.createdAt)-new Date(a.createdAt)).map((item) => `<article class="announcement-admin-item"><strong>${escapeAdminHtml(item.title)}</strong><small>${escapeAdminHtml(item.category)} · ${item.published ? '게시 중' : '내림'}${item.pinned ? ' · 상단 고정' : ''}</small><div class="announcement-row-actions"><button data-announcement-action="edit" data-id="${escapeAdminHtml(item.id)}">수정</button><button data-announcement-action="toggle-publish" data-id="${escapeAdminHtml(item.id)}">${item.published ? '게시 내리기' : '게시하기'}</button><button data-announcement-action="toggle-pin" data-id="${escapeAdminHtml(item.id)}">${item.pinned ? '고정 해제' : '상단 고정'}</button></div></article>`).join('')}</section></div>`;
+    const categories = [...new Set(['운영 원칙','이용 안내','신고와 제재','투표 안내','안전과 개인정보','서비스 소식','서비스 공지',edit?.category].filter(Boolean))];
+    content.innerHTML = `${header('PUBLIC INFORMATION', '공지사항 관리', '게시할 공지를 작성하고 사용자 화면 노출과 상단 고정을 관리합니다.')}<div class="admin-announcement-layout"><form class="announcement-editor" id="announcementEditor"><h2>${edit ? '공지 수정' : '새 공지 작성'}</h2><label for="announcementTitle">제목</label><input id="announcementTitle" name="title" maxlength="100" required value="${escapeAdminHtml(edit?.title || '')}" placeholder="공지 제목"/><label for="announcementCategory">분류</label><select id="announcementCategory" name="category">${categories.map(category => `<option ${edit?.category === category ? 'selected' : ''}>${escapeAdminHtml(category)}</option>`).join('')}</select><label for="announcementSummary">목록 요약</label><input id="announcementSummary" name="summary" maxlength="180" required value="${escapeAdminHtml(edit?.summary || '')}" placeholder="목록과 상단 공지에 보일 한 줄 요약"/><label for="announcementBody">본문</label><textarea id="announcementBody" name="body" required placeholder="공지 내용을 입력하세요">${escapeAdminHtml(edit?.body || '')}</textarea><label class="announcement-check"><input type="checkbox" name="pinned" ${edit?.pinned ? 'checked' : ''}/> 상단 공지로 고정</label><div class="announcement-editor-actions"><button class="primary-button" type="submit">${edit ? '수정 저장' : '저장하고 게시'}</button>${edit ? '<button type="button" data-announcement-action="cancel-edit">취소</button>' : ''}</div><p class="admin-footnote">게시된 공지는 사용자 화면 상단 한 줄 공지와 공지 목록에 바로 반영됩니다.</p></form><section class="announcement-admin-list"><h2>등록 공지 ${adminOperations.announcements.length}건</h2>${[...adminOperations.announcements].sort((a,b) => new Date(b.createdAt)-new Date(a.createdAt)).map((item) => `<article class="announcement-admin-item"><strong>${escapeAdminHtml(item.title)}</strong><small>${escapeAdminHtml(item.category)} · ${item.published ? '게시 중' : '내림'}${item.pinned ? ' · 상단 고정' : ''}</small><div class="announcement-row-actions"><button data-announcement-action="edit" data-id="${escapeAdminHtml(item.id)}">수정</button><button data-announcement-action="toggle-publish" data-id="${escapeAdminHtml(item.id)}">${item.published ? '게시 내리기' : '게시하기'}</button><button data-announcement-action="toggle-pin" data-id="${escapeAdminHtml(item.id)}">${item.pinned ? '고정 해제' : '상단 고정'}</button><button type="button" class="danger-action" data-announcement-action="delete" data-id="${escapeAdminHtml(item.id)}">삭제</button></div></article>`).join('')}</section></div>`;
   } else if (page === 'topic-suggestions') {
     const pending = adminOperations.topicSuggestions.filter((item) => item.status === '검토 대기');
     content.innerHTML = `${header('COMMUNITY EDITORIAL', '이용자 주제 제안', `검토 대기 ${pending.length}건 · 관심 수는 편집 판단의 참고 자료입니다.`)}<div class="moderation-guidance"><strong>검토 기준</strong><span>최신성·사실 확인 가능성·찬반 관점의 균형·선거 관련 여부를 확인한 뒤 편집 검토로 보냅니다. 관심 수만으로 자동 채택하지 않습니다.</span></div><div class="topic-admin-list">${adminOperations.topicSuggestions.map((item) => `<article class="topic-admin-card"><div class="topic-admin-top"><span class="announcement-category">${escapeAdminHtml(item.category)}</span><span class="admin-status ${item.status === '검토 대기' ? 'status-warn' : item.status === '편집 검토 중' ? 'status-good' : ''}">${escapeAdminHtml(item.status)}</span></div><h2>${escapeAdminHtml(item.title)}</h2><p>${escapeAdminHtml(item.rationale)}</p><div class="suggestion-balance"><p><b>찬성 관점</b>${escapeAdminHtml(item.forText)}</p><p><b>반대 관점</b>${escapeAdminHtml(item.againstText)}</p></div><small>제안 ${escapeAdminHtml(item.sender || '익명')} · 관심 ${item.interestCount}명 · ${new Date(item.createdAt).toLocaleString('ko-KR')}${safeHttpsUrl(item.sourceUrl) ? ` · <a href="${escapeAdminHtml(safeHttpsUrl(item.sourceUrl))}" target="_blank" rel="noopener noreferrer">출처 확인 ↗</a>` : ' · 참고 출처 없음'}</small>${item.reviewNote ? `<p>검토 메모: ${escapeAdminHtml(item.reviewNote)}</p>` : ''}${item.status === '검토 대기' ? `<div class="row-actions"><button data-topic-action="send-to-editorial" data-id="${escapeAdminHtml(item.id)}">편집 검토로 보내기</button><button data-topic-action="reject" data-id="${escapeAdminHtml(item.id)}">반려</button></div>` : ''}</article>`).join('') || '<div class="community-empty">등록된 제안이 없습니다.</div>'}</div>`;
@@ -2157,12 +2164,41 @@ document.querySelector('#adminPageContent').addEventListener('click', async (eve
   }
   const announcementAction = event.target.closest('[data-announcement-action]');
   if (announcementAction) {
-    const item = adminOperations.announcements.find((entry) => entry.id === announcementAction.dataset.id);
-    if (announcementAction.dataset.announcementAction === 'cancel-edit') editingAnnouncementId = null;
-    else if (item && announcementAction.dataset.announcementAction === 'edit') editingAnnouncementId = item.id;
-    else if (item && announcementAction.dataset.announcementAction === 'toggle-publish') { item.published = !item.published; await memberAuth.from('announcements').update({published:item.published}).eq('id',item.id); logAdminAction(item.published ? '공지 게시' : '공지 게시 내림', item.title); }
-    else if (item && announcementAction.dataset.announcementAction === 'toggle-pin') { item.pinned = !item.pinned; await memberAuth.from('announcements').update({pinned:item.pinned}).eq('id',item.id); logAdminAction(item.pinned ? '공지 상단 고정' : '공지 고정 해제', item.title); }
-    saveAdminOperations(); renderAnnouncementTicker(); renderAdminPage('announcements'); return;
+    if (!isVerifiedAdmin || !memberAuth) return;
+    const item = adminOperations.announcements.find(entry => entry.id === announcementAction.dataset.id);
+    const action = announcementAction.dataset.announcementAction;
+    if (action === 'cancel-edit' || (item && action === 'edit')) {
+      editingAnnouncementId = action === 'edit' ? item.id : null;
+      renderAdminPage('announcements');
+      if (editingAnnouncementId) document.querySelector('#announcementTitle')?.focus();
+      return;
+    }
+    if (!item || (action === 'delete' && !window.confirm('이 공지를 삭제할까요? 삭제한 공지는 복구할 수 없습니다.'))) return;
+    const fields = action === 'toggle-publish' ? {published:!item.published} : {pinned:!item.pinned};
+    announcementAction.disabled = true;
+    try {
+      const query = memberAuth.from('announcements');
+      const change = action === 'delete' ? query.delete() : query.update(fields);
+      const {error} = await change.eq('id',item.id).select('id').single();
+      if (error) throw error;
+      if (action === 'delete') {
+        adminOperations.announcements = adminOperations.announcements.filter(entry => entry.id !== item.id);
+        if (editingAnnouncementId === item.id) editingAnnouncementId = null;
+        logAdminAction('공지 삭제',item.title);
+      } else {
+        Object.assign(item,fields);
+        logAdminAction(action === 'toggle-publish' ? (item.published ? '공지 게시' : '공지 게시 내림') : (item.pinned ? '공지 상단 고정' : '공지 고정 해제'),item.title);
+      }
+      renderAnnouncementTicker();
+      renderAnnouncementList();
+      if (currentAdminPage === 'announcements') renderAdminPage('announcements');
+      if (action === 'delete') showUserActionToast('공지를 삭제했습니다.');
+    } catch (error) {
+      showUserActionToast('공지를 변경하지 못했습니다: ' + error.message);
+    } finally {
+      announcementAction.disabled = false;
+    }
+    return;
   }
   const pageButton = event.target.closest('[data-admin-page]');
   if (pageButton) { pushAppRoute('admin', { adminPage: pageButton.dataset.adminPage }); renderAdminPage(pageButton.dataset.adminPage); return; }
@@ -2182,17 +2218,32 @@ document.querySelector('#adminPageContent').addEventListener('click', async (eve
 document.querySelector('#adminPageContent').addEventListener('submit', async (event) => {
   if (event.target.id !== 'announcementEditor') return;
   event.preventDefault();
+  if (!isVerifiedAdmin || !memberAuth) return;
+  const editor = event.target;
+  const submit = editor.querySelector('[type="submit"]');
+  if (submit.disabled) return;
   const values = Object.fromEntries(new FormData(event.target).entries());
   const existing = adminOperations.announcements.find((item) => item.id === editingAnnouncementId);
-  const payload={category:values.category,title:values.title.trim(),summary:values.summary.trim(),body:values.body.trim(),published:existing?.published??true,pinned:values.pinned==='on',created_by:memberSession?.user?.id||null};
+  const payload={category:values.category,title:values.title.trim(),summary:values.summary.trim(),body:values.body.trim(),published:existing?.published??true,pinned:values.pinned==='on'};
+  if (!payload.title || !payload.summary || !payload.body) { showUserActionToast('제목, 요약, 본문을 입력해 주세요.'); return; }
+  submit.disabled = true;
   let result;
-  if(existing) result=await memberAuth.from('announcements').update(payload).eq('id',existing.id).select('id,created_at').single();
-  else result=await memberAuth.from('announcements').insert(payload).select('id,created_at').single();
-  if(result.error){showUserActionToast(`공지를 저장하지 못했습니다: ${result.error.message}`);return;}
+  try {
+    const table = memberAuth.from('announcements');
+    const save = existing ? table.update(payload).eq('id',existing.id) : table.insert({...payload,created_by:memberSession.user.id});
+    result = await save.select('id,created_at').single();
+    if (result.error) throw result.error;
+  } catch (error) {
+    showUserActionToast('공지를 저장하지 못했습니다: ' + error.message);
+    return;
+  } finally {
+    submit.disabled = false;
+  }
   const item={id:result.data.id,...payload,createdAt:result.data.created_at};
   if (existing) Object.assign(existing,item); else adminOperations.announcements.unshift(item);
   logAdminAction(existing ? '공지 수정' : '공지 작성·게시', item.title);
-  editingAnnouncementId = null; saveAdminOperations(); renderAnnouncementTicker(); renderAdminPage('announcements');
+  editingAnnouncementId = null; renderAnnouncementTicker(); renderAnnouncementList();
+  if (currentAdminPage === 'announcements') renderAdminPage('announcements');
 });
 document.querySelector('#reviewQueueList').addEventListener('click', (event) => {
   const draftButton = event.target.closest('[data-review-draft]');
