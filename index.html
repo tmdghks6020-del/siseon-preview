@@ -197,6 +197,7 @@
                 <form id="editorialForm" class="editorial-form">
                   <label for="draftCategory">카테고리</label><input id="draftCategory" name="category" required />
                   <label for="draftTitle">투표 제목</label><input id="draftTitle" name="title" maxlength="240" required />
+                  <label for="draftImageKeywords">홍보 이미지 키워드 <small>사진에 담을 대상 최대 5개를 쉼표로 구분</small></label><input id="draftImageKeywords" name="imageKeywords" maxlength="310" placeholder="예: 라면, 통조림, 비상식량" />
                   <label for="draftIntro">주제 설명 <small>배경과 쟁점을 짧은 문단으로 구분</small></label><textarea id="draftIntro" name="intro" rows="3" maxlength="3000" placeholder="무슨 일이 있었는지 설명합니다.&#10;&#10;어떤 점을 토론할지 질문으로 정리합니다." required></textarea>
                   <label for="draftFacts">확인된 사실 <small>한 줄에 한 항목</small></label><textarea id="draftFacts" name="facts" rows="4" required></textarea>
                   <label for="draftSource">출처 이름과 날짜</label><input id="draftSource" name="source" required />
@@ -389,8 +390,8 @@
   <script src="ai-candidates.js"></script>
   <script src="supabase-config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=desktop-share-title"></script>
-  <script type="module" src="content-automation.js?v=api-settings-layout"></script>
+  <script src="app.js?v=promo-image-keywords"></script>
+  <script type="module" src="content-automation.js?v=promo-image-keywords"></script>
 <style>
 .admin-demo-notice { display: block; }
 .admin-demo-notice summary { cursor: pointer; }
