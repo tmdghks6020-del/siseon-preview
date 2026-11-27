@@ -676,24 +676,25 @@ function makeFacebookCards(issue, cover, detail) {
   const style = pickPhotoCardStyle(cover || detail);
   const originalTitle = String(issue.title || '');
   const employment = /일용직/.test(originalTitle) && /실업급여/.test(originalTitle) && /부정/.test(originalTitle) && /제재/.test(originalTitle);
+  const foodComparison = /라면\s*(?:vs\.?|대|과|그리고)\s*통조림/i.test(originalTitle);
   const voting = /사전투표/.test(originalTitle) && /폐지|없앨/.test(originalTitle);
-  const coverTitle = employment ? '일용직 실업급여 부정수급' : voting ? '사전투표' : originalTitle;
-  const coverQuestion = employment ? '제재를 더 강화할까?' : voting ? '유지할까, 없앨까?' : '';
+  const coverTitle = foodComparison ? '라면 vs 통조림' : employment ? '일용직 실업급여 부정수급' : voting ? '사전투표' : originalTitle;
+  const coverQuestion = foodComparison ? '무엇을 먼저 챙길까?' : employment ? '제재를 더 강화할까?' : voting ? '유지할까, 없앨까?' : '';
   const source = issue.sources?.[0];
   const facts = String(issue.summary || '').split('확인된 사실\n')[1]?.split('\n').map(line => line.replace(/^\s*•\s*/, '').trim()).filter(Boolean) || [];
-  const render = (label, heading, lines, photo, highlight) => renderPhotoFocusCard({
-    photo, heading, lines, label, highlight, style, platform:'facebook', fixedBand:true,
+  const render = (label, heading, lines, photo, highlight, coverLayout) => renderPhotoFocusCard({
+    photo, heading, lines, label, highlight, coverLayout, style, platform:'facebook', fixedBand:true,
     credit:photo ? 'AI 생성 이미지' : '', format:'image/jpeg'
   });
   const factLines = source && facts.length ? [facts[0], '자료 출처 · ' + new URL(source).hostname] : ['확인할 자료는 안건 페이지에서 확인해 주세요.'];
   return [
-    render('',coverTitle,coverQuestion ? [coverQuestion] : [],cover || detail,coverQuestion),
+    render('',coverTitle,coverQuestion ? [coverQuestion] : [],cover || detail,coverQuestion, foodComparison ? { kicker: /전쟁|전시/.test(originalTitle) ? '전쟁 상황에서' : '비상식량을 고른다면' } : undefined),
     render('팩트 체크','먼저 확인할 내용',factLines,detail || cover),
     render('','다른 사람들은 어떤 선택을 했을까요?',['시선에서 안건 읽고 투표 확인하기'],cover || detail,'시선에서 안건 읽고 투표 확인하기')
   ];
 }
 
-function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, label, highlight, accent, style = pickPhotoCardStyle(photo), fixedBand = false, format = 'image/png'}) {
+function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, label, highlight, accent, coverLayout, style = pickPhotoCardStyle(photo), fixedBand = false, format = 'image/png'}) {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 1080;
   const ctx = canvas.getContext('2d');
@@ -704,7 +705,7 @@ function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, lab
     const scale = Math.max(1080 / photo.width,1080 / photo.height);
     ctx.drawImage(photo,(1080-photo.width*scale)/2,0,photo.width*scale,photo.height*scale);
   }
-  const putAtTop = theme.top;
+  const putAtTop = Boolean(coverLayout) || theme.top;
   const fontFamily = '"Malgun Gothic","Apple SD Gothic Neo",sans-serif';
   const wrap = (value, size, weight, maxLines) => {
     ctx.font = weight + ' ' + size + 'px ' + fontFamily;
@@ -723,17 +724,21 @@ function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, lab
     }
     return rows.slice(0,maxLines);
   };
-  const titleSize = Math.max(43,Math.min(platform === 'instagram' ? 79 : platform === 'threads' ? 67 : 72, Math.floor(1240 / Math.sqrt(String(heading || '').length || 1))));
-  const titleRows = wrap(heading,titleSize,800,fixedBand && lines.length ? 2 : 3);
-  const detailSize = !label && highlight ? 54 : 31;
+  const titleSize = coverLayout ? 88 : Math.max(43,Math.min(platform === 'instagram' ? 79 : platform === 'threads' ? 67 : 72, Math.floor(1240 / Math.sqrt(String(heading || '').length || 1))));
+  const titleRows = coverLayout ? [heading] : wrap(heading,titleSize,800,fixedBand && lines.length ? 2 : 3);
+  const detailSize = coverLayout ? 43 : !label && highlight ? 54 : 31;
   const detailStep = detailSize * 1.3;
   const detailRows = lines.filter(Boolean).flatMap(line=>wrap(line,detailSize,700,2)).slice(0,4);
   const titleHeight = titleSize * 1.2;
   const heightNeeded = titleRows.length*titleHeight + detailRows.length*detailStep + (detailRows.length ? 18 : 0);
-  const textTop = putAtTop ? (label ? 164 : 132) : 965-heightNeeded;
+  const textTop = coverLayout ? 129 : putAtTop ? (label ? 164 : 132) : 965-heightNeeded;
   const fade = ctx.createLinearGradient(0,0,0,1080);
   const solid = theme.background;
-  if (putAtTop) {
+  if (coverLayout) {
+    fade.addColorStop(0, solid+'e8');
+    fade.addColorStop(.24, solid+'bd');
+    fade.addColorStop(.49, solid+'00');
+  } else if (putAtTop) {
     fade.addColorStop(0,solid+'f5'); fade.addColorStop(.42,solid+'cf'); fade.addColorStop(.74,solid+'00');
   } else {
     fade.addColorStop(.26,solid+'00'); fade.addColorStop(.59,solid+'a3'); fade.addColorStop(1,solid+'fa');
@@ -761,9 +766,15 @@ function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, lab
       highlighted=true;
     });
   };
-  drawEmphasis(titleRows,textTop,titleHeight,highlight ? '' : titleHighlight || (!fixedBand ? titleRows[0] : ''));
+  if (coverLayout) {
+    ctx.font = '700 32px ' + fontFamily;
+    ctx.fillStyle = '#fff';
+    ctx.fillText(coverLayout.kicker, 94, 75, 890);
+    ctx.font = '800 ' + titleSize + 'px ' + fontFamily;
+  }
+  drawEmphasis(titleRows,textTop,titleHeight,coverLayout ? heading : highlight ? '' : titleHighlight || (!fixedBand ? titleRows[0] : ''));
   ctx.font='700 '+detailSize+'px '+fontFamily;
-  drawEmphasis(detailRows,textTop+titleRows.length*titleHeight+18,detailStep,detailHighlight);
+  drawEmphasis(detailRows,textTop+titleRows.length*titleHeight+18,detailStep,coverLayout ? '' : detailHighlight);
   if(label) {
     ctx.font='800 26px '+fontFamily; ctx.fillStyle=theme.highlight;
     ctx.fillText(label,94,textTop-39);
