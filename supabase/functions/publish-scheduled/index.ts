@@ -14,6 +14,29 @@ function targetUrl(row: any) {
 }
 async function post(row: any) {
   const url = targetUrl(row); const data = row.content || {};
+  const cards = Array.isArray(data.imageUrls) && data.imageUrls.length > 1 ? data.imageUrls : [];
+  if (['threads', 'instagram'].includes(row.platform) && cards.some((item: unknown) => typeof item !== 'string' || !/^https:\/\//i.test(item))) {
+    throw new Error('카드 묶음의 모든 이미지에 공개 HTTPS 주소가 필요합니다.');
+  }
+  const createMedia = async (endpoint: string, params: URLSearchParams, label: string) => {
+    const response = await fetch(endpoint, { method: 'POST', body: params, signal: AbortSignal.timeout(12000) });
+    const result = await response.json();
+    if (!response.ok || !result.id) throw new Error(label + ' · ' + (result.error?.message || response.status));
+    return String(result.id);
+  };
+  const waitForInstagramMedia = async (id: string, token: string) => {
+    for (let attempt = 0; attempt < 7; attempt++) {
+      const response = await fetch(base + '/' + id + '?fields=status_code', {
+        headers: { authorization: 'Bearer ' + token }, signal: AbortSignal.timeout(6000)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error?.message || 'Instagram 이미지 상태 확인 실패');
+      if (result.status_code === 'FINISHED') return;
+      if (['ERROR', 'EXPIRED'].includes(result.status_code)) throw new Error('Instagram 이미지 준비 실패 · ' + result.status_code);
+      if (attempt < 6) await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+    throw new Error('Instagram 이미지 준비 시간이 초과됐습니다.');
+  };
   const plain = (value: unknown) => String(value ?? '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/^#{1,6}\s+/gm, '').trim();
   const caption = [plain(data.title), plain(data.body), Array.isArray(data.hashtags) ? data.hashtags.join(' ') : ''].filter(Boolean).join('\n\n');
   const text = [caption, url].filter(Boolean).join('\n\n');
@@ -42,7 +65,16 @@ async function post(row: any) {
     const imageUrl = clean(data.imageUrl, 1500);
     const hasImage = /^https:\/\//i.test(imageUrl);
     const threadParams = new URLSearchParams({ access_token: token, media_type: hasImage ? 'IMAGE' : 'TEXT', text: threadText });
-    if (hasImage) {
+    if (cards.length) {
+      const children = [];
+      for (const [index, image_url] of cards.entries()) {
+        children.push(await createMedia(`${api}/${userId}/threads`, new URLSearchParams({
+          access_token: token, media_type: 'IMAGE', image_url, is_carousel_item: 'true'
+        }), `Threads 카드 ${index + 1}장 준비 실패`));
+      }
+      threadParams.set('media_type', 'CAROUSEL');
+      threadParams.set('children', children.join(','));
+    } else if (hasImage) {
       threadParams.set('image_url', imageUrl);
       if (title) threadParams.set('alt_text', title);
     }
@@ -100,9 +132,27 @@ async function post(row: any) {
   } else if (row.platform === 'instagram') {
     const userId = linked.accountId || Deno.env.get('META_INSTAGRAM_USER_ID'); const imageUrl = clean(data.imageUrl, 1500);
     if (!userId || !/^https:\/\//i.test(imageUrl)) throw new Error('Instagram 사용자 ID와 공개 HTTPS 이미지 주소가 필요합니다.');
-    const create = await fetch(`${base}/${userId}/media`, { method: 'POST', body: new URLSearchParams({ access_token: token, image_url: imageUrl, caption: text.slice(0, 2200) }) });
-    const container = await create.json(); if (!create.ok || !container.id) throw new Error(container.error?.message || 'Instagram 미디어 준비 실패');
-    endpoint = `${base}/${userId}/media_publish`; body.set('creation_id', container.id);
+    const mediaEndpoint = `${base}/${userId}/media`;
+    let containerId;
+    if (cards.length) {
+      const children = [];
+      for (const [index, image_url] of cards.entries()) {
+        children.push(await createMedia(mediaEndpoint, new URLSearchParams({
+          access_token: token, image_url, is_carousel_item: 'true'
+        }), `Instagram 카드 ${index + 1}장 준비 실패`));
+      }
+      await Promise.all(children.map(id => waitForInstagramMedia(id, token)));
+      containerId = await createMedia(mediaEndpoint, new URLSearchParams({
+        access_token: token, media_type: 'CAROUSEL', children: children.join(','), caption: text.slice(0, 2200)
+      }), 'Instagram 카드 묶음 준비 실패');
+      await waitForInstagramMedia(containerId, token);
+    } else {
+      containerId = await createMedia(mediaEndpoint, new URLSearchParams({
+        access_token: token, image_url: imageUrl, caption: text.slice(0, 2200)
+      }), 'Instagram 미디어 준비 실패');
+    }
+    endpoint = `${base}/${userId}/media_publish`;
+    body.set('creation_id', containerId);
   } else throw new Error(`지원하지 않는 플랫폼: ${row.platform}`);
   const response = await fetch(endpoint, { method: 'POST', body }); const result = await response.json();
   if (!response.ok || !result.id) throw new Error(result.error?.message || `Meta 게시 실패 ${response.status}`);
