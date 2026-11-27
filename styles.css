@@ -120,23 +120,26 @@ button:disabled{cursor:not-allowed;opacity:.58}
   box-shadow: none;
 }
 .home-intro {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  position: relative;
+  isolation: isolate;
   border: 1px solid #e9d8ca;
   border-radius: 22px;
   overflow: hidden;
-  background: #fffaf4;
+  background: #38241d;
 }
-.home-intro-copy { padding: clamp(30px, 5.5vw, 72px); }
+.home-intro-copy {
+  padding: clamp(30px, 5.5vw, 72px);
+  max-width: 670px;
+}
 .home-intro h1 {
   margin: 0;
-  color: #35221d;
+  color: #fff9f2;
   font-size: clamp(42px, 6.8vw, 78px);
   line-height: 1.12;
   letter-spacing: -.08em;
 }
-.home-intro h1 em { color: #a63e25; font-style: normal; }
-.home-intro p { margin: 20px 0 0; color: #664f45; word-break: keep-all; }
+.home-intro h1 em { color: #ffd3b8; font-style: normal; }
+.home-intro p { margin: 20px 0 0; color: #fff2e7; word-break: keep-all; }
 .home-intro-actions { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 24px; }
 .home-intro-actions a {
   display: inline-flex;
@@ -147,34 +150,27 @@ button:disabled{cursor:not-allowed;opacity:.58}
   border-radius: 8px;
   font-weight: 800;
 }
-.home-primary-action { background: #a63e25; color: #fffaf4; }
-.home-primary-action:hover { background: #86321f; }
-.home-secondary-action { color: #713a2b; }
-.home-secondary-action:hover { background: #f4e5d8; }
-.home-intro-brand {
-  display: grid;
-  place-items: center;
-  isolation: isolate;
-  overflow: hidden;
-  position: relative;
-  min-width: 0;
-  background: #f0d5c3;
+.home-primary-action { background: #fff4e8; color: #672b1b; }
+.home-primary-action:hover { background: #ffd3b8; }
+.home-secondary-action { color: #fff9f2; background: #38241d9e; }
+.home-secondary-action:hover { background: #38241d; }
+.home-intro-image {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
 }
-.home-intro-brand::before {
+.home-intro-image::after {
   content: "";
   position: absolute;
-  width: min(82%, 310px);
-  aspect-ratio: 1;
-  border: 1px solid #bc785e;
-  border-radius: 50%;
-  box-shadow: 0 0 0 28px #b6422710, 0 0 0 56px #b642270a;
+  inset: 0;
+  background: linear-gradient(90deg, #21120fee 0%, #21120fbd 43%, #21120f26 100%);
 }
-.home-intro-brand img {
-  position: relative;
-  width: clamp(94px, 14vw, 160px);
-  height: auto;
-  border-radius: 24%;
-  box-shadow: 0 14px 36px #802c2526;
+.home-intro-image img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 #homeView .content-section { scroll-margin-top: 84px; }
 #homeView .active-section { padding-top: clamp(26px, 4.5vw, 52px); }
@@ -193,9 +189,11 @@ button:disabled{cursor:not-allowed;opacity:.58}
   outline-offset: 3px;
 }
 @media (max-width: 760px) {
-  .home-intro { grid-template-columns: minmax(0, 1fr); border-radius: 16px; }
+  .home-intro { border-radius: 16px; }
   .home-intro-copy { padding: 28px 22px; }
-  .home-intro-brand { display: none; }
+  .home-intro-image::after {
+    background: linear-gradient(110deg, #21120fe8, #21120fb8);
+  }
   .home-intro p { margin-top: 14px; }
   .home-intro-actions { margin-top: 14px; gap: 4px; }
   .home-intro-actions a { font-size: 13px; }
@@ -223,4 +221,34 @@ button:disabled{cursor:not-allowed;opacity:.58}
   }
   #homeView .section-heading { flex-wrap: wrap; }
   #homeView .home-board-group-heading { flex-wrap: wrap; }
+}
+
+/* Keep signed-in header actions aligned on narrow screens. */
+@media (max-width: 760px) {
+  body > .topbar {
+    gap: 5px;
+    padding-inline: clamp(8px, 2vw, 16px);
+  }
+  body > .topbar > .brand {
+    flex: 0 0 auto;
+    gap: 5px;
+    font-size: 18px;
+    white-space: nowrap;
+  }
+  body > .topbar > .brand .brand-mark { width: 28px; height: 28px; }
+  body > .topbar > .top-actions { flex: 0 0 auto; gap: 4px; }
+  body > .topbar > .top-actions > :is(.login-button, .admin-entry) {
+    box-sizing: border-box;
+    min-height: 44px;
+    padding: 0 clamp(5px, 1.6vw, 10px);
+    border-radius: 999px;
+    font-size: 11px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  body > .topbar > .top-actions > .icon-button {
+    width: 36px;
+    min-height: 44px;
+    align-items: center;
+  }
 }
