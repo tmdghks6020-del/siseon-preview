@@ -711,7 +711,8 @@ function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, lab
     ctx.font = weight + ' ' + size + 'px ' + fontFamily;
     const rows = [];
     let line = '';
-    for (const word of String(value || '').trim().split(/\s+/).filter(Boolean)) {
+    const words = String(value || '').trim().match(/\S+\s+(?:vs\.?|대)\s+\S+|\S+/gi) || [];
+    for (const word of words) {
       const next = line ? line + ' ' + word : word;
       if (line && ctx.measureText(next).width > 890) { rows.push(line); line = word; }
       else line = next;
@@ -724,8 +725,14 @@ function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, lab
     }
     return rows.slice(0,maxLines);
   };
-  const titleSize = coverLayout ? 88 : Math.max(43,Math.min(platform === 'instagram' ? 79 : platform === 'threads' ? 67 : 72, Math.floor(1240 / Math.sqrt(String(heading || '').length || 1))));
-  const titleRows = coverLayout ? [heading] : wrap(heading,titleSize,800,fixedBand && lines.length ? 2 : 3);
+  let titleSize = coverLayout ? 88 : Math.max(43,Math.min(platform === 'instagram' ? 79 : platform === 'threads' ? 67 : 72, Math.floor(1240 / Math.sqrt(String(heading || '').length || 1))));
+  const maxTitleLines = label ? 2 : 3;
+  let titleRows = coverLayout ? [heading] : wrap(heading, titleSize, 800, maxTitleLines);
+  // Keep long titles readable without breaking the subjects around “vs”.
+  while (!coverLayout && titleSize > 40 && (titleRows.at(-1)?.endsWith('…') || titleRows.some(row => ctx.measureText(row).width > 890))) {
+    titleSize -= 2;
+    titleRows = wrap(heading, titleSize, 800, maxTitleLines);
+  }
   const detailSize = coverLayout ? 43 : !label && highlight ? 54 : 31;
   const detailStep = detailSize * 1.3;
   const detailRows = lines.filter(Boolean).flatMap(line=>wrap(line,detailSize,700,2)).slice(0,4);
@@ -739,16 +746,22 @@ function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, lab
     fade.addColorStop(.24, solid+'bd');
     fade.addColorStop(.49, solid+'00');
   } else if (putAtTop) {
-    fade.addColorStop(0,solid+'f5'); fade.addColorStop(.42,solid+'cf'); fade.addColorStop(.74,solid+'00');
+    const textEnd = Math.min(.7, (textTop + heightNeeded) / 1080);
+    fade.addColorStop(0, solid+'eb');
+    fade.addColorStop(textEnd, solid+'ba');
+    fade.addColorStop(Math.min(1, textEnd + .17), solid+'00');
   } else {
-    fade.addColorStop(.26,solid+'00'); fade.addColorStop(.59,solid+'a3'); fade.addColorStop(1,solid+'fa');
+    const textStart = Math.max(.18, textTop / 1080);
+    fade.addColorStop(Math.max(0, textStart - .15), solid+'00');
+    fade.addColorStop(textStart, solid+'b0');
+    fade.addColorStop(1, solid+'eb');
   }
   ctx.fillStyle = fade; ctx.fillRect(0,0,1080,1080);
   ctx.textBaseline='top';
   ctx.fillStyle='#fff';
   ctx.font='800 '+titleSize+'px '+fontFamily;
   const keywords = /실업급여 부정수급(?: 의혹)?|재개발·재건축|최저임금|실업급여|사전투표|재개발|재건축|주택 공급|인공지능|AI 안경|보유세|투표 결과|투표하기/;
-  const titleHighlight = String(heading || '').match(keywords)?.[0];
+  const titleHighlight = String(heading || '').match(/\S+\s+(?:vs\.?|대)\s+\S+/i)?.[0] || String(heading || '').match(keywords)?.[0];
   const firstFact = String(lines[0] || '');
   const numberWithUnit = firstFact.match(/\d[\d,.]*\s*(?:만\s*)?(?:명|가구|건|%|원)/)?.[0];
   const detailHighlight = highlight || numberWithUnit;
