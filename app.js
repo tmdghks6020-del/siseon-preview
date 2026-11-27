@@ -809,6 +809,11 @@ document.querySelectorAll('[data-community-page]').forEach((link) => link.addEve
   event.preventDefault();
   document.querySelector('.desktop-nav').classList.remove('mobile-open');
   showCommunitySubpage(link.dataset.communityPage);
+  const composer = document.getElementById(link.dataset.communityCompose);
+  if (composer) {
+    composer.scrollIntoView({ block: 'start' });
+    composer.focus({ preventScroll: true });
+  }
 }));
 window.addEventListener('scroll', () => {
   if (homeView.classList.contains('hidden')) return;

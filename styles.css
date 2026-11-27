@@ -252,3 +252,29 @@ button:disabled{cursor:not-allowed;opacity:.58}
     align-items: center;
   }
 }
+
+#homeView .home-board-group-heading h3 a:hover { text-decoration: underline; }
+#homeView .home-board-actions {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  margin-left: auto;
+}
+#homeView .home-board-actions a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 44px;
+  padding-inline: clamp(5px, 1.4vw, 10px);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+#homeView .home-board-actions .home-board-write {
+  background: var(--brand-accent);
+  border-color: var(--brand-accent);
+  color: #fff;
+}
+.community-compose-card { scroll-margin-top: 84px; }
