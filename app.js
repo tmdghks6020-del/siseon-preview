@@ -1611,16 +1611,65 @@ window.addEventListener('siseon-topic-candidates-error', (event) => {
   if (status) status.textContent = event.detail?.message || 'Supabase 안건 대기열을 불러오지 못했습니다.';
 });
 
+const rssResults = document.querySelector('#topicRssResults');
+const rssDirections = document.querySelector('#topicRssDirections');
+let discoveredNews = [];
+const selectedTopicNews = new Map();
+
+document.querySelector('#discoverTopicNews')?.addEventListener('click', async event => {
+  const button = event.currentTarget;
+  const status = document.querySelector('#topicGenerationStatus');
+  button.disabled = true;
+  status.textContent = '국내 언론사의 최근 보도를 수집하고 있습니다…';
+  try {
+    const result = await window.SISEON_TOPIC_ADMIN.discover(document.querySelector('#topicGenerationKeyword').value);
+    discoveredNews = result.articles || [];
+    selectedTopicNews.clear();
+    rssDirections.replaceChildren();
+    rssResults.innerHTML = discoveredNews.map((item, index) =>
+      `<div><label><input type="checkbox" value="${index}"> ${escapeAdminHtml(item.title)} · ${escapeAdminHtml(item.source)}</label> <a href="${escapeAdminHtml(item.url)}" target="_blank" rel="noopener noreferrer">원문 ↗</a></div>`
+    ).join('');
+    status.textContent = `최근 기사 ${discoveredNews.length}건 · ${(result.warnings || []).join(' · ')}`;
+  } catch (error) { status.textContent = '수집 실패: ' + error.message; }
+  finally { button.disabled = false; }
+});
+
+rssResults?.addEventListener('change', event => {
+  const input = event.target;
+  const index = Number(input.value);
+  const article = discoveredNews[index];
+  if (!article) return;
+  if (input.checked) {
+    if (selectedTopicNews.size >= 5) {
+      input.checked = false;
+      document.querySelector('#topicGenerationStatus').textContent = '주제는 최대 5개까지 선택할 수 있습니다.';
+      return;
+    }
+    const group = document.createElement('fieldset');
+    group.innerHTML = `<legend>${escapeAdminHtml(article.title)}</legend><label>투표 제목<input data-draft-title maxlength="240" placeholder="비워두면 AI가 제안"></label><label>질문 방향<textarea data-draft-direction maxlength="600" rows="2"></textarea></label>`;
+    selectedTopicNews.set(index, { article, group });
+    rssDirections.append(group);
+  } else {
+    selectedTopicNews.get(index)?.group.remove();
+    selectedTopicNews.delete(index);
+  }
+});
+
 document.querySelector('#generateTopicCandidatesButton')?.addEventListener('click', async (event) => {
   const button = event.currentTarget;
   const status = document.querySelector('#topicGenerationStatus');
   const api = window.SISEON_TOPIC_ADMIN;
   if (!api) { status.textContent = '관리자 Supabase 연결을 먼저 확인해 주세요.'; return; }
-  if (!window.confirm('새 후보 1~5개를 추가할까요? 기존 후보와 공개 투표는 유지됩니다.')) return;
+  const newsMode = document.querySelector('#topicGenerationMode').value === 'news';
+  if (newsMode && !selectedTopicNews.size) { status.textContent = '최근 보도를 수집한 뒤 주제를 하나 이상 선택해 주세요.'; return; }
+  const selectedNews = newsMode ? [...selectedTopicNews.values()].map(({article, group}) => ({
+    ...article, draftTitle: group.querySelector('[data-draft-title]').value,
+    direction: group.querySelector('[data-draft-direction]').value
+  })) : undefined;
   const topicField = document.querySelector('#topicGenerationField').value;
   button.disabled = true; status.textContent = '선택한 방식으로 질문과 선택지를 만들고 있습니다…';
   try {
-    const result = await api.generate({ topicField, generationMode: document.querySelector('#topicGenerationMode').value, topicKeyword: document.querySelector('#topicGenerationKeyword').value, sourceText: document.querySelector('#topicGenerationSourceText').value, sourceUrl: document.querySelector('#topicGenerationSourceUrl').value, brief: document.querySelector('#topicGenerationBrief').value, existingTitles: activeIssueIds.map((id) => issues[id]?.title).filter(Boolean) });
+    const result = await api.generate({ topicField, selectedNews, generationMode: document.querySelector('#topicGenerationMode').value, topicKeyword: document.querySelector('#topicGenerationKeyword').value, sourceText: document.querySelector('#topicGenerationSourceText').value, sourceUrl: document.querySelector('#topicGenerationSourceUrl').value, brief: document.querySelector('#topicGenerationBrief').value, existingTitles: activeIssueIds.map((id) => issues[id]?.title).filter(Boolean) });
     status.textContent = `후보 ${result.generatedCount}개를 추가했습니다. 질문·선택지·가상 표시와 참고 자료를 확인해 주세요.${result.discoveryWarnings?.length ? " 일부 검색에 실패하여 수집된 자료만 사용했습니다." : ""}`;
     renderReviewQueue();
   } catch (error) {
@@ -2566,8 +2615,9 @@ document.querySelector('#addVoteOptionButton').addEventListener('click',()=>{
 });
 document.querySelector('#topicGenerationMode').addEventListener('change',event=>{
   const material=['material','community'].includes(event.target.value);
+  document.querySelector('#topicRssSteps').classList.toggle('hidden', event.target.value !== 'news');
   document.querySelector('#topicSourceInputs').classList.toggle('hidden',!material);
-  document.querySelector('#topicGenerationStatus').textContent=event.target.value==='fun' ? '뉴스 출처 없이 재미 투표를 만듭니다. 가상 표시를 붙이고 관리자가 직접 승인합니다.' : material ? '참고 링크와 핵심 내용을 입력하세요. 원문 자동 수집은 하지 않습니다. 관리자가 직접 확인 후 승인합니다.' : '선택한 분야와 키워드로 뉴스를 찾습니다. 정치·재판·증시 주제는 관리자가 직접 승인합니다.';
+  document.querySelector('#topicGenerationStatus').textContent=event.target.value==='fun' ? '뉴스 출처 없이 재미 투표를 만듭니다. 가상 표시를 붙이고 관리자가 직접 승인합니다.' : material ? '참고 링크와 핵심 내용을 입력하세요. 원문 자동 수집은 하지 않습니다. 관리자가 직접 확인 후 승인합니다.' : '공개 RSS에서 최근 보도를 찾고 주제를 선택하세요. 정치·재판·증시 주제는 관리자가 직접 승인합니다.';
 });
 
 
