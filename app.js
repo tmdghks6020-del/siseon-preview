@@ -1191,12 +1191,18 @@ function renderIssueContent() {
     share.className = 'text-link';
     share.textContent = '공유하기';
     detail.querySelector('.issue-meta').append(share);
+    const fallbackShare = new URL(memberAppRootUrl);
+    fallbackShare.searchParams.set('share', topicUuid);
+    const topicPage = new URL(`topics/${encodeURIComponent(topicUuid)}/`, memberAppRootUrl);
+    let shareUrl = fallbackShare.href;
+    // Newly published polls may precede the next GitHub Pages build.
+    void fetch(topicPage.href, { method: 'HEAD', cache: 'no-cache', redirect: 'error' })
+      .then(response => { if (response.ok) shareUrl = topicPage.href; })
+      .catch(() => {});
     share.addEventListener('click', async () => {
-      const target = new URL(memberAppRootUrl);
-      target.searchParams.set('share', topicUuid);
-      const url = target.href;
+      const url = shareUrl;
       try {
-        if (navigator.share) { await navigator.share({title:issue.title,url}); return; }
+        if (navigator.share) { await navigator.share({url}); return; }
         await navigator.clipboard.writeText(url);
         showUserActionToast('공유 링크를 복사했습니다.');
       } catch (error) {
