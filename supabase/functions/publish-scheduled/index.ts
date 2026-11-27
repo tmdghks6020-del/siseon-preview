@@ -39,24 +39,6 @@ async function post(row: any) {
       threadBody = lastParagraph >= budget * 0.6 ? clipped.slice(0, lastParagraph) : clipped.trimEnd() + '…';
     }
     const threadText = [title, budget ? threadBody : '', link].filter(Boolean).join('\n\n');
-    if (!/^\d+$/.test(pageId)) throw new Error('Facebook 페이지 ID는 숫자여야 합니다.');
-    const lookup = async (path: string, accessToken: string) => {
-      const response = await fetch(base + '/' + path, {
-        headers: { authorization: 'Bearer ' + accessToken },
-        signal: AbortSignal.timeout(10000)
-      });
-      return response.ok ? await response.json() : null;
-    };
-    const identity = await lookup('me?fields=id', token);
-    let pageToken = token;
-    if (identity?.id !== pageId) {
-      const page = await lookup(pageId + '?fields=id,access_token', token);
-      if (page?.id !== pageId || !page.access_token || (await lookup('me?fields=id', page.access_token))?.id !== pageId) {
-        throw new Error('Facebook 페이지 토큰을 확인할 수 없습니다. API 설정에서 대상 페이지 ID와 pages_manage_posts 권한이 있는 페이지 토큰을 확인해 주세요.');
-      }
-      pageToken = page.access_token;
-    }
-    body.set('access_token', pageToken);
     const imageUrl = clean(data.imageUrl, 1500);
     const hasImage = /^https:\/\//i.test(imageUrl);
     const threadParams = new URLSearchParams({ access_token: token, media_type: hasImage ? 'IMAGE' : 'TEXT', text: threadText });
@@ -75,6 +57,24 @@ async function post(row: any) {
   let endpoint = ''; const body = new URLSearchParams({ access_token: token });
   if (row.platform === 'facebook') {
     const pageId = linked.accountId || Deno.env.get('META_FACEBOOK_PAGE_ID'); if (!pageId) throw new Error('Facebook 페이지 ID가 없습니다.');
+    if (!/^\d+$/.test(pageId)) throw new Error('Facebook 페이지 ID는 숫자여야 합니다.');
+    const lookup = async (path: string, accessToken: string) => {
+      const response = await fetch(base + '/' + path, {
+        headers: { authorization: 'Bearer ' + accessToken },
+        signal: AbortSignal.timeout(10000)
+      });
+      return response.ok ? await response.json() : null;
+    };
+    const identity = await lookup('me?fields=id', token);
+    let pageToken = token;
+    if (identity?.id !== pageId) {
+      const page = await lookup(pageId + '?fields=id,access_token', token);
+      if (page?.id !== pageId || !page.access_token || (await lookup('me?fields=id', page.access_token))?.id !== pageId) {
+        throw new Error('Facebook 페이지 토큰을 확인할 수 없습니다. 대상 페이지 ID와 페이지 게시 권한을 확인해 주세요.');
+      }
+      pageToken = page.access_token;
+    }
+    body.set('access_token', pageToken);
     const imageUrl = clean(data.imageUrl, 1500);
     const images = Array.isArray(data.imageUrls) ? data.imageUrls : [];
     if (images.length === 3 && images.every((url: unknown) => typeof url === 'string' && /^https:\/\//i.test(url))) {
