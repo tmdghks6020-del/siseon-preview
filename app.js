@@ -2747,7 +2747,7 @@ async function showPublicSharedPoll(uuid) {
   view.style.setProperty('display', 'block', 'important');
   view.classList.remove('hidden');
   pushAppRoute('public-share', { uuid }, true);
-  document.documentElement.classList.remove('opening-public-share');
+  if (!new URLSearchParams(window.location.search).has('share')) document.documentElement.classList.remove('opening-public-share');
   const content = view.querySelector('article');
   try {
     const id = 'topic-' + uuid.toLowerCase();
