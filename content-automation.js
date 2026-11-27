@@ -112,7 +112,7 @@ function renderContent(item) {
     ${photoSearch}${['facebook','instagram','threads'].includes(item.platform) && ['review_required','failed'].includes(item.status) ? '<label>카드에 넣을 사진<input type="file" accept="image/jpeg,image/png,image/webp" data-poll-photo></label><p class="admin-footnote">사용할 수 있는 사진을 선택한 뒤 ‘투표 카드 만들기’를 누르세요. 사진 없이 만들면 시선 배경에 제목이 표시됩니다.</p>' : ''}<p class="admin-footnote">출처: ${sourceLinks}</p>${scheduleLabel}${jobState}${publishedLink}<div class="content-auto-actions">${buttons}</div></article>`;
 }
 const integrationMeta = {
-  openai: { title: 'OpenAI', group: 'site', description: '텍스트와 홍보 배경 이미지 생성에 사용합니다.', fields: [{ name: 'apiKey', label: 'OpenAI API 키', type: 'password', placeholder: '저장한 키는 다시 표시되지 않습니다.' },{name:'model',label:'텍스트 모델 (선택)',type:'text',placeholder:'gpt-6.2-astra'}] },
+  openai: { title: 'OpenAI', group: 'site', description: '홍보 배경 이미지 생성에 사용합니다. 연결 테스트는 이미지 한 장을 생성합니다.', fields: [{ name: 'apiKey', label: 'OpenAI API 키', type: 'password', placeholder: '저장한 키는 다시 표시되지 않습니다.' }] },
   exaone: { title: 'EXAONE', group: 'site', description: 'EXAONE 텍스트 생성 API를 연결합니다.', fields: [{name:'apiKey',label:'EXAONE API 키',type:'password',placeholder:'EXAONE에서 발급한 키'},{name:'model',label:'모델 (선택)',type:'text',placeholder:'k-exaone_v2.5'}] },
   openrouter: { title: 'OpenRouter', group: 'site', description: '텍스트와 홍보 배경 이미지 생성에 사용합니다. 모델에 따라 요금과 한도가 다릅니다.', fields: [{name:'apiKey',label:'OpenRouter API 키',type:'password',placeholder:'OpenRouter에서 발급한 키'},{name:'model',label:'모델 (선택)',type:'text',placeholder:'openrouter/auto'}] },
   groq: { title: 'Groq', group: 'site', description: '제공된 뉴스 자료를 바탕으로 초안을 만듭니다. 이 연결에서는 웹 검색을 수행하지 않습니다.', fields: [{name:'apiKey',label:'Groq API 키',type:'password',placeholder:'Groq Console에서 발급한 키'},{name:'model',label:'모델 (선택)',type:'text',placeholder:'openai/gpt-oss-120b'}] },
@@ -150,9 +150,9 @@ async function renderApiSettings() {
         <div class="integration-group-heading"><div><h2>AI 서비스</h2><p>안건·홍보 문구와 이미지 생성에 사용합니다.</p></div><span class="integration-summary">${summary(aiProviders)}</span></div>
         <div class="integration-card">
           <h3>자동 전환 순서</h3>
-          <p><strong>텍스트</strong> · EXAONE → Groq → OpenAI → OpenRouter → Cloudflare</p>
+          <p><strong>텍스트</strong> · EXAONE → Groq → OpenRouter → Cloudflare</p>
           <p><strong>이미지</strong> · OpenAI → OpenRouter → Cloudflare</p>
-          <p>테스트는 OpenAI → EXAONE → Groq → OpenRouter → Cloudflare 순으로 호출합니다.</p>
+          <p>자동 전환 경로 테스트는 위 텍스트 순서로 호출합니다.</p>
           <div class="integration-actions"><button type="button" class="table-action" data-integration-action="fallback-test">자동 전환 경로 테스트</button></div>
           <p id="aiFallbackTestResult" aria-live="polite"></p>
         </div>
