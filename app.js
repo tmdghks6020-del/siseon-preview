@@ -215,13 +215,18 @@ function routeUrl(route, params = {}) {
 }
 
 function pushAppRoute(route, params = {}, replace = false) {
-  if (route !== 'public-share') document.querySelector('#publicSharedPoll')?.classList.add('hidden');
+  if (route !== 'public-share') {
+    document.querySelector('#publicSharedPoll')?.classList.add('hidden');
+    document.querySelector('#publicSharedPoll')?.style.removeProperty('display');
+    homeView.style.removeProperty('display');
+  }
   const state = { siseonRoute: route, ...params };
   const method = replace ? 'replaceState' : 'pushState';
   window.history[method](state, '', routeUrl(route, params));
 }
 
 function restoreHomeView(hash = '') {
+  homeView.style.removeProperty('display');
   homeView.classList.remove('hidden');
   pollBoardView.classList.add('hidden'); issueView.classList.add('hidden'); announcementsView.classList.add('hidden'); archiveView.classList.add('hidden');
   openTalkView.classList.add('hidden'); topicSuggestionsView.classList.add('hidden'); adminView.classList.add('hidden');
@@ -2737,7 +2742,9 @@ async function renderWithdrawals(content, today=false, offset=0) {
 
 async function showPublicSharedPoll(uuid) {
   const view = document.querySelector('#publicSharedPoll');
+  homeView.style.setProperty('display', 'none', 'important');
   homeView.classList.add('hidden');
+  view.style.setProperty('display', 'block', 'important');
   view.classList.remove('hidden');
   pushAppRoute('public-share', { uuid }, true);
   document.documentElement.classList.remove('opening-public-share');
