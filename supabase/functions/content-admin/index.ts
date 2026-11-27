@@ -36,7 +36,11 @@ function promptFor(input: Record<string, unknown>) {
 
 function openAiImagePayload(prompt: string) {
   const configured = Deno.env.get('OPENAI_IMAGE_MODEL');
-  const model = configured && configured !== 'gpt-image-1' ? configured : 'gpt-image-2.5-flare';
+  // Use the lowest cost model until its announced retirement date.
+  const miniAvailable = Date.now() < Date.parse('2026-12-01T00:00:00+09:00');
+  const fallbackModel = miniAvailable ? 'gpt-image-1-mini' : 'gpt-image-2.5-flare';
+  const retired = configured === 'gpt-image-1' || (configured === 'gpt-image-1-mini' && !miniAvailable);
+  const model = configured && !retired ? configured : fallbackModel;
   return { model, prompt, size: '1024x1024', quality: 'low', output_format: 'png' };
 }
 
