@@ -32,6 +32,56 @@ const authConfig = window.SISEON_SUPABASE_CONFIG;
 const memberAuth = window.supabase?.createClient && authConfig?.url && authConfig?.publishableKey
   ? window.supabase.createClient(authConfig.url, authConfig.publishableKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
+const trafficChannels = {direct:'직접 방문 / 출처 미확인',google:'Google',naver:'네이버',daum:'다음',facebook:'Facebook',instagram:'Instagram',threads:'Threads',kakao:'카카오톡·카카오',other:'기타 유입'};
+function visitChannel() {
+  const campaign = new URLSearchParams(location.search).get('utm_source')?.trim().toLowerCase();
+  if (campaign && Object.hasOwn(trafficChannels, campaign)) return campaign;
+  if (campaign === 'kakaotalk') return 'kakao';
+  if (campaign === 'fb') return 'facebook';
+  if (campaign === 'ig') return 'instagram';
+  if (campaign) return 'other';
+  if (!document.referrer) return 'direct';
+  try {
+    const referrer = new URL(document.referrer);
+    if (referrer.origin === location.origin) return 'direct';
+    const host = referrer.hostname.toLowerCase();
+    if (/(^|\.)google\.[a-z.]+$/.test(host)) return 'google';
+    const domains = {naver:['naver.com','naver.me'],daum:['daum.net'],facebook:['facebook.com','fb.com'],instagram:['instagram.com'],threads:['threads.net','threads.com'],kakao:['kakao.com','kakaocorp.com']};
+    return Object.keys(domains).find(channel => domains[channel].some(domain => host === domain || host.endsWith('.' + domain))) || 'other';
+  } catch { return 'direct'; }
+}
+async function recordSiteVisit() {
+  if (!memberAuth || new URLSearchParams(location.search).get('view') === 'admin') return;
+  try {
+    const day = new Intl.DateTimeFormat('sv-SE', {timeZone:'Asia/Seoul'}).format(new Date());
+    const storageKey = 'siseon:daily-visitor';
+    const previous = JSON.parse(localStorage.getItem(storageKey) || 'null');
+    const visitor = previous?.day === day ? previous.id : crypto.randomUUID();
+    if (previous?.day !== day) localStorage.setItem(storageKey, JSON.stringify({day,id:visitor}));
+    await memberAuth.rpc('record_site_visit', {visitor, origin_channel:visitChannel()});
+  } catch { /* Visit tracking is optional for browsing. */ }
+}
+void recordSiteVisit();
+
+async function renderTodayTraffic(panel) {
+  try {
+    const {data,error} = await memberAuth.rpc('admin_today_site_visits');
+    if (error) throw error;
+    const rows = data || [];
+    const total = rows.reduce((sum,row) => sum + Number(row.visitors), 0);
+    panel.querySelector('[data-visit-total]').textContent = total.toLocaleString('ko-KR') + '명';
+    const paths = panel.querySelector('[data-visit-paths]');
+    paths.textContent = rows.length ? '' : '오늘 집계된 유입이 없습니다.';
+    for (const row of rows) {
+      const line = document.createElement('div');
+      line.className = 'activity-row';
+      line.textContent = (trafficChannels[row.source] || trafficChannels.other) + ' · ' + Number(row.visitors).toLocaleString('ko-KR') + '명';
+      paths.append(line);
+    }
+  } catch {
+    panel.querySelector('[data-visit-paths]').textContent = '방문 통계를 불러오지 못했습니다.';
+  }
+}
 const memberAppRootUrl = new URL('./', document.querySelector('script[src*="app.js"]')?.src || window.location.href).href;
 function stableMemberReturnUrl(path) {
   const url = new URL(path, memberAppRootUrl);
@@ -1612,7 +1662,8 @@ function renderAdminPage(page = currentAdminPage) {
     const openReports = adminOperations.reports.filter((item) => item.status === '미검토').length;
     const unanswered = adminOperations.inquiries.filter((item) => item.status === '미답변').length;
     const openPartners = adminOperations.partnerships.filter((item) => item.status !== '완료').length;
-    content.innerHTML = `${header('OPERATIONS OVERVIEW', '운영 대시보드', '오늘의 커뮤니티 현황과 우선 처리할 업무를 확인하세요.', '<span class="today-date">Supabase 운영 데이터</span>')}<div class="overview-metrics"><button class="overview-metric" data-admin-page="members"><span>총 회원수</span><strong>${memberTotalCount.toLocaleString('ko-KR')}<small>명</small></strong><em>인증 회원 프로필 집계</em><i>회원 관리 →</i></button><button class="overview-metric" data-admin-page="polls"><span>진행 중인 투표</span><strong>${activeIssueIds.length}<small>건</small></strong><em>30일 운영 · 승인 시 30개 유지</em><i>투표 관리 →</i></button><button class="overview-metric attention" data-admin-page="reviews"><span>검토할 AI 안건</span><strong>${editorialState.pending.length}<small>건</small></strong><em>관리자 승인 전에는 공개되지 않음</em><i>안건 검토 →</i></button><button class="overview-metric" data-admin-page="inquiries"><span>회원 문의 접수</span><strong>${adminOperations.inquiries.length}<small>건</small></strong><em>미답변 ${unanswered}건</em><i>문의 확인 →</i></button><button class="overview-metric" data-admin-page="partnerships"><span>제휴 문의 접수</span><strong>${adminOperations.partnerships.length}<small>건</small></strong><em>미완료 ${openPartners}건</em><i>제휴 검토 →</i></button><button class="overview-metric attention" data-admin-page="reports"><span>미검토 신고</span><strong>${openReports}<small>건</small></strong><em>모욕·혐오 표현 신고 포함</em><i>신고 처리 →</i></button></div><div class="overview-columns"><section class="admin-card"><div class="admin-card-heading"><div><span class="section-kicker">NEEDS ATTENTION</span><h2>먼저 확인할 업무</h2></div></div><button class="priority-link" data-admin-page="reviews"><span class="priority-mark">✦</span><span><strong>AI 추천 안건 검토</strong><small>${editorialState.pending.length}건 · 출처와 양측 관점을 확인하고 승인</small></span><b>→</b></button><button class="priority-link" data-admin-page="reports"><span class="priority-mark danger">⚑</span><span><strong>회원 신고 검토</strong><small>${openReports}건 · 모욕·혐오·도배 신고 대기</small></span><b>→</b></button><button class="priority-link" data-admin-page="inquiries"><span class="priority-mark">✉</span><span><strong>미답변 문의</strong><small>${unanswered}건 · 접수 순으로 확인</small></span><b>→</b></button><button class="priority-link" data-admin-page="partnerships"><span class="priority-mark">◇</span><span><strong>제휴 문의 확인</strong><small>${openPartners}건 · 협력 제안 검토</small></span><b>→</b></button></section><section class="admin-card"><div class="admin-card-heading"><div><span class="section-kicker">RECENT ACTIVITY</span><h2>최근 운영 기록</h2></div><button data-admin-page="audit">전체 보기 →</button></div><div class="activity-list">${auditRows(latestAudit)}</div></section></div>`;
+    content.innerHTML = `${header('OPERATIONS OVERVIEW', '운영 대시보드', '오늘의 커뮤니티 현황과 우선 처리할 업무를 확인하세요.', '<span class="today-date">Supabase 운영 데이터</span>')}<div class="overview-metrics"><button class="overview-metric" data-admin-page="members"><span>총 회원수</span><strong>${memberTotalCount.toLocaleString('ko-KR')}<small>명</small></strong><em>인증 회원 프로필 집계</em><i>회원 관리 →</i></button><button class="overview-metric" data-admin-page="polls"><span>진행 중인 투표</span><strong>${activeIssueIds.length}<small>건</small></strong><em>30일 운영 · 승인 시 30개 유지</em><i>투표 관리 →</i></button><button class="overview-metric attention" data-admin-page="reviews"><span>검토할 AI 안건</span><strong>${editorialState.pending.length}<small>건</small></strong><em>관리자 승인 전에는 공개되지 않음</em><i>안건 검토 →</i></button><button class="overview-metric" data-admin-page="inquiries"><span>회원 문의 접수</span><strong>${adminOperations.inquiries.length}<small>건</small></strong><em>미답변 ${unanswered}건</em><i>문의 확인 →</i></button><button class="overview-metric" data-admin-page="partnerships"><span>제휴 문의 접수</span><strong>${adminOperations.partnerships.length}<small>건</small></strong><em>미완료 ${openPartners}건</em><i>제휴 검토 →</i></button><button class="overview-metric attention" data-admin-page="reports"><span>미검토 신고</span><strong>${openReports}<small>건</small></strong><em>모욕·혐오 표현 신고 포함</em><i>신고 처리 →</i></button></div><section class="admin-card" data-today-traffic style="margin-top:14px"><div class="admin-card-heading"><h2>오늘 방문자</h2><strong data-visit-total>—</strong></div><p class="admin-footnote">한국 시간 기준 · 브라우저별 하루 첫 유입</p><h3>유입 경로</h3><div class="activity-list" data-visit-paths aria-live="polite">방문 통계를 불러오는 중입니다.</div></section><div class="overview-columns"><section class="admin-card"><div class="admin-card-heading"><div><span class="section-kicker">NEEDS ATTENTION</span><h2>먼저 확인할 업무</h2></div></div><button class="priority-link" data-admin-page="reviews"><span class="priority-mark">✦</span><span><strong>AI 추천 안건 검토</strong><small>${editorialState.pending.length}건 · 출처와 양측 관점을 확인하고 승인</small></span><b>→</b></button><button class="priority-link" data-admin-page="reports"><span class="priority-mark danger">⚑</span><span><strong>회원 신고 검토</strong><small>${openReports}건 · 모욕·혐오·도배 신고 대기</small></span><b>→</b></button><button class="priority-link" data-admin-page="inquiries"><span class="priority-mark">✉</span><span><strong>미답변 문의</strong><small>${unanswered}건 · 접수 순으로 확인</small></span><b>→</b></button><button class="priority-link" data-admin-page="partnerships"><span class="priority-mark">◇</span><span><strong>제휴 문의 확인</strong><small>${openPartners}건 · 협력 제안 검토</small></span><b>→</b></button></section><section class="admin-card"><div class="admin-card-heading"><div><span class="section-kicker">RECENT ACTIVITY</span><h2>최근 운영 기록</h2></div><button data-admin-page="audit">전체 보기 →</button></div><div class="activity-list">${auditRows(latestAudit)}</div></section></div>`;
+    void renderTodayTraffic(content.querySelector('[data-today-traffic]'));
   } else if (page === 'reviews') {
     document.querySelector('#adminPageContent').classList.add('hidden');
     renderReviewQueue();
