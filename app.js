@@ -1207,11 +1207,15 @@ function renderIssueContent() {
     share.addEventListener('click', async () => {
       const url = shareUrl;
       try {
-        if (navigator.share) { await navigator.share({url}); return; }
-        await navigator.clipboard.writeText(url);
-        showUserActionToast('공유 링크를 복사했습니다.');
+        if (navigator.share) {
+          const desktop = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+          await navigator.share(desktop ? { title: issue.title, text: issue.title, url } : { url });
+          return;
+        }
+        await navigator.clipboard.writeText(`${issue.title}\n${url}`);
+        showUserActionToast('안건 제목과 공유 링크를 복사했습니다.');
       } catch (error) {
-        if (error.name !== 'AbortError') window.prompt('공유 링크를 복사해 주세요.', url);
+        if (error.name !== 'AbortError') window.prompt('안건 제목과 공유 링크를 복사해 주세요.', `${issue.title} ${url}`);
       }
     });
   }
