@@ -178,39 +178,30 @@ async function init() {
         const result = await call('generate', { ...issue, platforms: selectedPlatforms });
         const drafts = (result.drafts || []).filter(draft => ['facebook','instagram','threads'].includes(draft.platform));
         const imageErrors = [];
-        let photo, detailPhoto;
-        let palette;
-        if (drafts.length) {
-          onImages?.();
+        if (drafts.length) onImages?.();
+        for (const draft of drafts) {
+          let photo, detailPhoto;
+          const platform = platformNames[draft.platform] || draft.platform;
+          const loadPhoto = async (detail = false) => {
+            const data = await call('promo-background', {
+              title:issue.title, summary:issue.summary, visualBrief:draft.content?.imageBrief, detail
+            });
+            return createImageBitmap(await (await fetch(data.image)).blob());
+          };
           try {
-            const generated = await call('promo-background', {title: issue.title, summary: issue.summary});
-            photo = await createImageBitmap(await (await fetch(generated.image)).blob());
-            const colors = ['#075239','#152742','#553318','#4b3452'];
-            palette = colors.filter(color => color !== sessionStorage.getItem('siseon-last-card-color'));
-            palette = palette[Math.floor(Math.random() * palette.length)];
-            sessionStorage.setItem('siseon-last-card-color', palette);
-          } catch (error) { imageErrors.push('AI 배경 · ' + error.message); }
+            try { photo = await loadPhoto(); }
+            catch (error) { imageErrors.push(platform + ' 배경 · ' + error.message); }
+            const title = draft.content?.title || issue.title;
+            if (draft.platform === 'facebook') {
+              try { detailPhoto = await loadPhoto(true); }
+              catch (error) { imageErrors.push(platform + ' 팩트 체크 배경 · ' + error.message); }
+              await call('save-poll-share-card', {id:draft.id,images:makeFacebookCards({...issue,promoTitle:title},photo,detailPhoto)});
+            } else {
+              await call('save-poll-share-card', {id:draft.id,image:makePollShareCard({...issue,title,platform:draft.platform,credit:photo ? 'AI 생성 이미지' : '',format:'image/jpeg'},photo)});
+            }
+          } catch (error) { imageErrors.push(platform + ' · ' + error.message); }
+          finally { photo?.close(); detailPhoto?.close(); }
         }
-        if (drafts.some(draft => draft.platform === 'facebook')) {
-          try {
-            const detail = await call('promo-background', {title:issue.title,summary:issue.summary,detail:true});
-            detailPhoto = await createImageBitmap(await (await fetch(detail.image)).blob());
-          } catch (error) { imageErrors.push('Facebook 팩트 체크 배경 · ' + error.message); }
-        }
-        try {
-          for (const draft of drafts) {
-            try {
-              const title = draft.content?.title || issue.title;
-              if (draft.platform === 'facebook') {
-                const images = makeFacebookCards({...issue,promoTitle:title,color:palette}, photo, detailPhoto);
-                await call('save-poll-share-card', {id:draft.id,images});
-                continue;
-              }
-              const image = makePollShareCard({...issue,title,platform:draft.platform,color:palette,credit:photo ? 'AI 생성 이미지' : '',format:draft.platform === 'facebook' ? 'image/png' : 'image/jpeg'},photo);
-              await call('save-poll-share-card', {id:draft.id,image});
-            } catch (error) { imageErrors.push((platformNames[draft.platform] || draft.platform) + ': ' + error.message); }
-          }
-        } finally { photo?.close(); detailPhoto?.close(); }
         return {...result, imageErrors};
       }
     };
