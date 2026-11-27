@@ -475,8 +475,25 @@ async function loadCommunityPage(board) {
   const displayedAlias = talk ? '익명' : '익명 제안자';
   const aliasOnly = state.query && state.scope === 'nickname' && (!talk || !signedIn);
   if (!aliasOnly || displayedAlias.includes(state.query)) {
-    let query = memberAuth.from(state.table).select(fields, { count: 'exact' });
-    query = talk ? query.eq('status', 'published') : query.in('status', ['pending', 'approved']);
+    const publicRows = (options) => {
+      const query = memberAuth.from(state.table).select(fields, options);
+      return talk ? query.eq('status', 'published') : query.in('status', ['pending', 'approved']);
+    };
+    let query = publicRows({ count: 'exact' });
+    let highlighted = [];
+    if (!state.query) {
+      const {data: scores} = await memberAuth.rpc('get_community_highlights', {p_board: board});
+      if (request !== state.request) return;
+      if (scores?.length) {
+        const {data: rankedRows} = await publicRows().in('id', scores.map(row => row.post_id));
+        if (request !== state.request) return;
+        const byId = new Map((rankedRows || []).map(row => [row.id,row]));
+        highlighted = scores.filter(row => byId.has(row.post_id)).map((row, index) => ({
+          ...byId.get(row.post_id), rank:index+1, score:Number(row.score)
+        }));
+        if (highlighted.length) query = query.not('id','in','(' + highlighted.map(row => row.id).join(',') + ')');
+      }
+    }
     if (state.query && !aliasOnly) {
       // Quote the OR operands using PostgREST's quoted-value syntax.
       const value = '%' + state.query.replace(/[\\%_*]/g, character => '\\' + character) + '%';
@@ -487,8 +504,9 @@ async function loadCommunityPage(board) {
         query = query.ilike(state.scope === 'nickname' ? 'author_nickname' : 'title', value);
       }
     }
-    const start = (state.page - 1) * communityPageSize;
-    const result = await query.order('created_at', { ascending: false }).order('id', { ascending: false }).range(start, start + communityPageSize - 1);
+    const start = Math.max(0, (state.page - 1) * communityPageSize - highlighted.length);
+    const size = state.page === 1 ? communityPageSize - highlighted.length : communityPageSize;
+    const result = await query.order('created_at', { ascending: false }).order('id', { ascending: false }).range(start, start + size - 1);
     if (request !== state.request) return;
     if (result.error) {
       count.textContent = '';
@@ -496,8 +514,8 @@ async function loadCommunityPage(board) {
       list.innerHTML = '<div class="community-empty">목록을 불러오지 못했어요. 검색하거나 페이지를 다시 열어 주세요.</div>';
       return;
     }
-    total = result.count ?? 0;
-    rows = result.data ?? [];
+    total = (result.count ?? 0) + highlighted.length;
+    rows = state.page === 1 ? [...highlighted, ...(result.data || [])] : (result.data || []);
   }
   const pages = Math.max(1, Math.ceil(total / communityPageSize));
   if (state.page > pages) {
@@ -507,10 +525,10 @@ async function loadCommunityPage(board) {
   const source = talk ? adminOperations.openTalkPosts : adminOperations.topicSuggestions;
   const previous = new Map([...state.rows, ...source].map(item => [item.id, item]));
   state.rows = rows.map(row => {
-    const base = { ...previous.get(row.id), id:row.id, title:row.title, category:row.category, createdAt:row.created_at };
+    const base = { ...previous.get(row.id), id:row.id, title:row.title, category:row.category, createdAt:row.created_at, rank:row.rank, score:row.score };
     return talk
       ? { ...base, author:row.author_nickname || displayedAlias, status:'공개', comments:base.comments || [] }
-      : { ...base, sender:displayedAlias, status:row.status === 'pending' ? '검토 대기' : row.status, interestCount:communitySuggestionCounts.get(row.id) ?? base.interestCount ?? 0 };
+      : { ...base, sender:displayedAlias, status:row.status === 'pending' ? '검토 대기' : row.status, interestCount:row.score ?? communitySuggestionCounts.get(row.id) ?? base.interestCount ?? 0 };
   });
   if (talk) drawOpenTalkList(state.rows, total);
   else drawTopicSuggestions(state.rows, total);
@@ -568,10 +586,14 @@ document.querySelectorAll('[data-board-tools]').forEach(tools => {
   });
 });
 
+function communityRankBadge(item, label) {
+  return item.rank ? `<strong class="suggestion-status">${label} ${item.rank}위 · ${item.score}</strong>` : '';
+}
+
 function drawOpenTalkList(posts, total) {
   const list = document.querySelector('#openTalkList');
   document.querySelector('#openTalkCount').textContent = total + '개 글';
-  list.innerHTML = posts.map((post) => `<article class="open-talk-card open-talk-list-row"><div class="open-talk-meta"><span>${escapeAdminHtml(post.category)}</span>${post.sample ? '<em class="suggestion-status">예시</em>' : ''}<time>${new Date(post.createdAt).toLocaleDateString('ko-KR')}</time></div><button type="button" class="open-talk-title-button" data-open-talk-open="${escapeAdminHtml(post.id)}">${escapeAdminHtml(post.title)} <span>상세 보기 →</span></button><div class="open-talk-row-foot">${post.sample ? '예시 글' : escapeAdminHtml(post.author)} · 댓글 ${(post.comments || []).length}개</div></article>`).join('') || '<div class="community-empty">아직 공개된 글이 없습니다. 첫 대화를 시작해 보세요.</div>';
+  list.innerHTML = posts.map((post) => `<article class="open-talk-card open-talk-list-row"><div class="open-talk-meta"><span >${escapeAdminHtml(post.category)}</span>${communityRankBadge(post, '공감')}${post.sample ? '<em class="suggestion-status">예시</em>' : ''}<time>${new Date(post.createdAt).toLocaleDateString('ko-KR')}</time></div><button type="button" class="open-talk-title-button" data-open-talk-open="${escapeAdminHtml(post.id)}">${escapeAdminHtml(post.title)} <span>상세 보기 →</span></button><div class="open-talk-row-foot">${post.sample ? '예시 글' : escapeAdminHtml(post.author)} · 댓글 ${(post.comments || []).length}개</div></article>`).join('') || '<div class="community-empty">아직 공개된 글이 없습니다. 첫 대화를 시작해 보세요.</div>';
 }
 
 async function openOpenTalkDetail(id) {
@@ -597,7 +619,7 @@ function drawTopicSuggestions(suggestions, total) {
   const list = document.querySelector('#topicSuggestionList');
   const interested = memberInterestedSuggestions;
   document.querySelector('#topicSuggestionCount').textContent = total + '개 제안';
-  list.innerHTML = suggestions.map((item) => `<article class="topic-suggestion-row"><div class="open-talk-meta"><span>${escapeAdminHtml(item.category)}</span>${item.sample ? '<em class="suggestion-status">예시</em>' : ''}<time>${new Date(item.createdAt).toLocaleDateString('ko-KR')}</time></div><button type="button" class="topic-suggestion-title" data-topic-suggestion-open="${escapeAdminHtml(item.id)}">${escapeAdminHtml(item.title)} <span>상세 보기 →</span></button><div class="suggestion-footer"><small>${item.sample ? '예시 제안' : '이용자 제안'}</small><button type="button" data-interest-id="${escapeAdminHtml(item.id)}" ${interested.has(item.id) ? 'class="interested"' : ''} ${item.sample || item.status !== '검토 대기' ? 'disabled' : ''}>토론해 보고 싶어요 · ${item.interestCount}</button></div></article>`).join('') || '<div class="community-empty">아직 등록된 제안이 없습니다.</div>';
+  list.innerHTML = suggestions.map((item) => `<article class="topic-suggestion-row"><div class="open-talk-meta"><span >${escapeAdminHtml(item.category)}</span>${communityRankBadge(item, '관심')}${item.sample ? '<em class="suggestion-status">예시</em>' : ''}<time>${new Date(item.createdAt).toLocaleDateString('ko-KR')}</time></div><button type="button" class="topic-suggestion-title" data-topic-suggestion-open="${escapeAdminHtml(item.id)}">${escapeAdminHtml(item.title)} <span>상세 보기 →</span></button><div class="suggestion-footer"><small>${item.sample ? '예시 제안' : '이용자 제안'}</small><button type="button" data-interest-id="${escapeAdminHtml(item.id)}" ${interested.has(item.id) ? 'class="interested"' : ''} ${item.sample || item.status !== '검토 대기' ? 'disabled' : ''}>토론해 보고 싶어요 · ${item.interestCount}</button></div></article>`).join('') || '<div class="community-empty">아직 등록된 제안이 없습니다.</div>';
 }
 
 async function openTopicSuggestionDetail(id) {
