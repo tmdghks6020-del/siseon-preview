@@ -80,10 +80,10 @@ function renderContent(item) {
   const jsonValue = JSON.stringify(platformContentShape(item), null, 2);
   const jobState = item.errorMessage ? `<p class="content-error">${esc(item.errorMessage)}</p>` : '';
   const imageUrl = /^https:\/\//i.test(item.content?.imageUrl || '') ? item.content.imageUrl : '';
-  const facebookCards = item.platform === 'facebook' && Array.isArray(item.content?.imageUrls)
+  const draftCards = Array.isArray(item.content?.imageUrls)
     ? item.content.imageUrls.filter(url => /^https:\/\//i.test(url)) : [];
-  const imagePreview = facebookCards.length === 3
-    ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:10px">' + facebookCards.map((url,index) => `<figure style="margin:0"><img class="content-image-preview" src="${esc(url)}" alt="${['표지','팩트 체크','안건 참여'][index]}"><figcaption>${['표지','팩트 체크','안건 참여'][index]}</figcaption></figure>`).join('') + '</div>'
+  const imagePreview = draftCards.length === 3
+    ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:10px">' + draftCards.map((url,index) => `<figure style="margin:0"><img class="content-image-preview" src="${esc(url)}" alt="${['메인 상황','핵심 갈등','선택 질문'][index]}"><figcaption>${['메인 상황','핵심 갈등','선택 질문'][index]}</figcaption></figure>`).join('') + '</div>'
     : ['instagram','facebook','threads'].includes(item.platform) && imageUrl ? `<img class="content-image-preview" src="${esc(imageUrl)}" alt="홍보 이미지 시안" loading="lazy">` : '';
   const publishedLink = item.externalPostUrl && !removed ? `<p><a href="${esc(item.externalPostUrl)}" target="_blank" rel="noopener noreferrer">게시물 확인 ↗</a></p>` : '';
   const scheduleLabel = item.scheduledAt ? `<p class="admin-footnote">게시 예약 시각: ${esc(new Date(item.scheduledAt).toLocaleString('ko-KR'))} · 작업 ${esc(item.jobStatus || '')} · 재시도 ${Number(item.retryCount || 0)}회</p>` : '';
@@ -202,39 +202,30 @@ async function init() {
         const result = await call('generate', { ...issue, platforms: selectedPlatforms });
         const drafts = (result.drafts || []).filter(draft => ['facebook','instagram','threads'].includes(draft.platform));
         const imageErrors = [];
-        let photo, detailPhoto;
-        let palette;
-        if (drafts.length) {
-          onImages?.();
-          try {
-            const generated = await call('promo-background', {issueId: issue.issueId, title: issue.title, summary: issue.summary});
-            photo = await createImageBitmap(await (await fetch(generated.image)).blob());
-            const colors = ['#075239','#152742','#553318','#4b3452'];
-            palette = colors.filter(color => color !== sessionStorage.getItem('siseon-last-card-color'));
-            palette = palette[Math.floor(Math.random() * palette.length)];
-            sessionStorage.setItem('siseon-last-card-color', palette);
-          } catch (error) { imageErrors.push('AI 배경 · ' + error.message); }
-        }
-        if (drafts.some(draft => draft.platform === 'facebook')) {
-          try {
-            const detail = await call('promo-background', {issueId:issue.issueId,title:issue.title,summary:issue.summary,detail:true});
-            detailPhoto = await createImageBitmap(await (await fetch(detail.image)).blob());
-          } catch (error) { imageErrors.push('Facebook 팩트 체크 배경 · ' + error.message); }
-        }
+        const backgrounds = [];
+        const cardRoles = ['main', 'conflict', 'choice'];
         try {
+          if (drafts.length) onImages?.();
+          for (const cardRole of drafts.length ? cardRoles : []) {
+            try {
+              const generated = await call('promo-background', {
+                issueId: issue.issueId, title: issue.title, summary: issue.summary, cardRole
+              });
+              backgrounds.push(await createImageBitmap(await (await fetch(generated.image)).blob()));
+            } catch (error) {
+              backgrounds.push(null);
+              imageErrors.push(cardRole + ' 배경 · ' + error.message);
+            }
+          }
           for (const draft of drafts) {
             try {
-              const title = draft.content?.title || issue.title;
-              if (draft.platform === 'facebook') {
-                const images = makeFacebookCards({...issue,promoTitle:title,color:palette}, photo, detailPhoto);
-                await call('save-poll-share-card', {id:draft.id,images});
-                continue;
-              }
-              const image = makePollShareCard({...issue,title,platform:draft.platform,color:palette,credit:photo ? 'AI 생성 이미지' : '',format:draft.platform === 'facebook' ? 'image/png' : 'image/jpeg'},photo);
-              await call('save-poll-share-card', {id:draft.id,image});
-            } catch (error) { imageErrors.push((platformNames[draft.platform] || draft.platform) + ': ' + error.message); }
+              const images = makeSocialCardSet(issue, draft, backgrounds);
+              await call('save-poll-share-card', { id: draft.id, images });
+            } catch (error) {
+              imageErrors.push((platformNames[draft.platform] || draft.platform) + ': ' + error.message);
+            }
           }
-        } finally { photo?.close(); detailPhoto?.close(); }
+        } finally { backgrounds.forEach(photo => photo?.close()); }
         return {...result, imageErrors};
       }
     };
@@ -672,7 +663,25 @@ function makePollShareCard(issue, photo = null, photoSize = 0) {
   throw new Error('카드 파일이 너무 큽니다. 다른 사진을 선택해 주세요.');
 }
 
-function makeFacebookCards(issue, cover, detail) {
+function makeSocialCardSet(issue, draft, [cover, detail, choice]) {
+  if (draft.platform === 'facebook') return makeFacebookCards(issue, cover, detail, choice);
+  const platform = draft.platform;
+  const baseStyle = pickPhotoCardStyle(cover || detail || choice);
+  const style = { ...baseStyle, top: platform === 'threads', highlight: platform === 'threads' ? '#e3f7f4' : baseStyle.highlight };
+  const heading = draft.content?.title || issue.title;
+  const fact = String(issue.summary || '').split('확인된 사실\n')[1]?.split('\n').find(line => line.trim())?.replace(/^\s*•\s*/, '') || '';
+  const render = (photo, text, label, lines = []) => renderPhotoFocusCard({
+    photo, heading: text, label, lines, platform, style, fixedBand: true,
+    credit: photo ? 'AI 생성 이미지' : '', format: 'image/jpeg'
+  });
+  return [
+    render(cover, heading, ''),
+    render(detail, platform === 'instagram' ? '선택을 가르는 조건' : '어떤 조건이 선택을 바꿀까요?', '핵심 갈등', fact ? [fact] : []),
+    render(choice, platform === 'instagram' ? '당신의 선택은?' : '여러분이라면 어떻게 하겠어요?', '', [platform === 'instagram' ? '프로필 링크에서 안건 보기' : '시선에서 안건 확인하기'])
+  ];
+}
+
+function makeFacebookCards(issue, cover, detail, choice) {
   const style = pickPhotoCardStyle(cover || detail);
   const originalTitle = String(issue.title || '');
   const employment = /일용직/.test(originalTitle) && /실업급여/.test(originalTitle) && /부정/.test(originalTitle) && /제재/.test(originalTitle);
@@ -689,8 +698,8 @@ function makeFacebookCards(issue, cover, detail) {
   const factLines = source && facts.length ? [facts[0], '자료 출처 · ' + new URL(source).hostname] : ['확인할 자료는 안건 페이지에서 확인해 주세요.'];
   return [
     render('',coverTitle,coverQuestion ? [coverQuestion] : [],cover || detail,coverQuestion, foodComparison ? { kicker: /전쟁|전시/.test(originalTitle) ? '전쟁 상황에서' : '비상식량을 고른다면' } : undefined),
-    render('팩트 체크','먼저 확인할 내용',factLines,detail || cover),
-    render('','다른 사람들은 어떤 선택을 했을까요?',['시선에서 안건 읽고 투표 확인하기'],cover || detail,'시선에서 안건 읽고 투표 확인하기')
+    render('팩트 체크','먼저 확인할 내용',factLines,detail),
+    render('','다른 사람들은 어떤 선택을 했을까요?',['시선에서 안건 읽고 투표 확인하기'],choice,'시선에서 안건 읽고 투표 확인하기')
   ];
 }
 
