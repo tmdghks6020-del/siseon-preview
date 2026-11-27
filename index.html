@@ -158,7 +158,7 @@
   <main id="adminView" class="admin-view hidden">
     <div class="admin-shell">
       <header class="admin-topbar"><div><button type="button" class="admin-back" id="adminBackButton">← 서비스 홈</button><span class="admin-brand"><img src="assets/siseon-mark.svg" alt="" />시선 <i>운영센터</i></span></div><div class="admin-operator"><span class="operator-avatar">관</span><span>운영 관리자<small>Supabase 인증 필요</small></span><button type="button" class="table-action" id="adminLogoutButton">로그아웃</button></div></header>
-      <div class="admin-demo-notice"><strong>운영 데이터 연결</strong><span>회원, 투표, 게시글, 댓글, 신고, 문의, 제안과 공지는 Supabase에 저장되며 로그인 사용자와 운영자 권한에 따라 접근이 제한됩니다. 일부 메뉴에는 시연용 안내가 남아 있습니다. 운영 점검 시 실제 계정으로 접수·답변과 신고·게시글 조치가 회원 화면에 반영되는지 확인해 주세요.</span></div>
+      <details class="admin-demo-notice"><summary><strong>운영 데이터 연결</strong></summary><span>회원, 투표, 게시글, 댓글, 신고, 문의, 제안과 공지는 Supabase에 저장되며 로그인 사용자와 운영자 권한에 따라 접근이 제한됩니다. 일부 메뉴에는 시연용 안내가 남아 있습니다. 운영 점검 시 실제 계정으로 접수·답변과 신고·게시글 조치가 회원 화면에 반영되는지 확인해 주세요.</span></details>
       <div class="admin-layout">
         <nav class="admin-sidebar" aria-label="관리 메뉴">
           <span class="admin-nav-caption">운영</span>
@@ -391,6 +391,32 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="app.js?v=-social-image-drafts"></script>
   <script type="module" src="content-automation.js?v=api-settings-layout"></script>
+<style>
+.admin-demo-notice { display: block; }
+.admin-demo-notice summary { cursor: pointer; }
+.admin-demo-notice[open] summary { margin-bottom: 8px; }
+.admin-demo-notice > span { line-height: 1.65; }
+@media (max-width: 760px) {
+  body:has(#adminView:not(.hidden)) .topbar { padding-inline: 14px; gap: 8px; }
+  body:has(#adminView:not(.hidden)) .topbar .desktop-nav,
+  body:has(#adminView:not(.hidden)) #adminEntryButton,
+  body:has(#adminView:not(.hidden)) #headerLogoutButton { display: none; }
+  body:has(#adminView:not(.hidden)) .topbar .brand { flex: none; white-space: nowrap; font-size: 20px; }
+  body:has(#adminView:not(.hidden)) .top-actions { flex: none; gap: 6px; }
+  body:has(#adminView:not(.hidden)) #loginButton { min-height: 44px; padding: 0 11px; font-size: 12px; line-height: 1.2; white-space: nowrap; }
+  body:has(#adminView:not(.hidden)) #menuButton { min-width: 44px; min-height: 44px; }
+  #adminView .admin-topbar { height: auto; min-height: 44px; margin-bottom: 10px; flex-wrap: wrap; gap: 6px 10px; }
+  #adminView .admin-topbar > div:first-child { flex-wrap: wrap; gap: 4px 10px; }
+  #adminView .admin-topbar .admin-back,
+  #adminView .admin-brand { white-space: nowrap; }
+  #adminView .admin-topbar .admin-back { min-height: 44px; font-size: 11px; }
+  #adminView .admin-brand { gap: 0; font-size: 13px; }
+  #adminView .admin-brand img,
+  #adminView .operator-avatar,
+  #adminView .admin-operator > span { display: none; }
+  #adminView #adminLogoutButton { min-height: 44px; white-space: nowrap; font-size: 11px; }
+}
+</style>
 </body>
 </html>
 
