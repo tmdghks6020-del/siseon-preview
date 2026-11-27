@@ -202,7 +202,7 @@ async function init() {
             try {
               const title = draft.content?.title || issue.title;
               if (draft.platform === 'facebook') {
-                const images = makeFacebookCards({...issue,title,color:palette}, photo, detailPhoto);
+                const images = makeFacebookCards({...issue,promoTitle:title,color:palette}, photo, detailPhoto);
                 await call('save-poll-share-card', {id:draft.id,images});
                 continue;
               }
@@ -649,54 +649,38 @@ function makePollShareCard(issue, photo = null, photoSize = 0) {
 }
 
 function makeFacebookCards(issue, cover, detail) {
-  const accent = issue.color || '#075239';
+  const style = pickPhotoCardStyle(cover || detail);
+  const originalTitle = String(issue.title || '');
+  const employment = /일용직/.test(originalTitle) && /실업급여/.test(originalTitle) && /부정/.test(originalTitle) && /제재/.test(originalTitle);
+  const voting = /사전투표/.test(originalTitle) && /폐지|없앨/.test(originalTitle);
+  const coverTitle = employment ? '일용직 실업급여 부정수급' : voting ? '사전투표' : originalTitle;
+  const coverQuestion = employment ? '제재를 더 강화할까?' : voting ? '유지할까, 없앨까?' : '';
   const source = issue.sources?.[0];
   const facts = String(issue.summary || '').split('확인된 사실\n')[1]?.split('\n').map(line => line.replace(/^\s*•\s*/, '').trim()).filter(Boolean) || [];
   const render = (label, heading, lines, photo, highlight) => renderPhotoFocusCard({
-    photo, heading, lines, label, highlight, accent, platform:'facebook', fixedBand:true,
+    photo, heading, lines, label, highlight, style, platform:'facebook', fixedBand:true,
     credit:photo ? 'AI 생성 이미지' : '', format:'image/jpeg'
   });
   const factLines = source && facts.length ? [facts[0], '자료 출처 · ' + new URL(source).hostname] : ['확인할 자료는 안건 페이지에서 확인해 주세요.'];
   return [
-    render('오늘의 안건',issue.title,[],cover),
+    render('',coverTitle,coverQuestion ? [coverQuestion] : [],cover || detail,coverQuestion),
     render('팩트 체크','먼저 확인할 내용',factLines,detail || cover),
-    render('당신의 시선','다른 사람들은 어떤 선택을 했을까요?',['시선에서 안건 읽고 투표 확인하기'],cover || detail,'시선에서 안건 읽고 투표 확인하기')
+    render('','다른 사람들은 어떤 선택을 했을까요?',['시선에서 안건 읽고 투표 확인하기'],cover || detail,'시선에서 안건 읽고 투표 확인하기')
   ];
 }
 
-function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, label, highlight, accent, fixedBand = false, format = 'image/png'}) {
+function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, label, highlight, accent, style = pickPhotoCardStyle(photo), fixedBand = false, format = 'image/png'}) {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 1080;
   const ctx = canvas.getContext('2d');
-  const theme = {
-    instagram: {highlight:'#ffe08a', background:'#342719'},
-    threads: {highlight:'#d7e5ff', background:'#20283b'},
-    facebook: {highlight:'#d7ee83', background:'#183a2e'}
-  }[platform] || {highlight:'#d7ee83', background:'#183a2e'};
+  const theme = style;
   ctx.fillStyle = accent || theme.background;
   ctx.fillRect(0,0,1080,1080);
   if (photo) {
-    const scale = Math.min(1080 / photo.width, 1080 / photo.height);
-    const width = photo.width * scale, height = photo.height * scale;
-    ctx.drawImage(photo,(1080-width)/2,(1080-height)/2,width,height);
+    const scale = Math.max(1080 / photo.width,1080 / photo.height);
+    ctx.drawImage(photo,(1080-photo.width*scale)/2,0,photo.width*scale,photo.height*scale);
   }
-  const sample = document.createElement('canvas');
-  sample.width = sample.height = 36;
-  const small = sample.getContext('2d');
-  small.drawImage(canvas,0,0,36,36);
-  const pixels = small.getImageData(0,0,36,36).data;
-  const luminance = (i) => (pixels[i]*.2126 + pixels[i+1]*.7152 + pixels[i+2]*.0722) / 255;
-  const quietness = (start,end) => {
-    let contrast = 0;
-    for (let row=start;row<end;row++) {
-      for (let column=3;column<33;column++) {
-        const i = (row*36+column)*4;
-        contrast += Math.abs(luminance(i)-luminance(i-4)) + Math.abs(luminance(i)-luminance(i-144));
-      }
-    }
-    return contrast;
-  };
-  const putAtTop = !fixedBand && quietness(2,12) + 2 < quietness(24,34);
+  const putAtTop = theme.top;
   const fontFamily = '"Malgun Gothic","Apple SD Gothic Neo",sans-serif';
   const wrap = (value, size, weight, maxLines) => {
     ctx.font = weight + ' ' + size + 'px ' + fontFamily;
@@ -716,20 +700,20 @@ function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, lab
   };
   const titleSize = Math.max(43,Math.min(platform === 'instagram' ? 79 : platform === 'threads' ? 67 : 72, Math.floor(1240 / Math.sqrt(String(heading || '').length || 1))));
   const titleRows = wrap(heading,titleSize,800,fixedBand && lines.length ? 2 : 3);
-  const detailRows = lines.filter(Boolean).flatMap(line=>wrap(line,31,500,2)).slice(0,4);
+  const detailSize = !label && highlight ? 54 : 31;
+  const detailStep = detailSize * 1.3;
+  const detailRows = lines.filter(Boolean).flatMap(line=>wrap(line,detailSize,700,2)).slice(0,4);
   const titleHeight = titleSize * 1.2;
-  const heightNeeded = titleRows.length*titleHeight + detailRows.length*41 + (detailRows.length ? 18 : 0);
-  const textTop = fixedBand ? Math.max(615, 970-heightNeeded) : putAtTop ? 117 : 970-heightNeeded;
-  const bandTop = fixedBand ? 550 : textTop-30, bandBottom = fixedBand ? 1000 : textTop+heightNeeded+24;
-  if (fixedBand || detailRows.length) {
-    ctx.fillStyle = 'rgba(10,16,15,.74)';
-    ctx.beginPath(); ctx.roundRect(51,bandTop,978,bandBottom-bandTop,22); ctx.fill();
+  const heightNeeded = titleRows.length*titleHeight + detailRows.length*detailStep + (detailRows.length ? 18 : 0);
+  const textTop = putAtTop ? (label ? 164 : 132) : 965-heightNeeded;
+  const fade = ctx.createLinearGradient(0,0,0,1080);
+  const solid = theme.background;
+  if (putAtTop) {
+    fade.addColorStop(0,solid+'f5'); fade.addColorStop(.42,solid+'cf'); fade.addColorStop(.74,solid+'00');
   } else {
-    const fade = ctx.createLinearGradient(0,putAtTop?0:bandTop-50,0,putAtTop?bandBottom+60:1080);
-    fade.addColorStop(0,putAtTop?'rgba(8,14,12,.83)':'rgba(8,14,12,0)');
-    fade.addColorStop(1,putAtTop?'rgba(8,14,12,0)':'rgba(8,14,12,.85)');
-    ctx.fillStyle=fade; ctx.fillRect(0,putAtTop?0:bandTop-50,1080,putAtTop?bandBottom+60:1130-bandTop);
+    fade.addColorStop(.26,solid+'00'); fade.addColorStop(.59,solid+'a3'); fade.addColorStop(1,solid+'fa');
   }
+  ctx.fillStyle = fade; ctx.fillRect(0,0,1080,1080);
   ctx.textBaseline='top';
   ctx.fillStyle='#fff';
   ctx.font='800 '+titleSize+'px '+fontFamily;
@@ -751,12 +735,12 @@ function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, lab
       highlighted=true;
     });
   };
-  drawEmphasis(titleRows,textTop,titleHeight,titleHighlight || (!label ? titleRows[0] : ''));
-  ctx.font='600 31px '+fontFamily;
-  drawEmphasis(detailRows,textTop+titleRows.length*titleHeight+18,41,detailHighlight);
+  drawEmphasis(titleRows,textTop,titleHeight,highlight ? '' : titleHighlight || (!fixedBand ? titleRows[0] : ''));
+  ctx.font='700 '+detailSize+'px '+fontFamily;
+  drawEmphasis(detailRows,textTop+titleRows.length*titleHeight+18,detailStep,detailHighlight);
   if(label) {
     ctx.font='800 26px '+fontFamily; ctx.fillStyle=theme.highlight;
-    ctx.fillText(label,94,576);
+    ctx.fillText(label,94,textTop-39);
   }
   ctx.fillStyle='#123d35'; ctx.beginPath(); ctx.roundRect(960,30,80,80,20); ctx.fill();
   ctx.strokeStyle='#dcebdc'; ctx.lineWidth=4;
@@ -772,4 +756,37 @@ function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, lab
   const image = canvas.toDataURL(format,.9).split(',')[1];
   if (image.length <= 1800000) return image;
   return encodeFinishedCard(canvas,format);
+}
+
+function pickPhotoCardStyle(photo) {
+  const palettes = [
+    {background:'#102e26',highlight:'#b8f2c5'},
+    {background:'#17293d',highlight:'#c6e6ff'},
+    {background:'#352316',highlight:'#ffdf9b'},
+    {background:'#332139',highlight:'#f1d2ff'}
+  ];
+  const sample = document.createElement('canvas');
+  sample.width=sample.height=12;
+  let top = false;
+  let index = Math.floor(Math.random()*palettes.length);
+  if (photo) {
+    const ctx=sample.getContext('2d');
+    ctx.drawImage(photo,0,0,12,12);
+    const data=ctx.getImageData(0,0,12,12).data;
+    const light=i=>(data[i]*.21+data[i+1]*.72+data[i+2]*.07);
+    let upper=0, lower=0, warm=0, green=0;
+    for(let i=4;i<data.length;i+=4) {
+      const row=Math.floor(i/48);
+      if(i%48) {
+        if(row<4) upper+=Math.abs(light(i)-light(i-4));
+        if(row>=8) lower+=Math.abs(light(i)-light(i-4));
+      }
+      warm+=data[i]-data[i+2];
+      green+=data[i+1]-(data[i]+data[i+2])/2;
+    }
+    top=upper<lower*.78;
+    const preferred=green>850?0:warm>2400?2:1;
+    index=Math.random()<.78?preferred:index;
+  }
+  return {...palettes[index],top};
 }
