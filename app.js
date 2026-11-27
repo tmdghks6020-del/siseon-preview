@@ -1615,6 +1615,28 @@ const rssResults = document.querySelector('#topicRssResults');
 const rssDirections = document.querySelector('#topicRssDirections');
 let discoveredNews = [];
 const selectedTopicNews = new Map();
+const rssSelection = document.querySelector('#topicRssSelection');
+const rssSelectionSummary = document.querySelector('#topicSelectionSummary');
+const finishTopicSelection = document.querySelector('#finishTopicSelection');
+const editTopicSelection = document.querySelector('#editTopicSelection');
+
+function showTopicSelection(expanded) {
+  rssSelection.classList.toggle('hidden', !expanded);
+  rssSelectionSummary.classList.toggle('hidden', expanded);
+  editTopicSelection.setAttribute('aria-expanded', String(expanded));
+}
+
+finishTopicSelection.addEventListener('click', () => {
+  if (!selectedTopicNews.size) return;
+  document.querySelector('#topicSelectionCount').textContent = `주제 ${selectedTopicNews.size}개 선택 완료`;
+  showTopicSelection(false);
+  (rssDirections.querySelector('input') || editTopicSelection).focus();
+});
+
+editTopicSelection.addEventListener('click', () => {
+  showTopicSelection(true);
+  rssResults.querySelector('input:checked')?.focus();
+});
 
 document.querySelector('#discoverTopicNews')?.addEventListener('click', async event => {
   const button = event.currentTarget;
@@ -1625,6 +1647,8 @@ document.querySelector('#discoverTopicNews')?.addEventListener('click', async ev
     const result = await window.SISEON_TOPIC_ADMIN.discover(document.querySelector('#topicGenerationKeyword').value);
     discoveredNews = result.articles || [];
     selectedTopicNews.clear();
+    finishTopicSelection.disabled = true;
+    showTopicSelection(true);
     rssDirections.replaceChildren();
     const rows = discoveredNews.map((item, index) =>
       `<div class="topic-news-choice"><label><input type="checkbox" value="${index}"><span><strong>${escapeAdminHtml(item.title)}</strong><small>${escapeAdminHtml(item.source)}</small></span></label><a href="${escapeAdminHtml(item.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeAdminHtml(item.title)} 원문">원문 ↗</a></div>`
@@ -1657,6 +1681,7 @@ rssResults?.addEventListener('change', event => {
     selectedTopicNews.get(index)?.group.remove();
     selectedTopicNews.delete(index);
   }
+  finishTopicSelection.disabled = selectedTopicNews.size === 0;
 });
 
 document.querySelector('#generateTopicCandidatesButton')?.addEventListener('click', async (event) => {
