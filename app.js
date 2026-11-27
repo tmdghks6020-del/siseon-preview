@@ -1460,7 +1460,7 @@ document.querySelector('#archivePageList').addEventListener('click', (event) => 
 const adminView = document.querySelector('#adminView');
 const adminEntryButton = document.querySelector('#adminEntryButton');
 const editorialForm = document.querySelector('#editorialForm');
-const editorialFieldNames = ['category', 'title', 'intro', 'facts', 'source', 'sourceUrl', 'forText', 'againstText'];
+const editorialFieldNames = ['category', 'title', 'intro', 'facts', 'imageKeywords', 'source', 'sourceUrl', 'forText', 'againstText'];
 let isVerifiedAdmin = false;
 
 function showAdminView(pushHistory = true) {
@@ -1489,6 +1489,7 @@ function currentDraftFromForm() {
   const savedMetadata = editorialState.pending.find((draft) => draft.id === activeDraftId) || {};
   return {
     ...savedMetadata,
+    imageKeywords: values.imageKeywords.split(/[,\n]/).map(value => value.trim()).filter(Boolean).slice(0, 5),
     voteOptions: [...editorialForm.querySelectorAll('[name="voteOption"]')].map(input => input.value.normalize('NFC').trim()),
     id: activeDraftId || editorialState.pending[0]?.id || `editorial-${Date.now()}`,
     category: values.category.trim(), title: values.title.trim(), intro: values.intro.trim(),
@@ -1587,7 +1588,7 @@ function renderReviewQueue() {
   if (draft) {
     editorialFieldNames.forEach((name) => {
       const field = editorialForm.elements.namedItem(name);
-      field.value = name === 'facts' ? draft.facts.join('\n') : draft[name] || '';
+      field.value = name === 'facts' ? draft.facts.join('\n') : name === 'imageKeywords' ? (draft.imageKeywords || []).join(', ') : draft[name] || '';
     });
     renderDraftVoteOptions(draft.voteOptions);
     updateAdminPreview();
