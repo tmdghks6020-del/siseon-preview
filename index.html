@@ -417,6 +417,40 @@
   #adminView #adminLogoutButton { min-height: 44px; white-space: nowrap; font-size: 11px; }
 }
 </style>
+<style>
+@media (max-width: 760px) {
+  .table-toolbar:has(#pollSearch) { flex-wrap: wrap; }
+  #pollSearch { min-width: min(100%, 180px); }
+  .table-toolbar:has(#pollSearch) + .admin-table-wrap { overflow: visible; border: 0; background: transparent; }
+  .table-toolbar:has(#pollSearch) + .admin-table-wrap .admin-table { display: block; min-width: 0; width: 100%; }
+  .table-toolbar:has(#pollSearch) + .admin-table-wrap thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .table-toolbar:has(#pollSearch) + .admin-table-wrap tbody { display: grid; gap: 10px; }
+  .table-toolbar:has(#pollSearch) + .admin-table-wrap tbody tr:not([hidden]) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px 10px;
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--white);
+  }
+  .table-toolbar:has(#pollSearch) + .admin-table-wrap tbody tr[hidden] { display: none; }
+  .table-toolbar:has(#pollSearch) + .admin-table-wrap td {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .table-toolbar:has(#pollSearch) + .admin-table-wrap td:is(:first-child, :nth-child(4), :last-child) { grid-column: 1 / -1; }
+  .table-toolbar:has(#pollSearch) + .admin-table-wrap td:first-child strong { font-size: 15px; line-height: 1.5; }
+  .table-toolbar:has(#pollSearch) + .admin-table-wrap td:nth-child(4):not(:empty)::before { content: "출처 · "; font-weight: 700; }
+  .table-toolbar:has(#pollSearch) + .admin-table-wrap td:last-child { padding-top: 8px; border-top: 1px solid var(--line); }
+  .table-toolbar:has(#pollSearch) + .admin-table-wrap .row-actions { flex-wrap: wrap; gap: 6px; }
+  .table-toolbar:has(#pollSearch) + .admin-table-wrap .table-action { min-height: 44px; padding-inline: 9px; font-size: 12px; }
+}
+</style>
 </body>
 </html>
 
