@@ -87,7 +87,7 @@ export async function routeAi(task: Parameters<typeof requestAi>[2], options: {
   fetcher?:typeof fetch; validate?:(value:any)=>void; order?:readonly Provider[];
 }) {
   const attempts:{provider:Provider;status:string;message?:string}[]=[];
-  for(const provider of options.order || AI_ORDER) {
+  for(const provider of options.order || AI_ORDER.filter(provider => provider !== 'openai')) {
     // Credential-store failures are not provider outages; don't hide DB failures.
     const config=await options.load(provider);
     if(config.disabled || !config.credentials?.apiKey) {attempts.push({provider,status:'미연결'});continue;}
