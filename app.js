@@ -1626,9 +1626,12 @@ document.querySelector('#discoverTopicNews')?.addEventListener('click', async ev
     discoveredNews = result.articles || [];
     selectedTopicNews.clear();
     rssDirections.replaceChildren();
-    rssResults.innerHTML = discoveredNews.map((item, index) =>
-      `<div><label><input type="checkbox" value="${index}"> ${escapeAdminHtml(item.title)} · ${escapeAdminHtml(item.source)}</label> <a href="${escapeAdminHtml(item.url)}" target="_blank" rel="noopener noreferrer">원문 ↗</a></div>`
-    ).join('');
+    const rows = discoveredNews.map((item, index) =>
+      `<div class="topic-news-choice"><label><input type="checkbox" value="${index}"><span><strong>${escapeAdminHtml(item.title)}</strong><small>${escapeAdminHtml(item.source)}</small></span></label><a href="${escapeAdminHtml(item.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeAdminHtml(item.title)} 원문">원문 ↗</a></div>`
+    );
+    rssResults.innerHTML = rows.length
+      ? rows.slice(0, 8).join('') + (rows.length > 8 ? `<details><summary>주제 ${rows.length - 8}개 더 보기</summary>${rows.slice(8).join('')}</details>` : '')
+      : '<p>조건에 맞는 기사가 없습니다. 검색어를 비우거나 바꿔 다시 수집해 주세요.</p>';
     status.textContent = `최근 기사 ${discoveredNews.length}건 · ${(result.warnings || []).join(' · ')}`;
   } catch (error) { status.textContent = '수집 실패: ' + error.message; }
   finally { button.disabled = false; }
@@ -1636,6 +1639,7 @@ document.querySelector('#discoverTopicNews')?.addEventListener('click', async ev
 
 rssResults?.addEventListener('change', event => {
   const input = event.target;
+  if (!input.matches('input[type=checkbox]')) return;
   const index = Number(input.value);
   const article = discoveredNews[index];
   if (!article) return;
@@ -2615,7 +2619,9 @@ document.querySelector('#addVoteOptionButton').addEventListener('click',()=>{
 });
 document.querySelector('#topicGenerationMode').addEventListener('change',event=>{
   const material=['material','community'].includes(event.target.value);
-  document.querySelector('#topicRssSteps').classList.toggle('hidden', event.target.value !== 'news');
+  const news = event.target.value === 'news';
+  document.querySelector('#topicRssSteps').classList.toggle('hidden', !news);
+  document.querySelector('#discoverTopicNews').classList.toggle('hidden', !news);
   document.querySelector('#topicSourceInputs').classList.toggle('hidden',!material);
   document.querySelector('#topicGenerationStatus').textContent=event.target.value==='fun' ? '뉴스 출처 없이 재미 투표를 만듭니다. 가상 표시를 붙이고 관리자가 직접 승인합니다.' : material ? '참고 링크와 핵심 내용을 입력하세요. 원문 자동 수집은 하지 않습니다. 관리자가 직접 확인 후 승인합니다.' : '공개 RSS에서 최근 보도를 찾고 주제를 선택하세요. 정치·재판·증시 주제는 관리자가 직접 승인합니다.';
 });
