@@ -9,6 +9,7 @@ function topicDraftFromRow(row) {
     voteOptions: row.vote_options || ['찬성','반대','판단 보류'], id: row.id, batchId: row.batch_id, category: row.category, title: row.title, intro: row.intro,
     trendingReason: row.trending_reason, facts: row.facts || [], source: row.source, sourceUrl: row.source_url,
     sourceDate: row.source_date, forText: row.for_text, againstText: row.against_text,
+    imageKeywords: row.data_signals?.imageKeywords || [],
     searchKeywords: row.search_keywords || [], dataSignals: row.data_signals || {},
     selectedField: row.data_signals?.selectedField || '', createdAt: row.created_at
   };
@@ -206,7 +207,7 @@ async function init() {
         if (drafts.length) {
           onImages?.();
           try {
-            const generated = await call('promo-background', {title: issue.title, summary: issue.summary});
+            const generated = await call('promo-background', {issueId: issue.issueId, title: issue.title, summary: issue.summary});
             photo = await createImageBitmap(await (await fetch(generated.image)).blob());
             const colors = ['#075239','#152742','#553318','#4b3452'];
             palette = colors.filter(color => color !== sessionStorage.getItem('siseon-last-card-color'));
@@ -216,7 +217,7 @@ async function init() {
         }
         if (drafts.some(draft => draft.platform === 'facebook')) {
           try {
-            const detail = await call('promo-background', {title:issue.title,summary:issue.summary,detail:true});
+            const detail = await call('promo-background', {issueId:issue.issueId,title:issue.title,summary:issue.summary,detail:true});
             detailPhoto = await createImageBitmap(await (await fetch(detail.image)).blob());
           } catch (error) { imageErrors.push('Facebook 팩트 체크 배경 · ' + error.message); }
         }
@@ -270,7 +271,7 @@ async function init() {
       },
       async save(draft) {
         await call('topics-save', {
-          id: draft.id, voteOptions: draft.voteOptions, category: draft.category, title: draft.title, intro: draft.intro,
+          id: draft.id, imageKeywords: draft.imageKeywords, voteOptions: draft.voteOptions, category: draft.category, title: draft.title, intro: draft.intro,
           trendingReason: draft.trendingReason, facts: draft.facts, source: draft.source,
           sourceDate: draft.sourceDate, sourceUrl: draft.sourceUrl, forText: draft.forText, againstText: draft.againstText
         });
