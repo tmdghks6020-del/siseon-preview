@@ -206,7 +206,7 @@ async function init() {
                 await call('save-poll-share-card', {id:draft.id,images});
                 continue;
               }
-              const image = makePollShareCard({...issue,title,color:palette,credit:photo ? 'AI 생성 이미지' : '',format:draft.platform === 'facebook' ? 'image/png' : 'image/jpeg'},photo);
+              const image = makePollShareCard({...issue,title,platform:draft.platform,color:palette,credit:photo ? 'AI 생성 이미지' : '',format:draft.platform === 'facebook' ? 'image/png' : 'image/jpeg'},photo);
               await call('save-poll-share-card', {id:draft.id,image});
             } catch (error) { imageErrors.push((platformNames[draft.platform] || draft.platform) + ': ' + error.message); }
           }
@@ -461,7 +461,7 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
         if (photos.length) {
           try {
             const first = photos[0];
-            const preview = await previewPollPhoto(first, item.content?.title || item.issueTitle, card.querySelector('[data-photo-palette]').value, undefined, item.brief);
+            const preview = await previewPollPhoto(first, item.content?.title || item.issueTitle, card.querySelector('[data-photo-palette]').value, undefined, {...item.brief, platform:item.platform});
             output.insertAdjacentHTML('afterbegin', '<p>첫 번째 사진으로 만든 카드 시안</p><img class="content-image-preview" alt="사진 카드 시안" src="data:image/png;base64,' + preview + '">');
           } catch { /* Thumbnails and original source links remain available. */ }
         }
@@ -478,7 +478,7 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       if (!item) throw new Error('홍보 초안을 찾을 수 없습니다.');
       let image;
       try {
-        image = await previewPollPhoto({ imageUrl: selected.dataset.photoUrl, sourceName: selected.dataset.photoCredit }, item.content?.title || item.issueTitle, button.closest('[data-content-card]').querySelector('[data-photo-palette]').value, item.platform === 'instagram' ? 'image/jpeg' : 'image/png', item.brief);
+        image = await previewPollPhoto({ imageUrl: selected.dataset.photoUrl, sourceName: selected.dataset.photoCredit }, item.content?.title || item.issueTitle, button.closest('[data-content-card]').querySelector('[data-photo-palette]').value, item.platform === 'instagram' ? 'image/jpeg' : 'image/png', {...item.brief, platform:item.platform});
       } catch {
         throw new Error('이 사진은 원본 사이트에서 직접 불러올 수 없습니다. 사용 가능한 원본 파일을 내려받아 카드에 넣을 사진에서 올려 주세요.');
       }
@@ -498,7 +498,7 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
         const title = item.content?.title || item.issueTitle;
         const image = action === 'attach-finished-image'
           ? encodeFinishedCard(photo, ['instagram','threads'].includes(item.platform) ? 'image/jpeg' : 'image/png')
-          : makePollShareCard({...item.brief, title, format: ['instagram','threads'].includes(item.platform) ? 'image/jpeg' : 'image/png', color: button.closest('[data-content-card]')?.querySelector('[data-photo-palette]')?.value},photo);
+          : makePollShareCard({...item.brief, title, platform:item.platform, format: ['instagram','threads'].includes(item.platform) ? 'image/jpeg' : 'image/png', color: button.closest('[data-content-card]')?.querySelector('[data-photo-palette]')?.value},photo);
         await call('save-poll-share-card', {id, image});
       } finally { photo?.close(); }
       await loadContents();
@@ -552,6 +552,14 @@ function encodeFinishedCard(photo, format = 'image/png') {
 }
 
 function makePollShareCard(issue, photo = null, photoSize = 0) {
+  if (photo) {
+    const context = [issue.summary, issue.forView, issue.againstView]
+      .map(value => String(value || '').split(/\n|(?<=[.!?。])\s/)[0].trim()).filter(Boolean);
+    return renderPhotoFocusCard({
+      photo, heading: issue.title, lines: issue.platform === 'facebook' ? context.slice(0, 1) : [],
+      platform: issue.platform, credit: issue.credit, format: issue.format
+    });
+  }
   const canvas = document.createElement('canvas');
   canvas.width = 1080;
   canvas.height = 1080;
@@ -645,6 +653,7 @@ function makeFacebookCards(issue, cover, detail) {
   const source = issue.sources?.[0];
   const facts = String(issue.summary || '').split('확인된 사실\n')[1]?.split('\n').map(line => line.replace(/^\s*•\s*/, '').trim()).filter(Boolean) || [];
   const render = (eyebrow, heading, lines, photo) => {
+    if (photo) return renderPhotoFocusCard({photo, heading, lines, credit:'AI 생성 이미지', platform:'facebook', format:'image/jpeg'});
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 1080;
     const ctx = canvas.getContext('2d');
@@ -687,4 +696,87 @@ function makeFacebookCards(issue, cover, detail) {
     render('팩트 체크','먼저 확인할 내용',factLines,detail),
     render('당신의 시선','다른 사람들은 어떤 선택을 했을까요?',['시선에서 안건 읽고 투표 확인하기'],null)
   ];
+}
+
+function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, format = 'image/png'}) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 1080;
+  const ctx = canvas.getContext('2d');
+  const scale = Math.min(1080 / photo.width, 1080 / photo.height);
+  const width = photo.width * scale, height = photo.height * scale;
+  const x = (1080 - width) / 2, y = (1080 - height) / 2;
+  ctx.fillStyle = '#1b2823';
+  ctx.fillRect(0,0,1080,1080);
+  ctx.drawImage(photo,x,y,width,height);
+
+  const sample = document.createElement('canvas');
+  sample.width = sample.height = 36;
+  const small = sample.getContext('2d');
+  small.drawImage(canvas,0,0,36,36);
+  const pixels = small.getImageData(0,0,36,36).data;
+  const luminance = (i) => (pixels[i]*.2126 + pixels[i+1]*.7152 + pixels[i+2]*.0722) / 255;
+  const quietness = (start,end) => {
+    let contrast = 0;
+    for (let row=start;row<end;row++) {
+      for (let column=3;column<33;column++) {
+        const i = (row*36+column)*4;
+        contrast += Math.abs(luminance(i)-luminance(i-4)) + Math.abs(luminance(i)-luminance(i-144));
+      }
+    }
+    return contrast;
+  };
+  const putAtTop = quietness(2,12) + 2 < quietness(24,34);
+  const fontFamily = '"Malgun Gothic","Apple SD Gothic Neo",sans-serif';
+  const wrap = (value, size, weight, maxLines) => {
+    ctx.font = weight + ' ' + size + 'px ' + fontFamily;
+    const rows = [];
+    let line = '';
+    for (const char of Array.from(String(value || '').replace(/\s+/g,' ').trim())) {
+      if (line && ctx.measureText(line+char).width > 890) { rows.push(line.trim()); line=''; }
+      line += char;
+    }
+    if (line) rows.push(line.trim());
+    if (rows.length > maxLines) {
+      let last = rows[maxLines-1];
+      while (last && ctx.measureText(last+'…').width > 890) last=last.slice(0,-1);
+      rows[maxLines-1]=last.trimEnd()+'…';
+    }
+    return rows.slice(0,maxLines);
+  };
+  const titleSize = Math.max(43,Math.min(platform === 'instagram' ? 79 : platform === 'threads' ? 67 : 72, Math.floor(1240 / Math.sqrt(String(heading || '').length || 1))));
+  const titleRows = wrap(heading,titleSize,800,3);
+  const detailRows = lines.filter(Boolean).flatMap(line=>wrap(line,31,500,2)).slice(0,4);
+  const titleHeight = titleSize * 1.2;
+  const heightNeeded = titleRows.length*titleHeight + detailRows.length*41 + (detailRows.length ? 18 : 0);
+  const textTop = putAtTop ? 117 : 986-heightNeeded;
+  const bandTop = textTop-30, bandBottom = textTop+heightNeeded+24;
+  if (detailRows.length) {
+    ctx.fillStyle = 'rgba(10,16,15,.74)';
+    ctx.beginPath(); ctx.roundRect(51,bandTop,978,bandBottom-bandTop,22); ctx.fill();
+  } else {
+    const fade = ctx.createLinearGradient(0,putAtTop?0:bandTop-50,0,putAtTop?bandBottom+60:1080);
+    fade.addColorStop(0,putAtTop?'rgba(8,14,12,.83)':'rgba(8,14,12,0)');
+    fade.addColorStop(1,putAtTop?'rgba(8,14,12,0)':'rgba(8,14,12,.85)');
+    ctx.fillStyle=fade; ctx.fillRect(0,putAtTop?0:bandTop-50,1080,putAtTop?bandBottom+60:1130-bandTop);
+  }
+  ctx.textBaseline='top';
+  ctx.fillStyle='#fff';
+  ctx.font='800 '+titleSize+'px '+fontFamily;
+  titleRows.forEach((line,i)=>ctx.fillText(line,94,textTop+i*titleHeight));
+  ctx.font='500 31px '+fontFamily;
+  detailRows.forEach((line,i)=>ctx.fillText(line,94,textTop+titleRows.length*titleHeight+18+i*41));
+  ctx.fillStyle='#123d35'; ctx.beginPath(); ctx.roundRect(960,30,80,80,20); ctx.fill();
+  ctx.strokeStyle='#dcebdc'; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.moveTo(975,70); ctx.quadraticCurveTo(1000,43,1025,70); ctx.quadraticCurveTo(1000,97,975,70); ctx.stroke();
+  ctx.fillStyle='#d7ee83'; ctx.beginPath(); ctx.arc(1000,70,9,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#123d35'; ctx.beginPath(); ctx.arc(1000,70,3,0,Math.PI*2); ctx.fill();
+  if (credit) {
+    ctx.font='500 22px '+fontFamily;
+    const label='사진 · '+String(credit).slice(0,70);
+    ctx.fillStyle='rgba(8,14,12,.76)'; ctx.fillRect(65,1020,Math.min(950,ctx.measureText(label).width+34),37);
+    ctx.fillStyle='#fff'; ctx.fillText(label,82,1025,915);
+  }
+  const image = canvas.toDataURL(format,.9).split(',')[1];
+  if (image.length <= 1800000) return image;
+  return encodeFinishedCard(canvas,format);
 }
