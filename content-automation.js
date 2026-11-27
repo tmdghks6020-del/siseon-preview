@@ -652,63 +652,34 @@ function makeFacebookCards(issue, cover, detail) {
   const accent = issue.color || '#075239';
   const source = issue.sources?.[0];
   const facts = String(issue.summary || '').split('확인된 사실\n')[1]?.split('\n').map(line => line.replace(/^\s*•\s*/, '').trim()).filter(Boolean) || [];
-  const render = (eyebrow, heading, lines, photo) => {
-    if (photo) return renderPhotoFocusCard({photo, heading, lines, credit:'AI 생성 이미지', platform:'facebook', format:'image/jpeg'});
-    const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = 1080;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#faf5e9'; ctx.fillRect(0,0,1080,1080);
-    if (photo) {
-      const ratio = Math.max(1080/photo.width, 475/photo.height);
-      ctx.drawImage(photo, (photo.width-1080/ratio)/2, 0, 1080/ratio, 475/ratio, 0,0,1080,475);
-    } else {
-      ctx.fillStyle = accent; ctx.fillRect(0,0,1080,photo === cover && eyebrow === '오늘의 안건' ? 475 : 220);
-    }
-    const top = photo || eyebrow === '오늘의 안건' ? 520 : 295;
-    ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(960,28,82,82,22); ctx.fill();
-    ctx.strokeStyle = '#dcebdc'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(976,69); ctx.quadraticCurveTo(1001,41,1026,69); ctx.quadraticCurveTo(1001,97,976,69); ctx.stroke();
-    ctx.fillStyle='#d7ee83'; ctx.beginPath(); ctx.arc(1001,69,9,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle=accent; ctx.beginPath(); ctx.arc(1001,69,3,0,Math.PI*2); ctx.fill();
-    const write = (value,y,size,maxLines,weight=700) => {
-      ctx.font = weight + ' ' + size + 'px "Malgun Gothic",sans-serif';
-      ctx.fillStyle = accent;
-      const chars = Array.from(String(value).replace(/\s+/g,' ').trim());
-      let line = '', used = 0;
-      for (const char of chars) {
-        if (line && ctx.measureText(line+char).width > 930) {
-          if (used === maxLines-1) { ctx.fillText(line.slice(0,-1)+'…',72,y); return y+size*1.25; }
-          ctx.fillText(line,72,y); y+=size*1.25; used++; line='';
-        }
-        line+=char;
-      }
-      ctx.fillText(line,72,y); return y+size*1.25;
-    };
-    write(eyebrow,top+20,28,1);
-    let y = write(heading,top+112,eyebrow==='오늘의 안건'?76:60,3)+25;
-    for (const line of lines) y = write(line,y,34,eyebrow==='팩트 체크'?2:1,500)+12;
-    if (photo) write('AI 생성 이미지',1030,21,1,500);
-    return canvas.toDataURL('image/jpeg',0.88).split(',')[1];
-  };
+  const render = (label, heading, lines, photo, highlight) => renderPhotoFocusCard({
+    photo, heading, lines, label, highlight, accent, platform:'facebook', fixedBand:true,
+    credit:photo ? 'AI 생성 이미지' : '', format:'image/jpeg'
+  });
   const factLines = source && facts.length ? [facts[0], '자료 출처 · ' + new URL(source).hostname] : ['확인할 자료는 안건 페이지에서 확인해 주세요.'];
   return [
     render('오늘의 안건',issue.title,[],cover),
-    render('팩트 체크','먼저 확인할 내용',factLines,detail),
-    render('당신의 시선','다른 사람들은 어떤 선택을 했을까요?',['시선에서 안건 읽고 투표 확인하기'],null)
+    render('팩트 체크','먼저 확인할 내용',factLines,detail || cover),
+    render('당신의 시선','다른 사람들은 어떤 선택을 했을까요?',['시선에서 안건 읽고 투표 확인하기'],cover || detail,'시선에서 안건 읽고 투표 확인하기')
   ];
 }
 
-function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, format = 'image/png'}) {
+function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, label, highlight, accent, fixedBand = false, format = 'image/png'}) {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 1080;
   const ctx = canvas.getContext('2d');
-  const scale = Math.min(1080 / photo.width, 1080 / photo.height);
-  const width = photo.width * scale, height = photo.height * scale;
-  const x = (1080 - width) / 2, y = (1080 - height) / 2;
-  ctx.fillStyle = '#1b2823';
+  const theme = {
+    instagram: {highlight:'#ffe08a', background:'#342719'},
+    threads: {highlight:'#d7e5ff', background:'#20283b'},
+    facebook: {highlight:'#d7ee83', background:'#183a2e'}
+  }[platform] || {highlight:'#d7ee83', background:'#183a2e'};
+  ctx.fillStyle = accent || theme.background;
   ctx.fillRect(0,0,1080,1080);
-  ctx.drawImage(photo,x,y,width,height);
-
+  if (photo) {
+    const scale = Math.min(1080 / photo.width, 1080 / photo.height);
+    const width = photo.width * scale, height = photo.height * scale;
+    ctx.drawImage(photo,(1080-width)/2,(1080-height)/2,width,height);
+  }
   const sample = document.createElement('canvas');
   sample.width = sample.height = 36;
   const small = sample.getContext('2d');
@@ -725,7 +696,7 @@ function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, for
     }
     return contrast;
   };
-  const putAtTop = quietness(2,12) + 2 < quietness(24,34);
+  const putAtTop = !fixedBand && quietness(2,12) + 2 < quietness(24,34);
   const fontFamily = '"Malgun Gothic","Apple SD Gothic Neo",sans-serif';
   const wrap = (value, size, weight, maxLines) => {
     ctx.font = weight + ' ' + size + 'px ' + fontFamily;
@@ -744,13 +715,13 @@ function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, for
     return rows.slice(0,maxLines);
   };
   const titleSize = Math.max(43,Math.min(platform === 'instagram' ? 79 : platform === 'threads' ? 67 : 72, Math.floor(1240 / Math.sqrt(String(heading || '').length || 1))));
-  const titleRows = wrap(heading,titleSize,800,3);
+  const titleRows = wrap(heading,titleSize,800,fixedBand && lines.length ? 2 : 3);
   const detailRows = lines.filter(Boolean).flatMap(line=>wrap(line,31,500,2)).slice(0,4);
   const titleHeight = titleSize * 1.2;
   const heightNeeded = titleRows.length*titleHeight + detailRows.length*41 + (detailRows.length ? 18 : 0);
-  const textTop = putAtTop ? 117 : 986-heightNeeded;
-  const bandTop = textTop-30, bandBottom = textTop+heightNeeded+24;
-  if (detailRows.length) {
+  const textTop = fixedBand ? Math.max(615, 970-heightNeeded) : putAtTop ? 117 : 970-heightNeeded;
+  const bandTop = fixedBand ? 550 : textTop-30, bandBottom = fixedBand ? 1000 : textTop+heightNeeded+24;
+  if (fixedBand || detailRows.length) {
     ctx.fillStyle = 'rgba(10,16,15,.74)';
     ctx.beginPath(); ctx.roundRect(51,bandTop,978,bandBottom-bandTop,22); ctx.fill();
   } else {
@@ -762,9 +733,31 @@ function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, for
   ctx.textBaseline='top';
   ctx.fillStyle='#fff';
   ctx.font='800 '+titleSize+'px '+fontFamily;
-  titleRows.forEach((line,i)=>ctx.fillText(line,94,textTop+i*titleHeight));
-  ctx.font='500 31px '+fontFamily;
-  detailRows.forEach((line,i)=>ctx.fillText(line,94,textTop+titleRows.length*titleHeight+18+i*41));
+  const keywords = /실업급여 부정수급(?: 의혹)?|재개발·재건축|최저임금|실업급여|사전투표|재개발|재건축|주택 공급|인공지능|AI 안경|보유세|투표 결과|투표하기/;
+  const titleHighlight = String(heading || '').match(keywords)?.[0];
+  const firstFact = String(lines[0] || '');
+  const numberWithUnit = firstFact.match(/\d[\d,.]*\s*(?:만\s*)?(?:명|가구|건|%|원)/)?.[0];
+  const detailHighlight = highlight || numberWithUnit;
+  const drawEmphasis = (rows, firstY, step, phrase) => {
+    let highlighted = false;
+    rows.forEach((line,i)=>{
+      const y=firstY+i*step;
+      const at = highlighted || !phrase ? -1 : line.indexOf(phrase);
+      ctx.fillStyle='#fff';
+      ctx.fillText(line,94,y);
+      if (at < 0) return;
+      ctx.fillStyle=theme.highlight;
+      ctx.fillText(phrase,94+ctx.measureText(line.slice(0,at)).width,y);
+      highlighted=true;
+    });
+  };
+  drawEmphasis(titleRows,textTop,titleHeight,titleHighlight || (!label ? titleRows[0] : ''));
+  ctx.font='600 31px '+fontFamily;
+  drawEmphasis(detailRows,textTop+titleRows.length*titleHeight+18,41,detailHighlight);
+  if(label) {
+    ctx.font='800 26px '+fontFamily; ctx.fillStyle=theme.highlight;
+    ctx.fillText(label,94,576);
+  }
   ctx.fillStyle='#123d35'; ctx.beginPath(); ctx.roundRect(960,30,80,80,20); ctx.fill();
   ctx.strokeStyle='#dcebdc'; ctx.lineWidth=4;
   ctx.beginPath(); ctx.moveTo(975,70); ctx.quadraticCurveTo(1000,43,1025,70); ctx.quadraticCurveTo(1000,97,975,70); ctx.stroke();
