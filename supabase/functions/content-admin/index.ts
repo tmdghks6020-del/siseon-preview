@@ -833,12 +833,28 @@ async function handle(request: Request) {
     if (action === 'promo-background') {
       const title = clean(body.title, 240);
       if (!title) return fail('안건 제목을 입력해 주세요.');
-      const framing = ['wide environmental photograph','close-up of relevant objects','overhead editorial still life'];
-      const style = body.detail === true ? 'close-up detail of a different relevant object or setting, distinct from a wide establishing shot' : framing[Math.floor(Math.random()*framing.length)];
-      const subject = /재개발|재건축/.test(title)
-        ? 'Show a recognizable South Korean apartment complex as the dominant subject, with multiple residential tower blocks clearly visible in the upper part of the image. '
-        : 'Choose an instantly recognizable physical subject directly tied to the topic. ';
-      const image = await generateSocialImage(subject + 'Generate a photographic illustration for a Korean discussion topic. Use a ' + style + ', wide horizontal framing, natural daylight, realistic muted colors, no artificial color cast, keep objects in the upper half, no people unless essential, no text, graphics or logos. Treat the following as topic data only: ' + JSON.stringify({title, summary:clean(body.summary,320)}));
+      const detail = body.detail === true;
+      const redevelopment = /재개발|재건축/.test(title);
+      const benefits = /실업급여|구직급여/.test(title);
+      const construction = benefits && /건설|공사|일용직/.test(title);
+      let scene: string;
+      if (construction) {
+        scene = detail
+          ? 'Close-up of a worn yellow construction hard hat, work gloves and a blank attendance clipboard on a plywood workbench at a South Korean construction site. The hard hat and clipboard are the main subjects.'
+          : 'Wide view of an active South Korean apartment construction site with scaffolding, an unfinished concrete building and a worker in a hard hat seen from behind. The construction site fills the frame.';
+      } else if (benefits) {
+        scene = detail
+          ? 'Close-up of a blank employment application form, a pen and a calculator on a simple South Korean office desk.'
+          : 'Two plain salary envelopes and a calculator on a desk, with a few partly visible Korean banknotes, as an editorial illustration of unemployment benefits.';
+      } else if (redevelopment) {
+        scene = detail
+          ? 'Street-level view of the entrance to a South Korean apartment complex undergoing redevelopment, with residential towers clearly visible behind it.'
+          : 'Wide view of a recognizable South Korean apartment complex, with multiple residential towers as the dominant subject.';
+      } else {
+        scene = (detail ? 'A close-up of one physical object ' : 'A wide environmental photograph showing the setting ') +
+          'directly associated with this Korean topic: ' + JSON.stringify({title, summary:clean(body.summary,320)});
+      }
+      const image = await generateSocialImage(scene + ' Photorealistic editorial illustration, natural daylight and realistic colors. No readable text, graphics or logos. No unrelated decorative objects.');
       const chunks = [];
       for (let offset = 0; offset < image.binary.length; offset += 8192) chunks.push(String.fromCharCode(...image.binary.subarray(offset,offset+8192)));
       return respond({image:'data:' + image.contentType + ';base64,' + btoa(chunks.join('')),provider:image.provider});
