@@ -84,24 +84,30 @@ async function previewPollPhoto(info, title, color, format, brief) {
 
 const searchedDrafts = new Set();
 
-function naverBlogPreview(data, images) {
+function naverBlogPreview(data, images, forClipboard = false) {
+  const title = '<h2 style="margin:0 0 16px;font-size:28px;font-weight:800;line-height:1.35;color:#2d211d">' + esc(data.title || '') + '</h2>';
+  const intro = naverParagraph(data.intro || '');
   const parts = String(data.body || '').split(/(\[사진 [123]\])/);
-  if (parts.length === 1) {
-    const sections = parts[0].split(/\n\s*\n/).filter(Boolean);
-    return [0,1,2].map(index => {
-      const start = Math.floor(index * sections.length / 3);
-      const end = Math.floor((index + 1) * sections.length / 3);
-      return naverPhotoBlock(images, index) + sections.slice(start,end).map(naverParagraph).join('');
-    }).join('');
+  const photo = index => forClipboard
+    ? '<p style="margin:18px 0;color:#6c5147">[사진 ' + (index + 1) + ']</p>'
+    : naverPhotoBlock(images, index);
+  const paragraphs = text => text.split(/\n\s*\n/).map(naverParagraph).join('');
+  if (parts.length === 1) return title + intro + paragraphs(parts[0]);
+  let article = title + intro + paragraphs(parts[0]);
+  for (let i=1; i<parts.length; i+=2) {
+    const slot = Number(parts[i].match(/[123]/)?.[0]) - 1;
+    const section = (parts[i+1] || '').trim();
+    const [first = '', ...remaining] = section.split('\n');
+    const heading = first.replace(/^#{1,6}\s*/, '').trim();
+    article += photo(slot);
+    if (heading) article += '<h3 style="margin:14px 0 10px;font-size:22px;line-height:1.4;font-weight:800;color:#963f2a">' + esc(heading) + '</h3>';
+    article += paragraphs(remaining.join('\n'));
   }
-  return parts.map(part => {
-    const slot = part.match(/^\[사진 ([123])\]$/);
-    return slot ? naverPhotoBlock(images, Number(slot[1])-1) : naverParagraph(part);
-  }).join('');
+  return article;
 }
 
 function naverParagraph(text) {
-  return text.trim() ? '<p style="white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7">' + esc(text.trim()) + '</p>' : '';
+  return text.trim() ? '<p style="white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7">' + esc(text.trim()).replace(/\*\*([^*\n]+)\*\*/g, '<strong style="font-weight:800;color:#7e3323">$1</strong>').replace(/(^|\n)([-•]\s*)([^:\n]{1,40}:)/g, '$1$2<strong style="font-weight:800;color:#7e3323">$3</strong>') + '</p>' : '';
 }
 
 function naverPhotoBlock(images, index) {
@@ -134,7 +140,7 @@ function renderContent(item) {
   const imagePreview = draftCards.length === 3
     ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:10px">' + draftCards.map((url,index) => `<figure style="margin:0"><img class="content-image-preview" src="${esc(url)}" alt="${['메인 상황','배경','선택 질문'][index]}"><figcaption>${['메인 상황','배경','선택 질문'][index]}</figcaption></figure>`).join('') + '</div>'
     : ['instagram','facebook','threads'].includes(item.platform) && imageUrl ? `<img class="content-image-preview" src="${esc(imageUrl)}" alt="홍보 이미지 시안" loading="lazy">` : '';
-  const preview = item.platform === 'naver_blog' ? '<strong>' + esc(item.content?.title || '') + '</strong>' + naverParagraph(item.content?.intro || '') + naverBlogPreview(item.content || {}, draftCards) : imagePreview + '<strong>' + esc(item.content?.title || '') + '</strong>' + naverParagraph(item.content?.body || item.content?.intro || '');
+  const preview = item.platform === 'naver_blog' ? naverBlogPreview(item.content || {}, draftCards) : imagePreview + '<strong>' + esc(item.content?.title || '') + '</strong>' + naverParagraph(item.content?.body || item.content?.intro || '');
   const publishedLink = item.externalPostUrl && !removed ? `<p><a href="${esc(item.externalPostUrl)}" target="_blank" rel="noopener noreferrer">게시물 확인 ↗</a></p>` : '';
   const scheduleLabel = item.scheduledAt ? `<p class="admin-footnote">게시 예약 시각: ${esc(new Date(item.scheduledAt).toLocaleString('ko-KR'))} · 작업 ${esc(item.jobStatus || '')} · 재시도 ${Number(item.retryCount || 0)}회</p>` : '';
   const buttons = [
@@ -520,7 +526,16 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
     else if (action === 'copy') {
       const item = contents.find((entry) => entry.id === id); const data = item?.content || {};
       const text = [data.title, data.intro, data.body, ...(!/\[사진 [123]\]/.test(data.body || '') ? data.headings || [] : []), ...(data.tags || []).map((tag) => `#${tag}`)].filter(Boolean).join('\n\n');
-      await navigator.clipboard.writeText(text); button.textContent = '복사했어요'; setTimeout(() => { button.textContent = '네이버용 복사'; button.disabled = false; }, 1400);
+      const plainText = text.replace(/^#{1,6}\s+/gm, '').replace(/\*\*([^*\n]+)\*\*/g, '$1');
+      try {
+        const rich = '<div style="font-size:16px;line-height:1.75;color:#2d211d">' + naverBlogPreview(data, [], true)
+          + naverParagraph((data.tags || []).map(tag => '#' + tag).join(' ')) + '</div>';
+        await navigator.clipboard.write([new ClipboardItem({
+          'text/html':new Blob([rich], {type:'text/html'}),
+          'text/plain':new Blob([plainText], {type:'text/plain'})
+        })]);
+      } catch { await navigator.clipboard.writeText(plainText); }
+      button.textContent = '복사했어요'; setTimeout(() => { button.textContent = '네이버용 복사'; button.disabled = false; }, 1400);
     }
 
     else if (action === 'search-photos') {
