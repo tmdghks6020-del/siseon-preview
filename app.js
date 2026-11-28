@@ -1798,7 +1798,7 @@ document.querySelector('#discoverTopicNews')?.addEventListener('click', async ev
   const status = document.querySelector('#topicGenerationStatus');
   button.disabled = true;
   const mode = document.querySelector('#topicGenerationMode').value;
-  status.textContent = mode === 'community' ? '실시간 베스트 1~10페이지에서 토론 소재를 찾고 있습니다…' : '국내 언론사의 최근 보도를 수집하고 있습니다…';
+  status.textContent = mode === 'community' ? '실시간 베스트에서 토론 소재를 찾고 공개 댓글을 검토하고 있습니다…' : '국내 언론사의 최근 보도를 수집하고 있습니다…';
   try {
     const result = await window.SISEON_TOPIC_ADMIN.discover(document.querySelector('#topicGenerationKeyword').value, document.querySelector('#topicGenerationField').value, mode);
     if (mode !== document.querySelector('#topicGenerationMode').value) return;
@@ -1807,8 +1807,14 @@ document.querySelector('#discoverTopicNews')?.addEventListener('click', async ev
     finishTopicSelection.disabled = true;
     showTopicSelection(true);
     rssDirections.replaceChildren();
+    const commentPreview = item => {
+      const review = item.commentReview;
+      if (mode !== 'community') return '';
+      if (review?.status === 'ready') return `<small><strong>질문 방향</strong> ${escapeAdminHtml(review.direction)}</small><small>${escapeAdminHtml(review.views.join(' / '))} · 공개 댓글 ${review.reviewed}개 검토</small>`;
+      return '<small>' + (review?.status === 'no_split' ? '공개 댓글에서 뚜렷한 대립을 확인하지 못했습니다.' : '공개 원문이나 댓글을 충분히 읽지 못했습니다.') + '</small>';
+    };
     const rows = discoveredNews.map((item, index) =>
-      `<div class="topic-news-choice"><label><input type="checkbox" value="${index}"><span><strong>${escapeAdminHtml(item.title)}</strong><small>${escapeAdminHtml(item.source)}${mode === 'community' && item.description ? ' · ' + escapeAdminHtml(item.description) : ''}</small></span></label><a href="${escapeAdminHtml(item.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeAdminHtml(item.title)} 원문">원문 ↗</a></div>`
+      `<div class="topic-news-choice"><label><input type="checkbox" value="${index}"><span><strong>${escapeAdminHtml(item.title)}</strong><small>${escapeAdminHtml(item.source)}${mode === 'community' && item.description ? ' · ' + escapeAdminHtml(item.description) : ''}</small>${commentPreview(item)}</span></label><a href="${escapeAdminHtml(item.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeAdminHtml(item.title)} 원문">원문 ↗</a></div>`
     );
     rssResults.innerHTML = rows.length
       ? rows.slice(0, 8).join('') + (rows.length > 8 ? `<details><summary>주제 ${rows.length - 8}개 더 보기</summary>${rows.slice(8).join('')}</details>` : '')
@@ -1834,6 +1840,9 @@ rssResults?.addEventListener('change', event => {
     group.innerHTML = `<legend>${escapeAdminHtml(article.title)}</legend><label>투표 제목<input data-draft-title maxlength="240" placeholder="비워두면 AI가 제안"></label><label>질문 방향<textarea data-draft-direction maxlength="600" rows="2"></textarea></label>`;
     selectedTopicNews.set(index, { article, group });
     rssDirections.append(group);
+    if (article.commentReview?.status === 'ready') {
+      group.querySelector('[data-draft-direction]').value = article.commentReview.direction;
+    }
   } else {
     selectedTopicNews.get(index)?.group.remove();
     selectedTopicNews.delete(index);
