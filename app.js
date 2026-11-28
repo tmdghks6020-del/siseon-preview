@@ -1797,21 +1797,23 @@ document.querySelector('#discoverTopicNews')?.addEventListener('click', async ev
   const button = event.currentTarget;
   const status = document.querySelector('#topicGenerationStatus');
   button.disabled = true;
-  status.textContent = '국내 언론사의 최근 보도를 수집하고 있습니다…';
+  const mode = document.querySelector('#topicGenerationMode').value;
+  status.textContent = mode === 'community' ? '실시간 베스트 1~10페이지에서 토론 소재를 찾고 있습니다…' : '국내 언론사의 최근 보도를 수집하고 있습니다…';
   try {
-    const result = await window.SISEON_TOPIC_ADMIN.discover(document.querySelector('#topicGenerationKeyword').value, document.querySelector('#topicGenerationField').value);
+    const result = await window.SISEON_TOPIC_ADMIN.discover(document.querySelector('#topicGenerationKeyword').value, document.querySelector('#topicGenerationField').value, mode);
+    if (mode !== document.querySelector('#topicGenerationMode').value) return;
     discoveredNews = result.articles || [];
     selectedTopicNews.clear();
     finishTopicSelection.disabled = true;
     showTopicSelection(true);
     rssDirections.replaceChildren();
     const rows = discoveredNews.map((item, index) =>
-      `<div class="topic-news-choice"><label><input type="checkbox" value="${index}"><span><strong>${escapeAdminHtml(item.title)}</strong><small>${escapeAdminHtml(item.source)}</small></span></label><a href="${escapeAdminHtml(item.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeAdminHtml(item.title)} 원문">원문 ↗</a></div>`
+      `<div class="topic-news-choice"><label><input type="checkbox" value="${index}"><span><strong>${escapeAdminHtml(item.title)}</strong><small>${escapeAdminHtml(item.source)}${mode === 'community' && item.description ? ' · ' + escapeAdminHtml(item.description) : ''}</small></span></label><a href="${escapeAdminHtml(item.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeAdminHtml(item.title)} 원문">원문 ↗</a></div>`
     );
     rssResults.innerHTML = rows.length
       ? rows.slice(0, 8).join('') + (rows.length > 8 ? `<details><summary>주제 ${rows.length - 8}개 더 보기</summary>${rows.slice(8).join('')}</details>` : '')
       : '<p>조건에 맞는 기사가 없습니다. 검색어를 비우거나 바꿔 다시 수집해 주세요.</p>';
-    status.textContent = `최근 기사 ${discoveredNews.length}건 · ${(result.warnings || []).join(' · ')}`;
+    status.textContent =  `${mode === 'community' ? '토론 소재' : '최근 기사'} ${discoveredNews.length}건 · ${(result.warnings || []).join(' · ')}`;
   } catch (error) { status.textContent = '수집 실패: ' + error.message; }
   finally { button.disabled = false; }
 });
@@ -1844,7 +1846,7 @@ document.querySelector('#generateTopicCandidatesButton')?.addEventListener('clic
   const status = document.querySelector('#topicGenerationStatus');
   const api = window.SISEON_TOPIC_ADMIN;
   if (!api) { status.textContent = '관리자 Supabase 연결을 먼저 확인해 주세요.'; return; }
-  const newsMode = document.querySelector('#topicGenerationMode').value === 'news';
+  const newsMode = ['news','community'].includes(document.querySelector('#topicGenerationMode').value);
   if (newsMode && !selectedTopicNews.size) { status.textContent = '최근 보도를 수집한 뒤 주제를 하나 이상 선택해 주세요.'; return; }
   const selectedNews = newsMode ? [...selectedTopicNews.values()].map(({article, group}) => ({
     ...article, draftTitle: group.querySelector('[data-draft-title]').value,
@@ -2864,12 +2866,19 @@ document.querySelector('#addVoteOptionButton').addEventListener('click',()=>{
   document.querySelector('#draftVoteOptions .topic-option-row:last-child input').focus();
 });
 document.querySelector('#topicGenerationMode').addEventListener('change',event=>{
-  const material=['material','community'].includes(event.target.value);
-  const news = event.target.value === 'news';
+  const material = event.target.value === 'material';
+  const news = ['news','community'].includes(event.target.value);
+  discoveredNews = [];
+  selectedTopicNews.clear();
+  finishTopicSelection.disabled = true;
+  rssDirections.replaceChildren();
+  rssResults.textContent = '1단계에서 수집하면 여기에 선택 목록이 표시됩니다.';
+  showTopicSelection(true);
+  document.querySelector('#discoverTopicNews').textContent = event.target.value === 'community' ? '커뮤니티 소재 수집' : '최근 보도 주제 수집';
   document.querySelector('#topicRssSteps').classList.toggle('hidden', !news);
   document.querySelector('#discoverTopicNews').classList.toggle('hidden', !news);
   document.querySelector('#topicSourceInputs').classList.toggle('hidden',!material);
-  document.querySelector('#topicGenerationStatus').textContent=event.target.value==='fun' ? '뉴스 출처 없이 재미 투표를 만듭니다. 가상 표시를 붙이고 관리자가 직접 승인합니다.' : material ? '참고 링크와 핵심 내용을 입력하세요. 원문 자동 수집은 하지 않습니다. 관리자가 직접 확인 후 승인합니다.' : '공개 RSS에서 최근 보도를 찾고 주제를 선택하세요. 정치·재판·증시 주제는 관리자가 직접 승인합니다.';
+  document.querySelector('#topicGenerationStatus').textContent=event.target.value==='fun' ? '뉴스 출처 없이 재미 투표를 만듭니다. 가상 표시를 붙이고 관리자가 직접 승인합니다.' : material ? '참고 링크와 핵심 내용을 입력하세요. 원문 자동 수집은 하지 않습니다. 관리자가 직접 확인 후 승인합니다.' : event.target.value === 'community' ? '디시인사이드 실시간 베스트에서 토론 소재를 수집하고 선택하세요.' : '공개 RSS에서 최근 보도를 찾고 주제를 선택하세요. 정치·재판·증시 주제는 관리자가 직접 승인합니다.';
 });
 
 
