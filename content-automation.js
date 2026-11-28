@@ -255,7 +255,7 @@ async function init() {
         window.dispatchEvent(new CustomEvent('siseon-topic-candidates-loaded', { detail: { candidates: mapped, scheduled: scheduled || [] } }));
         return mapped;
       },
-      async discover(keyword) { return call('topics-discover', { keyword }); },
+      async discover(keyword, topicField) { return call('topics-discover', { keyword, topicField }); },
       async generate(payload) {
         const result = await call('topics-generate', payload);
         const candidates = await this.list();

@@ -1799,7 +1799,7 @@ document.querySelector('#discoverTopicNews')?.addEventListener('click', async ev
   button.disabled = true;
   status.textContent = '국내 언론사의 최근 보도를 수집하고 있습니다…';
   try {
-    const result = await window.SISEON_TOPIC_ADMIN.discover(document.querySelector('#topicGenerationKeyword').value);
+    const result = await window.SISEON_TOPIC_ADMIN.discover(document.querySelector('#topicGenerationKeyword').value, document.querySelector('#topicGenerationField').value);
     discoveredNews = result.articles || [];
     selectedTopicNews.clear();
     finishTopicSelection.disabled = true;
