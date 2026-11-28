@@ -1372,7 +1372,7 @@ function renderIssueContent() {
   detail.innerHTML = `
     <div class="issue-meta"><span class="category">${escapeHtml(issue.category)}</span><span>${activeIssueIsArchived ? `${activeIssueIsReadOnly ? '지난 투표 · 읽기 전용' : '지난 투표 · 댓글 가능'}${archivedDate ? ` · 보관 ${archivedDate}` : ''}` : `투표 마감 ${formatPollDeadline(issue)}`}</span><span>·</span><span>읽는 시간 3분</span></div>
     <h1>${escapeHtml(issue.title)}</h1>${renderReadableParagraphs(issue.intro, 'issue-intro')}
-    <section class="facts-card"><div class="card-eyebrow">${issue.isHypothetical ? '가상 상황 · 선택의 조건' : '배경과 확인할 내용'}</div><h2>공통으로 확인할 내용</h2><ul>${facts}</ul><p>확인 가능한 사실과 각 입장의 해석을 구분합니다. ${safeHttpsUrl(issue.sourceUrl) ? `<a class="candidate-source" href="${escapeHtml(safeHttpsUrl(issue.sourceUrl))}" target="_blank" rel="noopener noreferrer">${escapeHtml(issue.source)} ↗</a>` : escapeHtml(issue.source)}</p></section>
+    <section class="facts-card"><div class="card-eyebrow">${issue.isHypothetical ? '가상 상황 · 선택의 조건' : '안건 안내'}</div><h2>배경</h2><ul>${facts}</ul><p>확인 가능한 사실과 각 입장의 해석을 구분합니다. ${safeHttpsUrl(issue.sourceUrl) ? `<a class="candidate-source" href="${escapeHtml(safeHttpsUrl(issue.sourceUrl))}" target="_blank" rel="noopener noreferrer">${escapeHtml(issue.source)} ↗</a>` : escapeHtml(issue.source)}</p></section>
     <h2 class="subhead">선택 전에 읽어볼 이유</h2>${issue.aiPerspectives ? '<p>AI 작성 관점 · 운영자 검토</p>' : ''}<div class="arguments">${argumentCards(issue.forArguments, 'for', options[0] || '첫 번째 관점')}${argumentCards(issue.againstArguments, 'against', options[1] || '두 번째 관점')}</div>
     <section class="vote-card"><div class="card-eyebrow">${activeIssueIsArchived ? 'ARCHIVE RESULTS' : 'YOUR VOICE'}</div><h2>${activeIssueIsArchived ? '지난 투표 결과' : '당신의 생각은 어떤가요?'}</h2><p>${activeIssueIsArchived ? '투표가 종료된 주제의 결과와 토론 기록입니다.' : '투표하면 결과와 토론이 열립니다. 마감 전까지 선택을 한 번 바꿀 수 있어요.'}</p><div class="vote-options ${activeIssueIsArchived ? 'hidden' : ''}">${options.map((option,index)=>`<button data-vote="${escapeHtml(option)}" class="${index === 0 ? 'for' : index === 1 ? 'against' : 'hold'}"><span>${index+1}</span> ${escapeHtml(option)}</button>`).join('')}</div><div id="voteMessage" class="vote-message">${activeIssueIsArchived ? '지난 투표 결과와 토론을 보고 있습니다.' : '투표 후 결과와 토론이 열립니다.'}</div><div id="postVoteResults" class="hidden"></div></section>
     <section class="discussion hidden" id="discussionSection"><div class="discussion-title"><div class="card-eyebrow">COMMUNITY VOICES</div><h2>이 이슈의 토론</h2><p class="discussion-demo-note">입장 글과 질문·자료·정정 요청을 나누어 살펴보세요.</p></div><div class="tabs"><button class="active" data-discussion-filter="all">전체</button>${standard ? '<button data-discussion-filter="for">찬성 입장</button><button data-discussion-filter="against">반대 입장</button>' : ''}<button data-discussion-filter="question">질문 · 자료</button><button data-discussion-filter="correction">정정 요청</button></div><div id="discussionPosts" class="discussion-post-list"></div><button class="primary-button write-button" id="writeButton">의견 남기기 <span>→</span></button></section>`;
@@ -1702,7 +1702,7 @@ function updateAdminPreview() {
   document.querySelector('#previewFor').textContent = [draft.voteOptions[0], draft.forText].filter(Boolean).join(' · ');
   document.querySelector('#previewAgainst').textContent = [draft.voteOptions[1], draft.againstText].filter(Boolean).join(' · ');
   const facts = document.querySelector('#previewFacts');
-  facts.replaceChildren(...(draft.facts.length ? draft.facts : ['확인된 사실을 입력해 주세요.']).map((fact) => {
+  facts.replaceChildren(...(draft.facts.length ? draft.facts : ['배경을 입력해 주세요.']).map((fact) => {
     const item = document.createElement('li'); item.textContent = fact; return item;
   }));
   const source = document.querySelector('#previewSource');
@@ -2448,7 +2448,7 @@ document.querySelector('#publishDraftNowButton').addEventListener('click', async
   const sourceUrl = safeHttpsUrl(draft.sourceUrl) || (draft.dataSignals?.generationMode === 'fun' && !String(draft.sourceUrl || '').trim());
   const factsValid = draft.facts.length >= 2 && draft.facts.length <= 3;
   if (missing || !sourceUrl || !factsValid) {
-    const reason = missing ? `${missing[0]}을 입력해 주세요.` : !factsValid ? '확인된 사실을 2~3개 입력해 주세요.' : '출처 링크는 https:// 주소여야 합니다.';
+    const reason = missing ? `${missing[0]}을 입력해 주세요.` : !factsValid ? '배경을 2~3개 입력해 주세요.' : '출처 링크는 https:// 주소여야 합니다.';
     document.querySelector('#draftStatus').textContent = `즉시 등록 전 확인: ${reason}`;
     window.alert(`안건을 즉시 등록하기 전에 확인해 주세요.\n\n${reason}`);
     const focusName = missing ? ({ '카테고리': 'category', '투표 제목': 'title', '주제 설명': 'intro', '출처 이름과 날짜': 'source', '찬성 관점': 'forText', '반대 관점': 'againstText' })[missing[0]] : (!factsValid ? 'facts' : 'sourceUrl');
