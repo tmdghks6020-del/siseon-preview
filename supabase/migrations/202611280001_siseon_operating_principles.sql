@@ -113,5 +113,14 @@ create trigger sync_suggestion_candidate_decision after update of status,decisio
 for each row execute function private.sync_suggestion_candidate_decision();
 grant select (changed_at) on public.topic_votes to authenticated;
 
+-- The proposal board closes at day 15. Qualified proposals remain in the
+-- editorial queue and are visible to admins after the cutoff.
+drop policy suggestions_public_read on public.topic_suggestions;
+create policy suggestions_public_read on public.topic_suggestions for select
+using (
+  public.is_siseon_admin()
+  or (status in ('pending','approved') and created_at+interval '15 days'>now())
+);
+
 select cron.schedule('siseon-finish-member-suggestions','* * * * *','select private.finish_member_suggestions()');
 commit;
