@@ -219,7 +219,7 @@
                   <label for="draftTitle">나라면 어떻게 할까? <small>상황과 선택이 드러나는 질문</small></label><input id="draftTitle" name="title" maxlength="240" placeholder="예: 퇴근 후 상사 카톡, 지금 답할까 내일 답할까?" required />
                   <label for="draftImageKeywords">홍보 이미지 키워드 <small>사진에 담을 대상 최대 5개를 쉼표로 구분</small></label><input id="draftImageKeywords" name="imageKeywords" maxlength="310" placeholder="예: 라면, 통조림, 비상식량" />
                   <label for="draftIntro">주제 설명 <small>배경과 쟁점을 짧은 문단으로 구분</small></label><textarea id="draftIntro" name="intro" rows="3" maxlength="3000" placeholder="무슨 일이 있었는지 설명합니다.&#10;&#10;어떤 점을 토론할지 질문으로 정리합니다." required></textarea>
-                  <label for="draftFacts">확인된 사실 <small>한 줄에 한 항목</small></label><textarea id="draftFacts" name="facts" rows="4" required></textarea>
+                  <label for="draftFacts">배경 <small>선택에 영향을 주는 상황을 한 줄에 하나씩 적고, 가정은 표시해 주세요.</small></label><textarea id="draftFacts" name="facts" rows="4" required></textarea>
                   <label for="draftSource">출처 이름과 날짜</label><input id="draftSource" name="source" required />
                   <label for="draftSourceUrl">참고 링크 · 재미 투표는 생략 가능</label><input id="draftSourceUrl" name="sourceUrl" type="url" /><fieldset class="topic-option-editor"><legend>투표 선택지</legend><p>2~10개 · 한 회원은 하나만 선택합니다. 공개 후에는 선택지를 변경할 수 없습니다.</p><div id="draftVoteOptions"></div><button type="button" id="addVoteOptionButton">+ 선택지 추가</button></fieldset>
                   <label for="draftFor">첫 번째 선택의 이유 <small>한 줄에 이유 하나씩</small></label><textarea id="draftFor" name="forText" rows="4" maxlength="1400" placeholder="- 첫 번째 주장과 짧은 이유&#10;- 두 번째 주장과 짧은 이유" required></textarea>
@@ -227,7 +227,7 @@
                   <div class="admin-actions"><button type="button" class="admin-secondary" id="rejectDraftButton">반려</button><button type="button" class="admin-secondary" id="saveDraftButton">수정 저장</button><button type="button" class="admin-secondary" id="publishDraftNowButton">즉시 등록</button><button type="button" class="admin-approve" id="approveDraftButton">예약 승인 <span>→</span></button></div>
                 </form>
               </div>
-              <aside class="admin-preview-panel"><span class="section-kicker">PUBLIC PREVIEW</span><h2>이용자 화면 미리보기</h2><article class="admin-preview-card"><span class="category" id="previewCategory"></span><h3 id="previewTitle"></h3><p id="previewIntro"></p><div class="preview-fact"><strong>먼저 확인된 사실</strong><ul id="previewFacts"></ul><a id="previewSource" target="_blank" rel="noopener noreferrer"></a></div><div class="preview-stance for"><strong>찬성 관점</strong><p id="previewFor"></p></div><div class="preview-stance against"><strong>반대 관점</strong><p id="previewAgainst"></p></div></article><p class="preview-guidance">출처를 확인하고 양쪽 주장이 비슷한 수준으로 정리됐는지 살핀 뒤 승인해 주세요.</p><p class="preview-recency" id="previewRecency"></p></aside>
+              <aside class="admin-preview-panel"><span class="section-kicker">PUBLIC PREVIEW</span><h2>이용자 화면 미리보기</h2><article class="admin-preview-card"><span class="category" id="previewCategory"></span><h3 id="previewTitle"></h3><p id="previewIntro"></p><div class="preview-fact"><strong>배경</strong><ul id="previewFacts"></ul><a id="previewSource" target="_blank" rel="noopener noreferrer"></a></div><div class="preview-stance for"><strong>찬성 관점</strong><p id="previewFor"></p></div><div class="preview-stance against"><strong>반대 관점</strong><p id="previewAgainst"></p></div></article><p class="preview-guidance">출처를 확인하고 양쪽 주장이 비슷한 수준으로 정리됐는지 살핀 뒤 승인해 주세요.</p><p class="preview-recency" id="previewRecency"></p></aside>
             </section>
             <section class="admin-history"><div class="admin-section-title"><div><span class="section-kicker">DECISION LOG</span><h2>승인·반려 기록</h2></div></div><div id="editorialHistory" class="editorial-history"></div></section>
           </section>
@@ -410,7 +410,7 @@
   <script src="ai-candidates.js"></script>
   <script src="supabase-config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=poll-operating-principles"></script>
+  <script src="app.js?v=topic-background"></script>
   <script type="module" src="content-automation.js?v=community-comment-review"></script>
 <style>
 .admin-demo-notice { display: block; }
