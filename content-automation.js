@@ -155,6 +155,7 @@ function renderContent(item) {
     ['review_required', 'approved'].includes(item.status) ? '<button type="button" data-content-action="reject" data-id="' + esc(item.id) + '">반려</button>' : '',
     item.status === 'approved' && item.platform === 'naver_blog' ? '<label class="content-post-url">네이버 게시물 주소<input type="url" data-post-url="' + esc(item.id) + '" placeholder="수동 게시 후 URL 입력"></label><button type="button" data-content-action="manual-publish" data-id="' + esc(item.id) + '">게시 완료 기록</button>' : '',
     item.platform === 'naver_blog' ? '<button type="button" data-content-action="copy" data-id="' + esc(item.id) + '">네이버용 복사</button>' : '',
+    item.platform === 'naver_blog' ? '<button type="button" data-content-action="save-images" data-id="' + esc(item.id) + '">이미지 저장</button>' : '',
     item.status === 'approved' && item.platform !== 'naver_blog' ? '<label class="content-schedule">게시 예약<input type="datetime-local" data-schedule="' + esc(item.id) + '"></label><button type="button" data-content-action="publish" data-id="' + esc(item.id) + '">예약 / 지금 게시</button>' : '',
     item.status === 'failed' ? '<button type="button" data-content-action="retry" data-id="' + esc(item.id) + '">재시도</button>' : ''
   ].filter(Boolean).join('');
@@ -536,6 +537,42 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
         })]);
       } catch { await navigator.clipboard.writeText(plainText); }
       button.textContent = '복사했어요'; setTimeout(() => { button.textContent = '네이버용 복사'; button.disabled = false; }, 1400);
+    }
+
+    else if (action === 'save-images') {
+      try {
+        const item = contents.find(entry => entry.id === id);
+        const urls = item?.content?.imageUrls;
+        if (!Array.isArray(urls) || urls.length !== 3 || !urls.every(url => typeof url === 'string' && /^https:\/\//i.test(url))) {
+          throw new Error('미리보기에 사진 3장을 먼저 생성해 주세요.');
+        }
+        if (!window.showDirectoryPicker) throw new Error('폴더 저장을 지원하는 Chrome 또는 Edge에서 열어 주세요.');
+        const parent = await window.showDirectoryPicker({ id: 'siseon-naver-images', mode: 'readwrite', startIn: 'pictures' });
+        const images = await Promise.all(urls.map(async url => {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error('사진을 불러오지 못했습니다.');
+          const blob = await response.blob();
+          const extension = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[blob.type];
+          if (!extension || !blob.size) throw new Error('저장할 수 있는 이미지 형식이 아닙니다.');
+          return { blob, extension };
+        }));
+        const title = String(item.content.title || item.issueTitle || '네이버 블로그').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim().slice(0, 100).replace(/[. ]+$/, '');
+        const name = /^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)/i.test(title) ? '_' + title : title || '네이버 블로그';
+        const folder = await parent.getDirectoryHandle(name, { create: true });
+        const labels = ['메인 상황', '배경', '선택 질문'];
+        for (const [index, { blob, extension }] of images.entries()) {
+          const file = await folder.getFileHandle((index + 1) + '-' + labels[index] + '.' + extension, { create: true });
+          const writer = await file.createWritable();
+          await writer.write(blob);
+          await writer.close();
+        }
+        button.textContent = '3장 저장 완료';
+        setTimeout(() => { button.textContent = '이미지 저장'; }, 1600);
+      } catch (error) {
+        if (error.name !== 'AbortError') throw error;
+      } finally {
+        button.disabled = false;
+      }
     }
 
     else if (action === 'search-photos') {
