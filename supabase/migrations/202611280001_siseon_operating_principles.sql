@@ -99,7 +99,7 @@ create policy interests_self_delete on public.topic_suggestion_interests for del
  user_id=auth.uid() and exists(select 1 from public.topic_suggestions s where s.id=suggestion_id and s.status='pending' and now()<s.created_at+interval '15 days')
 );
 create or replace function private.sync_suggestion_candidate_decision()
-returns trigger language plpgsql security definer set search_path='' as $
+returns trigger language plpgsql security definer set search_path='' as $$
 begin
  if new.status in ('approved','rejected','not_selected') then
    update public.topic_suggestions set
@@ -108,7 +108,7 @@ begin
    where candidate_id=new.id;
  end if;
  return new;
-end $;
+end $$;
 create trigger sync_suggestion_candidate_decision after update of status,decision_note on public.topic_candidates
 for each row execute function private.sync_suggestion_candidate_decision();
 grant select (changed_at) on public.topic_votes to authenticated;
