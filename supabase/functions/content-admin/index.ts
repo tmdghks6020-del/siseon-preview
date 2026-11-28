@@ -300,7 +300,168 @@ const topicNewsFeeds = [
   ['전자신문', 'https://www.etnews.com/rss/all.xml']
 ];
 
-async function collectTopicNews(keyword = '') {
+const newsFieldTerms: Record<string, string[]> = {
+  "사회·복지": [
+    "복지",
+    "기초생활",
+    "돌봄",
+    "장애인",
+    "고령화"
+  ],
+  "경제·금융": [
+    "경제",
+    "금융",
+    "물가",
+    "금리",
+    "환율",
+    "은행",
+    "대출"
+  ],
+  "노동·직장": [
+    "노동",
+    "직장",
+    "고용",
+    "임금",
+    "실업급여",
+    "노조"
+  ],
+  "법·권리": [
+    "법원",
+    "재판",
+    "판결",
+    "인권",
+    "소송"
+  ],
+  "교육": [
+    "교육",
+    "학교",
+    "교사",
+    "입시",
+    "대학"
+  ],
+  "건강·의료": [
+    "건강",
+    "의료",
+    "병원",
+    "질병",
+    "환자"
+  ],
+  "환경·기후": [
+    "환경",
+    "기후",
+    "탄소",
+    "미세먼지",
+    "재활용"
+  ],
+  "기술·AI": [
+    "인공지능",
+    "생성형",
+    "반도체",
+    "로봇",
+    "기술",
+    "챗GPT"
+  ],
+  "문화·연예": [
+    "문화",
+    "연예",
+    "공연",
+    "영화",
+    "드라마",
+    "가수"
+  ],
+  "스포츠": [
+    "스포츠",
+    "야구",
+    "축구",
+    "농구",
+    "배구",
+    "올림픽"
+  ],
+  "주식·가상자산": [
+    "주식",
+    "증시",
+    "코스피",
+    "코스닥",
+    "비트코인",
+    "가상자산"
+  ],
+  "소비·유통": [
+    "소비",
+    "유통",
+    "할인",
+    "대형마트",
+    "편의점"
+  ],
+  "주거·부동산": [
+    "주거",
+    "부동산",
+    "아파트",
+    "전세",
+    "월세",
+    "재개발"
+  ],
+  "요리·식품": [
+    "요리",
+    "식품",
+    "먹거리",
+    "식재료",
+    "레시피"
+  ],
+  "여행": [
+    "여행",
+    "관광",
+    "숙박",
+    "항공권"
+  ],
+  "자동차·교통": [
+    "자동차",
+    "교통",
+    "전기차",
+    "버스",
+    "지하철"
+  ],
+  "반려동물": [
+    "반려동물",
+    "반려견",
+    "반려묘",
+    "강아지",
+    "고양이",
+    "펫보험",
+    "동물병원",
+    "유기견",
+    "유기동물"
+  ],
+  "가족·육아": [
+    "가족",
+    "육아",
+    "출산",
+    "보육",
+    "어린이집"
+  ],
+  "관계·고민": [
+    "인간관계",
+    "갈등",
+    "상담",
+    "이웃"
+  ],
+  "취미·여가": [
+    "취미",
+    "여가",
+    "캠핑",
+    "독서",
+    "등산"
+  ],
+  "정치·정책": [
+    "정치",
+    "국회",
+    "대통령",
+    "정당",
+    "정책"
+  ],
+  "기타": []
+};
+
+async function collectTopicNews(keyword = '', field = '전체 분야') {
   const results = await Promise.allSettled(topicNewsFeeds.map(async ([source, url]) => {
     const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (!response.ok) throw new Error('HTTP ' + response.status);
@@ -324,7 +485,15 @@ async function collectTopicNews(keyword = '') {
     const titleKey = article.title.toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
     if (!unique.has(titleKey)) unique.set(titleKey, article);
   }
-  return { articles: [...unique.values()].slice(0, 24), warnings };
+  const fieldTerms = newsFieldTerms[field] || [];
+  const score = (article: (typeof entries)[number]) => fieldTerms.reduce((total, term) =>
+    total + (article.title.includes(term) ? 3 : article.description.includes(term) ? 1 : 0), 0);
+  const ranked = [...unique.values()].map(article => ({ article, score: score(article) }));
+  ranked.sort((a, b) => b.score - a.score);
+  if (fieldTerms.length && !ranked.some(item => item.score > 0)) {
+    warnings.push(`최근 24시간 내 ${field} 관련 기사가 RSS에서 확인되지 않아 다른 분야의 최신 기사를 표시합니다.`);
+  }
+  return { articles: ranked.slice(0, 24).map(item => item.article), warnings };
 }
 
 async function generateTopics(input: Record<string, any>, actorId: string) {
@@ -348,7 +517,7 @@ async function generateTopics(input: Record<string, any>, actorId: string) {
         description: clean(article?.description, 500)
       })).filter(article => article.title && article.url);
     } else {
-      const collected = await collectTopicNews(keyword);
+      const collected = await collectTopicNews(keyword, selectedField);
       headlines = collected.articles;
       discoveryWarnings.push(...collected.warnings);
     }
@@ -665,7 +834,7 @@ async function handle(request: Request) {
       return respond({ candidates: data || [], scheduled: scheduled || [], guidelines: { version: TOPIC_GUIDELINES_VERSION, text: TOPIC_GUIDELINES } });
     }
     if (action === 'topics-discover') {
-      return respond(await collectTopicNews(clean(body.keyword, 160)));
+      return respond(await collectTopicNews(clean(body.keyword, 160), clean(body.topicField, 60)));
     }
     if (action === 'topics-generate') {
       const result = await generateTopics(body, actor.id);
