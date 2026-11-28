@@ -1939,7 +1939,7 @@ function renderAdminPage(page = currentAdminPage) {
     const issue = issueId && getIssueData(issueId);
     if (!issue) { renderAdminPage('polls'); return; }
     content.innerHTML = `<button class="table-action" type="button" data-admin-page="polls">← 투표 관리</button>
-      ${header('PROMOTION', escapeAdminHtml(issue.title), '이 안건의 채널별 초안, 예약과 발행 결과를 확인합니다.', `<button class="primary-button" type="button" data-poll-promo="${escapeAdminHtml(issueId)}">새 홍보 초안 만들기</button> <button class="table-action" type="button" data-poll-naver-draft="${escapeAdminHtml(issueId)}">네이버 블로그 초안 만들기</button>`)}
+      ${header('PROMOTION', escapeAdminHtml(issue.title), '이 안건의 채널별 초안, 예약과 발행 결과를 확인합니다.', `<button class="primary-button" type="button" data-poll-promo="${escapeAdminHtml(issueId)}">새 홍보 초안 만들기</button> <button class="primary-button" type="button" data-poll-naver-draft="${escapeAdminHtml(issueId)}">네이버 블로그 초안 만들기</button>`)}
       <section class="admin-card"><div id="contentAutomationRoot" data-issue-id="${escapeAdminHtml(issueId)}"><p>홍보 기록을 불러오는 중입니다.</p></div></section>`;
     window.SISEON_CONTENT_AUTOMATION?.loadContents();
     return;
