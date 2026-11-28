@@ -1372,7 +1372,7 @@ function renderIssueContent() {
   detail.innerHTML = `
     <div class="issue-meta"><span class="category">${escapeHtml(issue.category)}</span><span>${activeIssueIsArchived ? `${activeIssueIsReadOnly ? '지난 투표 · 읽기 전용' : '지난 투표 · 댓글 가능'}${archivedDate ? ` · 보관 ${archivedDate}` : ''}` : `투표 마감 ${formatPollDeadline(issue)}`}</span><span>·</span><span>읽는 시간 3분</span></div>
     <h1>${escapeHtml(issue.title)}</h1>${renderReadableParagraphs(issue.intro, 'issue-intro')}
-    <section class="facts-card"><div class="card-eyebrow">${issue.isHypothetical ? '가상 상황 · 선택의 조건' : '안건 안내'}</div><h2>배경</h2><ul>${facts}</ul><p>확인 가능한 사실과 각 입장의 해석을 구분합니다. ${safeHttpsUrl(issue.sourceUrl) ? `<a class="candidate-source" href="${escapeHtml(safeHttpsUrl(issue.sourceUrl))}" target="_blank" rel="noopener noreferrer">${escapeHtml(issue.source)} ↗</a>` : escapeHtml(issue.source)}</p></section>
+    <section class="facts-card"><div class="card-eyebrow">${issue.isHypothetical ? '가상 상황 · 선택의 조건' : '안건 안내'}</div><h2>배경</h2><ul>${facts}</ul></section>
     <h2 class="subhead">선택 전에 읽어볼 이유</h2>${issue.aiPerspectives ? '<p>AI 작성 관점 · 운영자 검토</p>' : ''}<div class="arguments">${argumentCards(issue.forArguments, 'for', options[0] || '첫 번째 관점')}${argumentCards(issue.againstArguments, 'against', options[1] || '두 번째 관점')}</div>
     <section class="vote-card"><div class="card-eyebrow">${activeIssueIsArchived ? 'ARCHIVE RESULTS' : 'YOUR VOICE'}</div><h2>${activeIssueIsArchived ? '지난 투표 결과' : '당신의 생각은 어떤가요?'}</h2><p>${activeIssueIsArchived ? '투표가 종료된 주제의 결과와 토론 기록입니다.' : '투표하면 결과와 토론이 열립니다. 마감 전까지 선택을 한 번 바꿀 수 있어요.'}</p><div class="vote-options ${activeIssueIsArchived ? 'hidden' : ''}">${options.map((option,index)=>`<button data-vote="${escapeHtml(option)}" class="${index === 0 ? 'for' : index === 1 ? 'against' : 'hold'}"><span>${index+1}</span> ${escapeHtml(option)}</button>`).join('')}</div><div id="voteMessage" class="vote-message">${activeIssueIsArchived ? '지난 투표 결과와 토론을 보고 있습니다.' : '투표 후 결과와 토론이 열립니다.'}</div><div id="postVoteResults" class="hidden"></div></section>
     <section class="discussion hidden" id="discussionSection"><div class="discussion-title"><div class="card-eyebrow">COMMUNITY VOICES</div><h2>이 이슈의 토론</h2><p class="discussion-demo-note">입장 글과 질문·자료·정정 요청을 나누어 살펴보세요.</p></div><div class="tabs"><button class="active" data-discussion-filter="all">전체</button>${standard ? '<button data-discussion-filter="for">찬성 입장</button><button data-discussion-filter="against">반대 입장</button>' : ''}<button data-discussion-filter="question">질문 · 자료</button><button data-discussion-filter="correction">정정 요청</button></div><div id="discussionPosts" class="discussion-post-list"></div><button class="primary-button write-button" id="writeButton">의견 남기기 <span>→</span></button></section>`;
@@ -1508,7 +1508,7 @@ function renderPollCards() {
     const forText = issue.cardFor || issue.forArguments.map((item) => item[1]).join('\n');
     const againstText = issue.cardAgainst || issue.againstArguments.map((item) => item[1]).join('\n');
     card.className = 'poll-card';
-    card.innerHTML = `<div class="poll-top"><span class="live-label"><i></i> 진행 중인 투표 <b>${String(index + 1).padStart(2, '0')} / ${entries.length}</b></span><span class="deadline" data-poll-deadline="${escapeHtml(id)}">${formatPollDeadline(issue)}</span></div><div class="poll-body"><div class="poll-meta"><span class="category">${escapeHtml(issue.category)}</span><span>읽는 시간 3분</span></div><h3>${escapeHtml(issue.title)}</h3>${renderReadableParagraphs(issue.intro, 'poll-summary')}<div class="stance-grid"><div class="stance for"><div class="stance-head"><span class="stance-symbol">+</span><b>찬성 의견</b></div>${renderReadablePoints(forText, 'stance-points')}</div><div class="stance against"><div class="stance-head"><span class="stance-symbol">−</span><b>반대 의견</b></div>${renderReadablePoints(againstText, 'stance-points')}</div></div><div class="poll-footer"><span class="participant-count">주제 출처 · ${escapeHtml(issue.source.split(' · ')[0])}</span><a class="primary-button" data-open-issue="${escapeHtml(id)}" href="?issue=${encodeURIComponent(id)}">투표하고 이야기 보기 <span>→</span></a></div></div>`;
+    card.innerHTML = `<div class="poll-top"><span class="live-label"><i></i> 진행 중인 투표 <b>${String(index + 1).padStart(2, '0')} / ${entries.length}</b></span><span class="deadline" data-poll-deadline="${escapeHtml(id)}">${formatPollDeadline(issue)}</span></div><div class="poll-body"><div class="poll-meta"><span class="category">${escapeHtml(issue.category)}</span><span>읽는 시간 3분</span></div><h3>${escapeHtml(issue.title)}</h3>${renderReadableParagraphs(issue.intro, 'poll-summary')}<div class="stance-grid"><div class="stance for"><div class="stance-head"><span class="stance-symbol">+</span><b>찬성 의견</b></div>${renderReadablePoints(forText, 'stance-points')}</div><div class="stance against"><div class="stance-head"><span class="stance-symbol">−</span><b>반대 의견</b></div>${renderReadablePoints(againstText, 'stance-points')}</div></div><div class="poll-footer"><a class="primary-button" data-open-issue="${escapeHtml(id)}" href="?issue=${encodeURIComponent(id)}">투표하고 이야기 보기 <span>→</span></a></div></div>`;
     return card;
   }));
   if (countBadge) countBadge.textContent = `${entries.length}개`;
@@ -1650,7 +1650,7 @@ document.querySelector('#archivePageList').addEventListener('click', (event) => 
 const adminView = document.querySelector('#adminView');
 const adminEntryButton = document.querySelector('#adminEntryButton');
 const editorialForm = document.querySelector('#editorialForm');
-const editorialFieldNames = ['category', 'title', 'intro', 'facts', 'imageKeywords', 'source', 'sourceUrl', 'forText', 'againstText'];
+const editorialFieldNames = ['category', 'title', 'intro', 'facts', 'imageKeywords', 'forText', 'againstText'];
 let isVerifiedAdmin = false;
 let requestedAdminPage = new URLSearchParams(window.location.search).get('adminPage') === 'announcements' ? 'announcements' : 'overview';
 
@@ -1687,7 +1687,7 @@ function currentDraftFromForm() {
     id: activeDraftId || editorialState.pending[0]?.id || `editorial-${Date.now()}`,
     category: values.category.trim(), title: values.title.trim(), intro: values.intro.trim(),
     facts: values.facts.split('\n').map((fact) => fact.trim()).filter(Boolean),
-    source: values.source.trim(), sourceUrl: values.sourceUrl.trim(),
+    source: savedMetadata.source || '', sourceUrl: savedMetadata.sourceUrl || '',
     forText: values.forText.trim(), againstText: values.againstText.trim()
   };
 }
@@ -1705,11 +1705,6 @@ function updateAdminPreview() {
   facts.replaceChildren(...(draft.facts.length ? draft.facts : ['배경을 입력해 주세요.']).map((fact) => {
     const item = document.createElement('li'); item.textContent = fact; return item;
   }));
-  const source = document.querySelector('#previewSource');
-  source.textContent = draft.source || '출처 이름과 날짜를 입력해 주세요.';
-  const validUrl = /^https:\/\//i.test(draft.sourceUrl);
-  source.href = validUrl ? draft.sourceUrl : '#';
-  source.setAttribute('aria-disabled', String(!validUrl));
 }
 
 function renderEditorialHistory() {
@@ -1759,14 +1754,10 @@ function renderReviewQueue() {
     const batchLabel = batch.length ? `이번 생성 후보 ${batch.length}개 중 ${batchPosition}번` : 'AI 검토 안건';
     const recency = draft.trendingReason ? `<small>주제 선정 이유 · ${escapeAdminHtml(draft.trendingReason)}</small>` : '';
     const selectedField = (draft.dataSignals?.manualReviewRequired ? '<small>관리자 직접 승인 필요 · 자동 승인 제외</small>' : '') + (draft.selectedField ? `<small>후보 생성 분야 · ${escapeAdminHtml(draft.selectedField)}</small>` : '');
-    const headlines = draft.dataSignals?.coverageSources || draft.dataSignals?.relatedHeadlines || [];
-    const bingSummary = headlines.length ? `<small>참고 소재 · ${headlines.length}건 (게시글·보도 수는 여론의 증거가 아님)</small>` : '';
-    const bingLinks = headlines.slice(0, 5).map((article) => safeHttpsUrl(article.url) ? `<a href="${escapeAdminHtml(safeHttpsUrl(article.url))}" target="_blank" rel="noopener noreferrer">${escapeAdminHtml(article.source || '기사')} ↗</a>` : '').filter(Boolean).join(' · ');
-    const primarySources = (draft.dataSignals?.primarySources || []).map((source) => safeHttpsUrl(source.url) ? `<a href="${escapeAdminHtml(safeHttpsUrl(source.url))}" target="_blank" rel="noopener noreferrer">${escapeAdminHtml(source.publisher || '자료')}: ${escapeAdminHtml(source.title || '원자료')} ↗</a>` : '').filter(Boolean).join(' · ');
     const reviewNote = [draft.dataSignals?.aiProvider ? `생성 AI: ${draft.dataSignals.aiProvider} · ${draft.dataSignals.aiModel || ''}` : '', draft.dataSignals?.editorialReview].filter(Boolean).join('\n');
     const guidelineNote = draft.dataSignals?.guidelineVersion ? `<small>작성 지침 · ${escapeAdminHtml(draft.dataSignals.guidelineVersion)}</small>` : '<small>새 작성 지침 적용 전 후보</small>';
-    const bingEvidence = `${bingLinks ? `<small>${bingLinks}</small>` : ''}${primarySources ? `<small>사실·논거 확인 자료 · ${primarySources}</small>` : '<small>원자료 확인 · 등록된 검증 자료 없음 (승인 전 확인 필요)</small>'}${guidelineNote}${reviewNote ? `<details><summary>AI 편집 검토 의견</summary><p style="white-space:pre-wrap">${escapeAdminHtml(reviewNote)}</p></details>` : ''}`;
-    return `<article class="review-queue-item ${draft.id === activeDraftId ? 'selected' : ''}"><div><span class="ai-recommend-tag">${batchLabel} · 운영자 검토 필요</span><strong>${escapeAdminHtml(draft.title)}</strong><small>${escapeAdminHtml(draft.category)} · 출처 ${escapeAdminHtml(draft.source)}</small>${selectedField}${recency}${bingSummary}${bingEvidence}</div><button type="button" data-review-draft="${escapeAdminHtml(draft.id)}">${draft.id === activeDraftId ? '검토 중' : '검토하기'} <span>→</span></button></article>`;
+    const bingEvidence = `${guidelineNote}${reviewNote ? `<details><summary>AI 편집 검토 의견</summary><p style="white-space:pre-wrap">${escapeAdminHtml(reviewNote)}</p></details>` : ''}`;
+    return `<article class="review-queue-item ${draft.id === activeDraftId ? 'selected' : ''}"><div><span class="ai-recommend-tag">${batchLabel} · 운영자 검토 필요</span><strong>${escapeAdminHtml(draft.title)}</strong><small>${escapeAdminHtml(draft.category)}</small>${selectedField}${recency}${bingEvidence}</div><button type="button" data-review-draft="${escapeAdminHtml(draft.id)}">${draft.id === activeDraftId ? '검토 중' : '검토하기'} <span>→</span></button></article>`;
   }).join('') || `<div class="empty-draft">${editorialState.pending.length ? '선택한 분야의 검토 대기 안건이 없습니다.' : '검토 대기 안건이 없습니다.'}</div>`;
   const scheduledMarkup = scheduledTopicQueue.length ? `<section class="scheduled-topic-queue"><h3>예약 공개 안건 ${scheduledTopicQueue.length}건</h3>${scheduledTopicQueue.map((topic) => `<article><strong>${escapeAdminHtml(topic.title)}</strong><span>${escapeAdminHtml(topic.category)} · ${new Date(topic.scheduled_for).toLocaleString('ko-KR')} 공개 예정</span></article>`).join('')}</section>` : '';
   queue.innerHTML = `${pendingMarkup}${scheduledMarkup}`;
@@ -2391,16 +2382,15 @@ document.querySelector('#approveDraftButton').addEventListener('click', async (e
   const draft = currentDraftFromForm();
   const requiredFields = [
     ['카테고리', draft.category], ['투표 제목', draft.title], ['주제 설명', draft.intro],
-    ['출처 이름과 날짜', draft.source], ['찬성 관점', draft.forText], ['반대 관점', draft.againstText]
+    ['찬성 관점', draft.forText], ['반대 관점', draft.againstText]
   ];
   const missing = requiredFields.find(([, value]) => !String(value || '').trim());
-  const sourceUrl = safeHttpsUrl(draft.sourceUrl) || (draft.dataSignals?.generationMode === 'fun' && !String(draft.sourceUrl || '').trim());
   const factsValid = draft.facts.length >= 2 && draft.facts.length <= 3;
-  if (missing || !sourceUrl || !factsValid) {
-    const reason = missing ? `${missing[0]}을 입력해 주세요.` : !factsValid ? '사실 또는 가정 조건을 2~3개 입력해 주세요.' : '출처 링크는 https:// 주소여야 합니다.';
+  if (missing || !factsValid) {
+    const reason = missing ? `${missing[0]}을 입력해 주세요.` : '배경을 2~3개 입력해 주세요.';
     document.querySelector('#draftStatus').textContent = `승인 전 확인: ${reason}`;
     window.alert(`안건을 승인하기 전에 확인해 주세요.\n\n${reason}`);
-    const focusName = missing ? ({ '카테고리': 'category', '투표 제목': 'title', '주제 설명': 'intro', '출처 이름과 날짜': 'source', '찬성 관점': 'forText', '반대 관점': 'againstText' })[missing[0]] : (!factsValid ? 'facts' : 'sourceUrl');
+    const focusName = missing ? ({ '카테고리': 'category', '투표 제목': 'title', '주제 설명': 'intro', '찬성 관점': 'forText', '반대 관점': 'againstText' })[missing[0]] : 'facts';
     editorialForm.elements.namedItem(focusName)?.focus();
     return;
   }
@@ -2442,16 +2432,15 @@ document.querySelector('#publishDraftNowButton').addEventListener('click', async
   const draft = currentDraftFromForm();
   const requiredFields = [
     ['카테고리', draft.category], ['투표 제목', draft.title], ['주제 설명', draft.intro],
-    ['출처 이름과 날짜', draft.source], ['찬성 관점', draft.forText], ['반대 관점', draft.againstText]
+    ['찬성 관점', draft.forText], ['반대 관점', draft.againstText]
   ];
   const missing = requiredFields.find(([, value]) => !String(value || '').trim());
-  const sourceUrl = safeHttpsUrl(draft.sourceUrl) || (draft.dataSignals?.generationMode === 'fun' && !String(draft.sourceUrl || '').trim());
   const factsValid = draft.facts.length >= 2 && draft.facts.length <= 3;
-  if (missing || !sourceUrl || !factsValid) {
-    const reason = missing ? `${missing[0]}을 입력해 주세요.` : !factsValid ? '배경을 2~3개 입력해 주세요.' : '출처 링크는 https:// 주소여야 합니다.';
+  if (missing || !factsValid) {
+    const reason = missing ? `${missing[0]}을 입력해 주세요.` : '배경을 2~3개 입력해 주세요.';
     document.querySelector('#draftStatus').textContent = `즉시 등록 전 확인: ${reason}`;
     window.alert(`안건을 즉시 등록하기 전에 확인해 주세요.\n\n${reason}`);
-    const focusName = missing ? ({ '카테고리': 'category', '투표 제목': 'title', '주제 설명': 'intro', '출처 이름과 날짜': 'source', '찬성 관점': 'forText', '반대 관점': 'againstText' })[missing[0]] : (!factsValid ? 'facts' : 'sourceUrl');
+    const focusName = missing ? ({ '카테고리': 'category', '투표 제목': 'title', '주제 설명': 'intro', '찬성 관점': 'forText', '반대 관점': 'againstText' })[missing[0]] : 'facts';
     editorialForm.elements.namedItem(focusName)?.focus();
     return;
   }
@@ -3113,7 +3102,6 @@ async function showPublicSharedPoll(uuid) {
     const escape = escapeSiteText;
     const url = new URL(memberAppRootUrl);
     url.searchParams.set('issue',id);
-    const source = safeHttpsUrl(topic.sourceUrl);
     const perspective = (label, text, side) => `<section class="shared-perspective ${side}"><h3>${label}</h3>${renderReadablePoints(text)}</section>`;
     content.innerHTML = `
       <section class="shared-poll-heading">
@@ -3124,7 +3112,6 @@ async function showPublicSharedPoll(uuid) {
       <section class="shared-poll-panel">
         <h2>${topic.isHypothetical ? '가상 상황의 조건' : '배경과 확인할 내용'}</h2>
         <ul>${(topic.facts || []).map(fact => `<li>${escape(fact)}</li>`).join('')}</ul>
-        ${source ? `<a class="shared-poll-source" href="${escape(source)}" rel="noopener noreferrer">${escape(topic.source || '참고 자료')} ↗</a>` : ''}
       </section>
       <section class="shared-poll-views">
         <h2>선택 전에 생각해 볼 관점</h2>
