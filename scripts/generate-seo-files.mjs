@@ -34,8 +34,8 @@ if (archivedIds.length) {
     headers: { apikey: publishableKey, 'content-type': 'application/json' },
     body: JSON.stringify({ p_topics: archivedIds })
   });
-  if (!results.ok) throw new Error('보관 투표의 최종 집계를 불러오지 못했습니다.');
-  for (const row of await results.json()) {
+  if (!results.ok) console.warn('보관 투표의 최종 집계를 가져오지 못했습니다.', results.status);
+  for (const row of (results.ok ? await results.json() : [])) {
     if (!resultsByTopic.has(row.topic_id)) resultsByTopic.set(row.topic_id, new Map());
     resultsByTopic.get(row.topic_id).set(row.choice, Number(row.vote_count));
   }
@@ -89,20 +89,17 @@ ${finalResults}<section><h2>투표 선택지</h2><ul>${(topic.vote_options || ['
     await mkdir(legacyDirectory, { recursive: true });
     await writeFile(path.join(legacyDirectory, 'index.html'), html, 'utf8');
   }
-  topicPaths.push({ url: pageUrl, date: String(topic.published_at || topic.decided_at || '').slice(0, 10) });
+  topicPaths.push({ url: pageUrl, title: topic.title, date: String(topic.published_at || topic.decided_at || '').slice(0, 10) });
 }
 
-const app = await readFile(path.join(root, 'app.js'), 'utf8');
-const issueBlock = app.split('const issues = {')[1]?.split('\n};')[0] || '';
-const topicBlock = app.split('const curatedTopics = [')[1]?.split('\n];')[0] || '';
-const issueIds = new Set([
-  ...[...issueBlock.matchAll(/^\s{2}'([^']+)':\s*\{/gm)].map((match) => match[1]),
-  ...[...topicBlock.matchAll(/^\s*\['([^']+)'/gm)].map((match) => match[1]),
-  'archive-public-bikes', 'archive-market-closure', 'archive-pet-registration'
-]);
-const urls = [site.href, ...[...issueIds].map((id) => { const url = new URL(site.href); url.searchParams.set('issue', id); return url.href; }), ...topicPaths.map((item) => item.url)];
-const date = new Date().toISOString().slice(0, 10);
-const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((url) => `  <url><loc>${xmlEscape(url)}</loc><lastmod>${date}</lastmod></url>`).join('\n')}\n</urlset>\n`;
+const homePath = path.join(root, 'index.html');
+const homepage = await readFile(homePath, 'utf8');
+const links = topicPaths.slice(0, 16).map(({url,title}) => `<li><a href="${escapeHtml(url)}">${escapeHtml(title)}</a></li>`).join('');
+const topicList = links ? `<nav class="footer-inner" aria-label="공개 투표 안건"><div><h2>공개 투표 안건</h2><ul>${links}</ul></div></nav>` : '';
+await writeFile(homePath, homepage.replace('<!-- PUBLIC_TOPIC_LINKS -->', () => topicList), 'utf8');
+
+const urls = [{url:site.href}, ...topicPaths];
+const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(({url}) => `  <url><loc>${xmlEscape(url)}</loc></url>`).join('\n')}\n</urlset>\n`;
 const robots = `User-agent: *\nAllow: /\nSitemap: ${new URL('sitemap.xml', site).href}\n`;
 await Promise.all([writeFile(path.join(root, 'sitemap.xml'), sitemap, 'utf8'), writeFile(path.join(root, 'robots.txt'), robots, 'utf8')]);
 console.log(`사이트맵·robots.txt·안건 SEO 페이지 ${topicPaths.length}개 생성 완료 · ${site.href}`);
