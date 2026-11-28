@@ -92,12 +92,6 @@ ${finalResults}<section><h2>투표 선택지</h2><ul>${(topic.vote_options || ['
   topicPaths.push({ url: pageUrl, title: topic.title, date: String(topic.published_at || topic.decided_at || '').slice(0, 10) });
 }
 
-const homePath = path.join(root, 'index.html');
-const homepage = await readFile(homePath, 'utf8');
-const links = topicPaths.slice(0, 16).map(({url,title}) => `<li><a href="${escapeHtml(url)}">${escapeHtml(title)}</a></li>`).join('');
-const topicList = links ? `<nav class="footer-inner" aria-label="공개 투표 안건"><div><h2>공개 투표 안건</h2><ul>${links}</ul></div></nav>` : '';
-await writeFile(homePath, homepage.replace('<!-- PUBLIC_TOPIC_LINKS -->', () => topicList), 'utf8');
-
 const urls = [{url:site.href}, ...topicPaths];
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(({url}) => `  <url><loc>${xmlEscape(url)}</loc></url>`).join('\n')}\n</urlset>\n`;
 const robots = `User-agent: *\nAllow: /\nSitemap: ${new URL('sitemap.xml', site).href}\n`;
