@@ -84,6 +84,43 @@ async function previewPollPhoto(info, title, color, format, brief) {
 
 const searchedDrafts = new Set();
 
+function naverBlogPreview(data, images) {
+  const parts = String(data.body || '').split(/(\[사진 [123]\])/);
+  if (parts.length === 1) {
+    const sections = parts[0].split(/\n\s*\n/).filter(Boolean);
+    return [0,1,2].map(index => {
+      const start = Math.floor(index * sections.length / 3);
+      const end = Math.floor((index + 1) * sections.length / 3);
+      return naverPhotoBlock(images, index) + sections.slice(start,end).map(naverParagraph).join('');
+    }).join('');
+  }
+  return parts.map(part => {
+    const slot = part.match(/^\[사진 ([123])\]$/);
+    return slot ? naverPhotoBlock(images, Number(slot[1])-1) : naverParagraph(part);
+  }).join('');
+}
+
+function naverParagraph(text) {
+  return text.trim() ? '<p style="white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7">' + esc(text.trim()) + '</p>' : '';
+}
+
+function naverPhotoBlock(images, index) {
+  const alt = ['상황','배경과 조건','선택의 순간'][index];
+  return images[index]
+    ? '<figure style="margin:16px 0"><img style="display:block;width:100%;height:auto" loading="lazy" src="' + esc(images[index]) + '" alt="' + alt + '"><figcaption><a href="' + esc(images[index]) + '" target="_blank" rel="noopener noreferrer">사진 ' + (index+1) + ' 열기</a></figcaption></figure>'
+    : '<p class="admin-footnote">사진 ' + (index+1) + ' · ' + alt + '</p>';
+}
+
+function encodeBlogPhoto(photo) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1120;
+  canvas.height = 630;
+  const scale = Math.max(canvas.width/photo.width, canvas.height/photo.height);
+  const width = photo.width * scale, height = photo.height * scale;
+  canvas.getContext('2d').drawImage(photo,(canvas.width-width)/2,(canvas.height-height)/2,width,height);
+  return canvas.toDataURL('image/jpeg',.86).split(',')[1];
+}
+
 function renderContent(item) {
   const removed = item.platform === 'facebook' && item.status === 'published' && item.content?.facebookDeletedAt;
   const statusLabel = removed ? '게시물 삭제 완료' : ({ review_required: '검토 대기', approved: '승인 완료', rejected: '반려', queued: '게시 대기', publishing: '게시 중', published: '게시 완료', failed: '게시 실패' })[item.status] || item.status;
@@ -97,6 +134,7 @@ function renderContent(item) {
   const imagePreview = draftCards.length === 3
     ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:10px">' + draftCards.map((url,index) => `<figure style="margin:0"><img class="content-image-preview" src="${esc(url)}" alt="${['메인 상황','배경','선택 질문'][index]}"><figcaption>${['메인 상황','배경','선택 질문'][index]}</figcaption></figure>`).join('') + '</div>'
     : ['instagram','facebook','threads'].includes(item.platform) && imageUrl ? `<img class="content-image-preview" src="${esc(imageUrl)}" alt="홍보 이미지 시안" loading="lazy">` : '';
+  const preview = item.platform === 'naver_blog' ? '<strong>' + esc(item.content?.title || '') + '</strong>' + naverParagraph(item.content?.intro || '') + naverBlogPreview(item.content || {}, draftCards) : imagePreview + '<strong>' + esc(item.content?.title || '') + '</strong>' + naverParagraph(item.content?.body || item.content?.intro || '');
   const publishedLink = item.externalPostUrl && !removed ? `<p><a href="${esc(item.externalPostUrl)}" target="_blank" rel="noopener noreferrer">게시물 확인 ↗</a></p>` : '';
   const scheduleLabel = item.scheduledAt ? `<p class="admin-footnote">게시 예약 시각: ${esc(new Date(item.scheduledAt).toLocaleString('ko-KR'))} · 작업 ${esc(item.jobStatus || '')} · 재시도 ${Number(item.retryCount || 0)}회</p>` : '';
   const buttons = [
@@ -119,7 +157,7 @@ function renderContent(item) {
       <button type="button" data-content-action="search-photos" data-id="${esc(item.id)}">웹에서 사진 찾기</button>
       <label>카드 색상<select data-photo-palette><option value="#102b24">딥그린</option><option value="#152742">네이비</option><option value="#352719">웜브라운</option></select></label><div data-photo-results aria-live="polite"></div></div>` : '';
   return `<article class="content-auto-card" data-content-card="${esc(item.id)}"><div class="content-auto-card-head"><div><span class="announcement-category">${esc(platformNames[item.platform] || item.platform)}</span><small>${esc(item.issueTitle || item.issueId || '')}</small></div><span class="admin-status ${['approved','queued','published'].includes(item.status) ? 'status-good' : item.status === 'failed' || item.status === 'rejected' ? 'status-blocked' : 'status-warn'}">${esc(statusLabel)}</span></div>
-    <details${['facebook','instagram'].includes(item.platform) ? ' open' : ''}><summary>게시글 미리보기</summary>${imagePreview}<strong>${esc(item.content?.title || '')}</strong><p style="white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7">${esc(item.content?.body || item.content?.intro || '')}</p></details>
+    <details${['facebook','instagram'].includes(item.platform) ? ' open' : ''}><summary>게시글 미리보기</summary>${preview}</details>
     ${editable ? `<label>플랫폼별 콘텐츠 JSON<textarea data-content-json="${esc(item.id)}" rows="12" spellcheck="false">${esc(jsonValue)}</textarea></label>` : ''}
     ${photoSearch}${['facebook','instagram','threads'].includes(item.platform) && ['review_required','failed'].includes(item.status) ? '<label>카드에 넣을 사진<input type="file" accept="image/jpeg,image/png,image/webp" data-poll-photo></label><p class="admin-footnote">사용할 수 있는 사진을 선택한 뒤 ‘투표 카드 만들기’를 누르세요. 사진 없이 만들면 시선 배경에 제목이 표시됩니다.</p>' : ''}<p class="admin-footnote">출처: ${sourceLinks}</p>${scheduleLabel}${jobState}${publishedLink}<div class="content-auto-actions">${buttons}</div></article>`;
 }
@@ -217,7 +255,8 @@ async function init() {
         const backgrounds = [];
         const cardRoles = ['main', 'conflict', 'choice'];
         try {
-          if (drafts.length) onImages?.();
+          const blogs = (result.drafts || []).filter(draft => draft.platform === 'naver_blog');
+          if (drafts.length || blogs.length) onImages?.();
           for (const cardRole of drafts.length ? cardRoles : []) {
             try {
               const generated = await call('promo-background', {
@@ -237,6 +276,19 @@ async function init() {
             } catch (error) {
               imageErrors.push((platformNames[draft.platform] || draft.platform) + ': ' + error.message);
             }
+          }
+          for (const draft of blogs) {
+            try {
+              const images = [];
+              const roles = ['naver-situation','naver-context','naver-choice'];
+              for (const [index,cardRole] of roles.entries()) {
+                const generated = await call('promo-background', {issueId:issue.issueId,title:issue.title,
+                  summary:issue.summary,cardRole,imageBrief:draft.content?.imageBriefs?.[index]});
+                const photo = await createImageBitmap(await (await fetch(generated.image)).blob());
+                try { images.push(encodeBlogPhoto(photo)); } finally { photo.close(); }
+              }
+              await call('save-poll-share-card', {id:draft.id,images});
+            } catch (error) { imageErrors.push('네이버 블로그 사진 · ' + error.message); }
           }
         } finally { backgrounds.forEach(photo => photo?.close()); }
         return {...result, imageErrors};
@@ -467,7 +519,7 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
     }
     else if (action === 'copy') {
       const item = contents.find((entry) => entry.id === id); const data = item?.content || {};
-      const text = [data.title, data.intro, data.body, ...(data.headings || []), ...(data.tags || []).map((tag) => `#${tag}`)].filter(Boolean).join('\n\n');
+      const text = [data.title, data.intro, data.body, ...(!/\[사진 [123]\]/.test(data.body || '') ? data.headings || [] : []), ...(data.tags || []).map((tag) => `#${tag}`)].filter(Boolean).join('\n\n');
       await navigator.clipboard.writeText(text); button.textContent = '복사했어요'; setTimeout(() => { button.textContent = '네이버용 복사'; button.disabled = false; }, 1400);
     }
 
