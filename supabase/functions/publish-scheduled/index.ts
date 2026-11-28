@@ -39,7 +39,7 @@ async function post(row: any) {
   };
   const plain = (value: unknown) => String(value ?? '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/^#{1,6}\s+/gm, '').trim();
   const caption = [plain(data.title), plain(data.body), Array.isArray(data.hashtags) ? data.hashtags.join(' ') : ''].filter(Boolean).join('\n\n');
-  const text = [caption, url].filter(Boolean).join('\n\n');
+  const text = [caption, row.platform === 'instagram' ? '' : url].filter(Boolean).join('\n\n');
   const { data: saved, error: integrationError } = await service.rpc('service_get_integration', { p_provider: row.platform });
   if (integrationError) throw integrationError;
   let linked: Record<string, string> = {};
