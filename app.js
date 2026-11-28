@@ -1827,7 +1827,7 @@ document.querySelector('#discoverTopicNews')?.addEventListener('click', async ev
   const status = document.querySelector('#topicGenerationStatus');
   button.disabled = true;
   const mode = document.querySelector('#topicGenerationMode').value;
-  status.textContent = mode === 'community' ? '실시간 베스트에서 토론 소재를 찾고 공개 댓글을 검토하고 있습니다…' : '국내 언론사의 최근 보도를 수집하고 있습니다…';
+  status.textContent = mode === 'community' ? '실시간 베스트에서 토론 소재를 찾고 공개 댓글을 검토하고 있습니다…' : '국내 언론사의 최근 보도에서 판단할 만한 소재를 찾고 있습니다…';
   try {
     const result = await window.SISEON_TOPIC_ADMIN.discover(document.querySelector('#topicGenerationKeyword').value, document.querySelector('#topicGenerationField').value, mode);
     if (mode !== document.querySelector('#topicGenerationMode').value) return;
@@ -1843,11 +1843,11 @@ document.querySelector('#discoverTopicNews')?.addEventListener('click', async ev
       return '<small>' + (review?.status === 'no_split' ? '공개 댓글에서 뚜렷한 대립을 확인하지 못했습니다.' : '공개 원문이나 댓글을 충분히 읽지 못했습니다.') + '</small>';
     };
     const rows = discoveredNews.map((item, index) =>
-      `<div class="topic-news-choice"><label><input type="checkbox" value="${index}"><span><strong>${escapeAdminHtml(item.title)}</strong><small>${escapeAdminHtml(item.source)}${mode === 'community' && item.description ? ' · ' + escapeAdminHtml(item.description) : ''}</small>${commentPreview(item)}</span></label><a href="${escapeAdminHtml(item.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeAdminHtml(item.title)} 원문">원문 ↗</a></div>`
+      `<div class="topic-news-choice"><label><input type="checkbox" value="${index}"><span><strong>${escapeAdminHtml(item.title)}</strong><small>${escapeAdminHtml(item.source)}${mode === 'community' && item.description ? ' · ' + escapeAdminHtml(item.description) : ''}</small>${item.decision ? '<small>판단할 결정 · ' + escapeAdminHtml(item.decision) + '</small>' : ''}${commentPreview(item)}</span></label><a href="${escapeAdminHtml(item.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeAdminHtml(item.title)} 원문">원문 ↗</a></div>`
     );
     rssResults.innerHTML = rows.length
       ? rows.slice(0, 8).join('') + (rows.length > 8 ? `<details><summary>주제 ${rows.length - 8}개 더 보기</summary>${rows.slice(8).join('')}</details>` : '')
-      : '<p>조건에 맞는 기사가 없습니다. 검색어를 비우거나 바꿔 다시 수집해 주세요.</p>';
+      : '<p>조건에 맞는 소재가 없습니다. 검색어를 바꾸거나 다른 분야로 다시 수집해 주세요.</p>';
     status.textContent =  `${mode === 'community' ? '토론 소재' : '최근 기사'} ${discoveredNews.length}건 · ${(result.warnings || []).join(' · ')}`;
   } catch (error) { status.textContent = '수집 실패: ' + error.message; }
   finally { button.disabled = false; }
