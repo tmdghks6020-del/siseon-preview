@@ -1939,7 +1939,7 @@ function renderAdminPage(page = currentAdminPage) {
     const issue = issueId && getIssueData(issueId);
     if (!issue) { renderAdminPage('polls'); return; }
     content.innerHTML = `<button class="table-action" type="button" data-admin-page="polls">← 투표 관리</button>
-      ${header('PROMOTION', escapeAdminHtml(issue.title), '이 안건의 채널별 초안, 예약과 발행 결과를 확인합니다.', `<button class="primary-button" type="button" data-poll-promo="${escapeAdminHtml(issueId)}">새 홍보 초안 만들기</button>`)}
+      ${header('PROMOTION', escapeAdminHtml(issue.title), '이 안건의 채널별 초안, 예약과 발행 결과를 확인합니다.', `<button class="primary-button" type="button" data-poll-promo="${escapeAdminHtml(issueId)}">새 홍보 초안 만들기</button> <button class="table-action" type="button" data-poll-naver-draft="${escapeAdminHtml(issueId)}">네이버 블로그 초안 만들기</button>`)}
       <section class="admin-card"><div id="contentAutomationRoot" data-issue-id="${escapeAdminHtml(issueId)}"><p>홍보 기록을 불러오는 중입니다.</p></div></section>`;
     window.SISEON_CONTENT_AUTOMATION?.loadContents();
     return;
@@ -2113,14 +2113,16 @@ document.querySelector('#adminPageContent').addEventListener('click', async (eve
     renderAdminPage('content-automation');
     return;
   }
-  const pollPromoButton = event.target.closest('[data-poll-promo]');
+  const pollPromoButton = event.target.closest('[data-poll-promo], [data-poll-naver-draft]');
   if (pollPromoButton) {
-    const issueId = pollPromoButton.dataset.pollPromo; const issue = issues[issueId];
+    const naverOnly = pollPromoButton.hasAttribute('data-poll-naver-draft');
+    const issueId = naverOnly ? pollPromoButton.dataset.pollNaverDraft : pollPromoButton.dataset.pollPromo;
+    const issue = issues[issueId];
     if (!issue) return;
     const automation = window.SISEON_CONTENT_AUTOMATION;
     if (!automation) { window.alert('콘텐츠 자동화 기능을 불러오지 못했습니다. 페이지를 새로고침해 주세요.'); return; }
     pollPromoButton.disabled = true;
-    automation.getIntegrations().then((rows) => {
+    (naverOnly ? Promise.resolve([]) : automation.getIntegrations()).then((rows) => {
       const statuses = new Map(rows.map((row) => [row.provider, row]));
       const providers = [
         ['instagram','인스타그램'], ['threads','Threads'], ['facebook','Facebook']
@@ -2130,13 +2132,13 @@ document.querySelector('#adminPageContent').addEventListener('click', async (eve
         return `<label class="promo-platform-choice ${active ? '' : 'inactive'}"><input type="checkbox" name="platform" value="${key}" ${active ? 'checked' : 'disabled'}><span class="connection-light ${active ? 'is-on' : 'is-off'}"></span>${label}<small>${active ? escapeAdminHtml(row.accountLabel || '연결됨') : 'API 설정에서 연결 필요'}</small></label>`;
       }).join('');
       const dialog = document.createElement('dialog'); dialog.className = 'promo-compose-dialog';
-      dialog.innerHTML = `<form method="dialog" class="promo-dialog-close"><button aria-label="닫기">×</button></form><h2>투표 홍보 콘텐츠 만들기</h2><p>${escapeAdminHtml(issue.title)}</p><span class="section-kicker">게시할 채널</span><form id="pollPromoForm"><div class="promo-platform-list">${options}<label class="promo-platform-choice"><input type="checkbox" name="platform" value="naver_blog"><span class="connection-light is-manual"></span>네이버 블로그<small>초안 복사 후 수동 게시</small></label></div><p class="admin-footnote">선택한 채널별 초안을 생성해 검토 대기 상태로 저장합니다. 이미지가 필요한 채널은 초안의 이미지 안내를 확인하고, 최종 승인 후 게시하세요.</p><div class="promo-dialog-actions"><button type="button" class="table-action" data-promo-cancel>취소</button><button class="primary-button" type="submit">초안 생성 및 검토</button></div></form>`;
+      dialog.innerHTML = `<form method="dialog" class="promo-dialog-close"><button aria-label="닫기">×</button></form><h2>${naverOnly ? '네이버 블로그 초안 만들기' : '투표 홍보 콘텐츠 만들기'}</h2><p>${escapeAdminHtml(issue.title)}</p><form id="pollPromoForm">${naverOnly ? '<p class="admin-footnote">글과 사진 세 장을 생성합니다. 네이버 블로그 편집기에 본문을 붙여넣고 사진을 표시된 위치에 추가해 직접 발행하세요.</p>' : `<span class="section-kicker">게시할 채널</span><div class="promo-platform-list">${options}</div><p class="admin-footnote">선택한 채널별 초안을 생성해 검토 대기 상태로 저장합니다.</p>`}<div class="promo-dialog-actions"><button type="button" class="table-action" data-promo-cancel>취소</button><button class="primary-button" type="submit">초안 생성 및 검토</button></div></form>`;
       document.body.append(dialog); dialog.showModal();
       dialog.addEventListener('close', () => dialog.remove());
       dialog.querySelector('[data-promo-cancel]')?.addEventListener('click', () => dialog.close());
       dialog.querySelector('#pollPromoForm')?.addEventListener('submit', async (submitEvent) => {
         submitEvent.preventDefault();
-        const selected = [...new FormData(submitEvent.currentTarget).getAll('platform')];
+        const selected = naverOnly ? ['naver_blog'] : new FormData(submitEvent.currentTarget).getAll('platform');
         if (!selected.length) { window.alert('게시할 채널을 하나 이상 선택해 주세요.'); return; }
         const submit = submitEvent.submitter; submit.disabled = true; submit.textContent = '초안을 만들고 있습니다…';
         const facts = (issue.facts || []).map((fact) => `• ${fact}`).join('\n');
