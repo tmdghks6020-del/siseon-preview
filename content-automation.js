@@ -63,7 +63,19 @@ async function findPollPhotos(query) {
   return result.results || [];
 }
 
+let cardBrandMark;
+
+async function loadCardBrandMark() {
+  if (cardBrandMark) return;
+  const image = new Image();
+  const headerMark = document.querySelector('.brand-mark');
+  image.src = headerMark?.currentSrc || headerMark?.src || new URL('./assets/siseon-mark.svg?v=terracotta', import.meta.url).href;
+  try { await image.decode(); } catch { throw new Error('시선 아이콘을 불러오지 못했습니다.'); }
+  cardBrandMark = image;
+}
+
 async function previewPollPhoto(info, title, color, format, brief) {
+  await loadCardBrandMark();
   const response = await fetch(info.imageUrl, { signal: AbortSignal.timeout(12000) });
   if (!response.ok) throw new Error('사진을 불러오지 못했습니다.');
   const photo = await createImageBitmap(await response.blob());
@@ -219,6 +231,7 @@ async function init() {
           }
           for (const draft of drafts) {
             try {
+              await loadCardBrandMark();
               const images = makeSocialCardSet(issue, draft, backgrounds);
               await call('save-poll-share-card', { id: draft.id, images });
             } catch (error) {
@@ -512,6 +525,7 @@ document.querySelector('#adminPageContent')?.addEventListener('click', async (ev
       if (file && !photo) throw new Error('사진을 열 수 없습니다.');
       try {
         const title = item.content?.title || item.issueTitle;
+        if (action !== 'attach-finished-image') await loadCardBrandMark();
         const image = action === 'attach-finished-image'
           ? encodeFinishedCard(photo, ['instagram','threads'].includes(item.platform) ? 'image/jpeg' : 'image/png')
           : makePollShareCard({...item.brief, title, platform:item.platform, format: ['instagram','threads'].includes(item.platform) ? 'image/jpeg' : 'image/png', color: button.closest('[data-content-card]')?.querySelector('[data-photo-palette]')?.value},photo);
@@ -639,11 +653,7 @@ function makePollShareCard(issue, photo = null, photoSize = 0) {
     }
     ctx.fillStyle='#38594b'; ctx.fillRect(0,380,1080,34);
   }
-  panel(965,15,70,65,'#123d35');
-  ctx.strokeStyle='#dcebdc'; ctx.lineWidth=3;
-  ctx.beginPath(); ctx.moveTo(976,48); ctx.quadraticCurveTo(1000,21,1024,48); ctx.quadraticCurveTo(1000,75,976,48); ctx.stroke();
-  ctx.fillStyle='#d7ee83'; ctx.beginPath(); ctx.arc(1000,48,9,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#123d35'; ctx.beginPath(); ctx.arc(1000,48,3,0,Math.PI*2); ctx.fill();
+  ctx.drawImage(cardBrandMark, 965, 15, 70, 70);
   const top = photo || housingIllustration ? 420 : 160;
   if (housingIllustration) { font(21,600); wrap('아파트 단지 예시 삽화',55,top+23,950,1,25,accent); }
   if (issue.credit) { font(21,600); wrap('사진 · ' + issue.credit,55,top+23,950,1,25,accent); }
@@ -802,11 +812,7 @@ function renderPhotoFocusCard({photo, heading, lines = [], platform, credit, lab
     ctx.font='800 26px '+fontFamily; ctx.fillStyle=theme.highlight;
     ctx.fillText(label,94,textTop-39);
   }
-  ctx.fillStyle='#123d35'; ctx.beginPath(); ctx.roundRect(960,30,80,80,20); ctx.fill();
-  ctx.strokeStyle='#dcebdc'; ctx.lineWidth=4;
-  ctx.beginPath(); ctx.moveTo(975,70); ctx.quadraticCurveTo(1000,43,1025,70); ctx.quadraticCurveTo(1000,97,975,70); ctx.stroke();
-  ctx.fillStyle='#d7ee83'; ctx.beginPath(); ctx.arc(1000,70,9,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#123d35'; ctx.beginPath(); ctx.arc(1000,70,3,0,Math.PI*2); ctx.fill();
+  ctx.drawImage(cardBrandMark, 960, 30, 80, 80);
   if (credit) {
     ctx.font='500 22px '+fontFamily;
     const label='사진 · '+String(credit).slice(0,70);
