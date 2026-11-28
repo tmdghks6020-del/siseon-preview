@@ -917,9 +917,15 @@ async function handle(request: Request) {
       if (scheduledError) throw scheduledError;
       return respond({ candidates: data || [], scheduled: scheduled || [], guidelines: { version: TOPIC_GUIDELINES_VERSION, text: TOPIC_GUIDELINES } });
     }
-    if (action === 'topics-review-community') return respond(await reviewCommunityTopic(clean(body.url, 1500)));
     if (action === 'topics-discover') {
-      if (body.mode === 'community') return respond(await collectCommunityTopics(clean(body.keyword,160), clean(body.topicField,60)));
+      if (body.mode === 'community') {
+        const result = await collectCommunityTopics(clean(body.keyword,160), clean(body.topicField,60));
+        const articles = await Promise.all(result.articles.slice(0,8).map(async article => ({
+          ...article,
+          commentReview: await reviewCommunityTopic(article.url).catch(() => ({status:'unavailable'}))
+        })));
+        return respond({...result, articles});
+      }
       return respond(await collectTopicNews(clean(body.keyword, 160), clean(body.topicField, 60)));
     }
     if (action === 'topics-generate') {
