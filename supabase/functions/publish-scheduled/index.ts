@@ -78,10 +78,32 @@ async function post(row: any) {
       threadParams.set('image_url', imageUrl);
       if (title) threadParams.set('alt_text', title);
     }
-    const create = await fetch(`${api}/${userId}/threads`, { method: 'POST', body: threadParams });
-    const container = await create.json(); if (!create.ok || !container.id) throw new Error(container.error?.message || 'Threads 컨테이너 생성 실패');
-    const publish = await fetch(`${api}/${userId}/threads_publish`, { method: 'POST', body: new URLSearchParams({ access_token: token, creation_id: container.id }) });
-    const result = await publish.json(); if (!publish.ok || !result.id) throw new Error(result.error?.message || 'Threads 게시 실패');
+    const containerId = await createMedia(`${api}/${userId}/threads`, threadParams, 'Threads 게시물 준비 실패');
+    if (hasImage || cards.length) {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 1500));
+        const response = await fetch(`${api}/${containerId}?fields=status,error_message`, {
+          headers:{authorization:`Bearer ${token}`}, signal:AbortSignal.timeout(6500)
+        });
+        const state = await response.json().catch(() => ({}));
+        if (!response.ok || !state.status) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          break;
+        }
+        if (state.status === 'FINISHED') break;
+        if (state.status === 'ERROR' || state.status === 'EXPIRED') throw new Error('Threads 카드 처리 실패 · ' + state.status);
+        if (attempt === 5) throw new Error('Threads 카드 준비 시간 초과');
+      }
+    }
+    const publish = await fetch(`${api}/${userId}/threads_publish`, {
+      method:'POST', body:new URLSearchParams({access_token:token, creation_id:containerId}),
+      signal:AbortSignal.timeout(12000)
+    });
+    const result = await publish.json();
+    if (!publish.ok || !result.id) {
+      const code = [result.error?.code, result.error?.error_subcode].filter(Number.isInteger).join('/');
+      throw new Error('Threads 최종 발행 실패 · ' + (result.error?.message || publish.status) + (code ? ' · Meta ' + code : ''));
+    }
     let permalink = ''; try { const lookup = await fetch(`${api}/${result.id}?fields=permalink&access_token=${encodeURIComponent(token)}`); const meta = await lookup.json(); permalink = lookup.ok ? meta.permalink || '' : ''; } catch { }
     return { id: result.id, url: permalink };
   }
@@ -115,6 +137,9 @@ async function post(row: any) {
           method: 'POST', body: new URLSearchParams({access_token:pageToken,url:image,published:'false'})
         });
         const photo = await upload.json();
+        if (photo.error?.code === 200) {
+          throw new Error('Facebook 카드 ' + (index + 1) + '장 준비 실패 · 페이지 사진 게시 권한 없음 (#200). 페이지 토큰의 pages_manage_posts, pages_read_engagement, pages_show_list와 페이지 콘텐츠 만들기 권한을 확인해 주세요.');
+        }
         if (!upload.ok || !photo.id) throw new Error('Facebook 카드 ' + (index + 1) + '장 준비 실패 · ' + (photo.error?.message || upload.status));
         body.set('attached_media[' + index + ']', JSON.stringify({media_fbid:photo.id}));
       }
