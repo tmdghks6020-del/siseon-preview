@@ -95,7 +95,7 @@ function renderContent(item) {
   const draftCards = Array.isArray(item.content?.imageUrls)
     ? item.content.imageUrls.filter(url => /^https:\/\//i.test(url)) : [];
   const imagePreview = draftCards.length === 3
-    ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:10px">' + draftCards.map((url,index) => `<figure style="margin:0"><img class="content-image-preview" src="${esc(url)}" alt="${['메인 상황','핵심 갈등','선택 질문'][index]}"><figcaption>${['메인 상황','핵심 갈등','선택 질문'][index]}</figcaption></figure>`).join('') + '</div>'
+    ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:10px">' + draftCards.map((url,index) => `<figure style="margin:0"><img class="content-image-preview" src="${esc(url)}" alt="${['메인 상황','배경','선택 질문'][index]}"><figcaption>${['메인 상황','배경','선택 질문'][index]}</figcaption></figure>`).join('') + '</div>'
     : ['instagram','facebook','threads'].includes(item.platform) && imageUrl ? `<img class="content-image-preview" src="${esc(imageUrl)}" alt="홍보 이미지 시안" loading="lazy">` : '';
   const publishedLink = item.externalPostUrl && !removed ? `<p><a href="${esc(item.externalPostUrl)}" target="_blank" rel="noopener noreferrer">게시물 확인 ↗</a></p>` : '';
   const scheduleLabel = item.scheduledAt ? `<p class="admin-footnote">게시 예약 시각: ${esc(new Date(item.scheduledAt).toLocaleString('ko-KR'))} · 작업 ${esc(item.jobStatus || '')} · 재시도 ${Number(item.retryCount || 0)}회</p>` : '';
@@ -683,11 +683,11 @@ function makeSocialCardSet(issue, draft, [cover, detail, choice]) {
   const fact = String(issue.summary || '').split('확인된 사실\n')[1]?.split('\n').find(line => line.trim())?.replace(/^\s*•\s*/, '') || '';
   const render = (photo, text, label, lines = []) => renderPhotoFocusCard({
     photo, heading: text, label, lines, platform, style, fixedBand: true,
-    credit: photo ? 'AI 생성 이미지' : '', format: 'image/jpeg'
+    format: 'image/jpeg'
   });
   return [
     render(cover, heading, ''),
-    render(detail, platform === 'instagram' ? '선택을 가르는 조건' : '어떤 조건이 선택을 바꿀까요?', '핵심 갈등', fact ? [fact] : []),
+    render(detail, '배경', '', fact ? [fact] : []),
     render(choice, platform === 'instagram' ? '당신의 선택은?' : '여러분이라면 어떻게 하겠어요?', '', [platform === 'instagram' ? '프로필 링크에서 안건 보기' : '시선에서 안건 확인하기'])
   ];
 }
@@ -704,12 +704,12 @@ function makeFacebookCards(issue, cover, detail, choice) {
   const facts = String(issue.summary || '').split('확인된 사실\n')[1]?.split('\n').map(line => line.replace(/^\s*•\s*/, '').trim()).filter(Boolean) || [];
   const render = (label, heading, lines, photo, highlight, coverLayout) => renderPhotoFocusCard({
     photo, heading, lines, label, highlight, coverLayout, style, platform:'facebook', fixedBand:true,
-    credit:photo ? 'AI 생성 이미지' : '', format:'image/jpeg'
+    format:'image/jpeg'
   });
   const factLines = source && facts.length ? [facts[0], '자료 출처 · ' + new URL(source).hostname] : ['확인할 자료는 안건 페이지에서 확인해 주세요.'];
   return [
     render('',coverTitle,coverQuestion ? [coverQuestion] : [],cover || detail,coverQuestion, foodComparison ? { kicker: /전쟁|전시/.test(originalTitle) ? '전쟁 상황에서' : '비상식량을 고른다면' } : undefined),
-    render('팩트 체크','먼저 확인할 내용',factLines,detail),
+    render('','배경',factLines,detail),
     render('','다른 사람들은 어떤 선택을 했을까요?',['시선에서 안건 읽고 투표 확인하기'],choice,'시선에서 안건 읽고 투표 확인하기')
   ];
 }
