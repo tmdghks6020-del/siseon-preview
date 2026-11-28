@@ -1837,7 +1837,7 @@ rssResults?.addEventListener('change', event => {
       return;
     }
     const group = document.createElement('fieldset');
-    group.innerHTML = `<legend>${escapeAdminHtml(article.title)}</legend><label>투표 제목<input data-draft-title maxlength="240" placeholder="비워두면 AI가 제안"></label><label>질문 방향<textarea data-draft-direction maxlength="600" rows="2"></textarea></label>`;
+    group.innerHTML = `<legend>${escapeAdminHtml(article.title)}</legend><label>투표 제목<input data-draft-title maxlength="240" placeholder="예: 퇴근 후 상사 카톡, 지금 답할까 내일 답할까? (선택)"></label><label>질문 방향<textarea data-draft-direction maxlength="600" rows="2"></textarea></label>`;
     selectedTopicNews.set(index, { article, group });
     rssDirections.append(group);
     if (article.commentReview?.status === 'ready') {
