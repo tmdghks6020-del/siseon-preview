@@ -79,6 +79,11 @@
 #topicRssDirections fieldset{min-width:0;margin:12px 0 0;padding:12px;border:1px solid var(--line);border-radius:10px}
 #topicRssDirections legend{max-width:100%;overflow-wrap:anywhere;font-weight:700}
 </style>
+<style>
+.poll-promo-actions { display:inline-grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; max-width:100%; }
+.poll-promo-actions > .primary-button { width:100%; min-height:44px; margin:0; justify-content:center; text-align:center; }
+@media (max-width:520px) { .poll-promo-actions { grid-template-columns:minmax(0,1fr); } }
+</style>
 </head>
 <body>
   <header class="topbar">
@@ -411,7 +416,7 @@
   <script src="ai-candidates.js"></script>
   <script src="supabase-config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=naver-draft-button-style"></script>
+  <script src="app.js?v=equal-promo-buttons"></script>
   <script type="module" src="content-automation.js?v=naver-photo-story"></script>
 <style>
 .admin-demo-notice { display: block; }
