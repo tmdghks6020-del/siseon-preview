@@ -846,10 +846,10 @@ document.querySelector('#topicSuggestionForm').addEventListener('submit', async 
   if (!isMemberSignedIn()) { openLogin(); return; }
   const form = event.currentTarget; const values = Object.fromEntries(new FormData(form).entries());
   if (/(선거|대선|총선|지방선거|공천)/.test(values.title)) { showUserActionToast('선거 관련 주제는 제안 대상에서 제외됩니다.'); return; }
-  const payload={author_id:memberSession.user.id,author_nickname:getMemberNickname(),category:values.category,title:values.title.trim(),rationale:values.rationale.trim(),for_text:values.forText.trim(),against_text:values.againstText.trim(),source_url:safeHttpsUrl(values.sourceUrl)};
+  const payload={author_id:memberSession.user.id,author_nickname:getMemberNickname(),category:values.category,title:values.title.trim(),rationale:values.rationale.trim(),for_text:values.forText.trim(),against_text:values.againstText.trim()};
   const {data,error}=await memberAuth.from('topic_suggestions').insert(payload).select('id,created_at').single();
   if(error){showUserActionToast(`제안을 저장하지 못했습니다: ${error.message}`);return;}
-  adminOperations.topicSuggestions.unshift({ id:data.id,category:payload.category,title:payload.title,rationale:payload.rationale,forText:payload.for_text,againstText:payload.against_text,sourceUrl:payload.source_url,sender:getMemberNickname(),memberRef:memberSession.user.id,interestCount:0,status:'검토 대기',createdAt:data.created_at });
+  adminOperations.topicSuggestions.unshift({ id:data.id,category:payload.category,title:payload.title,rationale:payload.rationale,forText:payload.for_text,againstText:payload.against_text,sender:getMemberNickname(),memberRef:memberSession.user.id,interestCount:0,status:'검토 대기',createdAt:data.created_at });
   form.reset(); document.querySelector('[data-board-tools="suggestions"] [data-board-clear]').click(); setCommunityComposer(document.querySelector('[data-board-tools="suggestions"] [data-board-write]'), false); renderHomeCommunityBoard(); showUserActionToast('주제 제안을 접수했습니다.');
 });
 
