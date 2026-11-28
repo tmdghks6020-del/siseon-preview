@@ -2,28 +2,28 @@
   <title id="title">시선 — 다른 관점이 모이는 곳</title>
   <desc id="desc">서로 다른 시선이 한 쟁점을 함께 바라보는 커뮤니티 브랜드 이미지</desc>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#123d35"/><stop offset="1" stop-color="#1e5a47"/></linearGradient>
-    <radialGradient id="glow"><stop stop-color="#d7ee83" stop-opacity=".2"/><stop offset="1" stop-color="#d7ee83" stop-opacity="0"/></radialGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#582719"/><stop offset="1" stop-color="#91462e"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="#ffd0a5" stop-opacity=".2"/><stop offset="1" stop-color="#ffd0a5" stop-opacity="0"/></radialGradient>
   </defs>
   <rect width="1200" height="630" rx="34" fill="url(#bg)"/>
   <circle cx="910" cy="310" r="310" fill="url(#glow)"/>
-  <g fill="none" stroke="#dcebdc" stroke-opacity=".27" stroke-width="2">
+  <g fill="none" stroke="#ffe4cb" stroke-opacity=".27" stroke-width="2">
     <circle cx="910" cy="310" r="212"/><circle cx="910" cy="310" r="157"/><circle cx="910" cy="310" r="100"/>
   </g>
-  <g fill="none" stroke="#dcebdc" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+  <g fill="none" stroke="#ffe4cb" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
     <path d="M716 310c55-75 120-112 194-112s139 37 194 112c-55 75-120 112-194 112s-139-37-194-112Z"/>
   </g>
-  <circle cx="910" cy="310" r="32" fill="#d7ee83"/><circle cx="910" cy="310" r="11" fill="#123d35"/>
-  <circle cx="760" cy="170" r="9" fill="#d7ee83"/><circle cx="1058" cy="190" r="6" fill="#dcebdc"/><circle cx="770" cy="456" r="6" fill="#dcebdc"/>
-  <g font-family="'Noto Sans KR', sans-serif" fill="#f5f7ee">
-    <text x="92" y="202" font-size="28" font-weight="700" letter-spacing="8" fill="#c4d8c8">다른 관점이 모이는 곳</text>
+  <circle cx="910" cy="310" r="32" fill="#ffd0a5"/><circle cx="910" cy="310" r="11" fill="#582719"/>
+  <circle cx="760" cy="170" r="9" fill="#ffd0a5"/><circle cx="1058" cy="190" r="6" fill="#ffe4cb"/><circle cx="770" cy="456" r="6" fill="#ffe4cb"/>
+  <g font-family="'Noto Sans KR', sans-serif" fill="#fff7ee">
+    <text x="92" y="202" font-size="28" font-weight="700" letter-spacing="8" fill="#efd1bc">다른 관점이 모이는 곳</text>
     <text x="88" y="330" font-size="112" font-weight="800" letter-spacing="-8">시선</text>
-    <text x="94" y="392" font-size="29" font-weight="500" fill="#d7e4d9">서로 다른 생각을 근거와 존중으로 잇습니다.</text>
+    <text x="94" y="392" font-size="29" font-weight="500" fill="#f8e4d6">서로 다른 생각을 근거와 존중으로 잇습니다.</text>
   </g>
   <g transform="translate(94 480)">
-    <rect width="60" height="60" rx="18" fill="#d7ee83"/>
-    <path d="M10 30c5.4-8 12.1-12 20-12s14.6 4 20 12c-5.4 8-12.1 12-20 12s-14.6-4-20-12Z" fill="none" stroke="#123d35" stroke-width="2.8" stroke-linejoin="round"/>
-    <circle cx="30" cy="30" r="7" fill="#123d35"/>
-    <text x="78" y="40" font-family="'Noto Sans KR', sans-serif" font-size="23" font-weight="700" fill="#e4eee5">SISEON COMMUNITY</text>
+    <rect width="60" height="60" rx="18" fill="#ffd0a5"/>
+    <path d="M10 30c5.4-8 12.1-12 20-12s14.6 4 20 12c-5.4 8-12.1 12-20 12s-14.6-4-20-12Z" fill="none" stroke="#582719" stroke-width="2.8" stroke-linejoin="round"/>
+    <circle cx="30" cy="30" r="7" fill="#582719"/>
+    <text x="78" y="40" font-family="'Noto Sans KR', sans-serif" font-size="23" font-weight="700" fill="#ffecd9">SISEON COMMUNITY</text>
   </g>
 </svg>
