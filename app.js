@@ -1834,6 +1834,28 @@ rssResults?.addEventListener('change', event => {
     group.innerHTML = `<legend>${escapeAdminHtml(article.title)}</legend><label>투표 제목<input data-draft-title maxlength="240" placeholder="비워두면 AI가 제안"></label><label>질문 방향<textarea data-draft-direction maxlength="600" rows="2"></textarea></label>`;
     selectedTopicNews.set(index, { article, group });
     rssDirections.append(group);
+    if (document.querySelector('#topicGenerationMode').value === 'community') {
+      const field = group.querySelector('[data-draft-direction]');
+      const feedback = document.createElement('p');
+      feedback.setAttribute('role', 'status');
+      feedback.textContent = '원문과 공개 댓글을 검토하고 있습니다…';
+      group.append(feedback);
+      let edited = false;
+      field.addEventListener('input', () => { edited = true; });
+      window.SISEON_TOPIC_ADMIN.reviewCommunity(article.url).then(result => {
+        if (selectedTopicNews.get(index)?.group !== group) return;
+        if (result.status === 'ready') {
+          if (!edited) field.value = result.direction;
+          feedback.textContent = '공개 댓글 ' + result.reviewed + '개 검토 · ' + result.views.join(' / ');
+        } else {
+          feedback.textContent = result.status === 'no_split'
+            ? '읽은 댓글에서 뚜렷한 두 관점을 확인하지 못했습니다. 질문 방향을 직접 적을 수 있습니다.'
+            : '공개 원문이나 댓글을 충분히 읽지 못했습니다. 원문 링크를 확인하고 질문 방향을 직접 적을 수 있습니다.';
+        }
+      }).catch(() => {
+        feedback.textContent = '댓글 검토 중 오류가 발생했습니다. 질문 방향을 직접 적을 수 있습니다.';
+      });
+    }
   } else {
     selectedTopicNews.get(index)?.group.remove();
     selectedTopicNews.delete(index);
