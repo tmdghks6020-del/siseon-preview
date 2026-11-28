@@ -256,6 +256,7 @@ async function init() {
         return mapped;
       },
       async discover(keyword, topicField, mode) { return call('topics-discover', { keyword, topicField, mode }); },
+      async reviewCommunity(url) { return call('topics-review-community', { url }); },
       async generate(payload) {
         const result = await call('topics-generate', payload);
         const candidates = await this.list();
