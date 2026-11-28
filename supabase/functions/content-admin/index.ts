@@ -616,7 +616,7 @@ async function generateTopics(input: Record<string, any>, actorId: string) {
     ? '커뮤니티 글은 관심 소재일 뿐 사실·여론의 증거가 아니다. 원문의 표현, 닉네임, 댓글을 복제하지 말고 독립적인 질문으로 각색한다. 의혹·실명 비난은 제외한다. 검증할 수 없는 사건은 인물·기업을 제거한 가상 사례로 전환하고 제목과 본문에 가상을 표시한다. facts에서 가정은 [가정], 미검증 주장은 [확인 필요]로 구분한다.'
     : mode === 'material'
     ? '관리자가 붙여넣은 공시·통계·자료에서 질문을 도출한다. URL 원문을 읽었다고 주장하지 않는다. 자료의 날짜·기준·단위를 확인하며 미검증 내용은 [확인 필요]로 표시한다.'
-    : '분야별 뉴스에서 지금 다룰 이유와 생활 영향을 기준으로 고른다. 보도량을 검색량이나 전체 여론이라고 부르지 않는다.';
+    : '시사 안건은 기사에서 대중이 판단해 볼 만한 결정이 확인될 때만 만든다. 누가 무엇을 결정하는지 intro에 명시하고, 두 선택 각각을 합리적으로 지지할 이유가 있는지 확인한다. 개인이 결정하는 문제는 나라면 어떻게 할까, 공공의 기준을 정하는 문제는 어떤 기준을 적용할까라는 관점으로 묻는다. 단순 속보나 경보는 별도의 판단거리가 기사에서 확인될 때만 검토한다. 기사에 없는 판단거리를 지어내지 않는다. 적합한 기사가 없으면 candidates를 빈 배열로 반환한다.';
   const fieldRule = selectedField === '전체 분야'
     ? '정치·민생, 주거·생활비, 기술·일상, 증시 등 관심과 선택의 갈등이 큰 쟁점을 우선한다. 억지로 분야를 하나씩 채우지 않는다.'
     : `생성할 후보는 모두 ${selectedField} 분야에서 고른다.`;
@@ -640,7 +640,7 @@ async function generateTopics(input: Record<string, any>, actorId: string) {
 - 인물 비방, 확인되지 않은 루머, 개인 의료·법률 조언, 개인 맞춤 매수·매도 권유는 제외한다. 증시·손실 대응의 원칙을 토론할 수 있다. 수익률에는 기준일·기간·매수가 대비인지 여부가 필요하며, 자료가 없는 -38% 같은 수치는 가정으로만 사용한다.
 - 같은 사건의 반복 질문은 피하고, 기존 공개 제목과 중복하지 않는다: ${JSON.stringify(existingTitles)}
 - 생성 방식 지침이 우선한다. 재미 투표는 가정 조건을 2~3개 작성하고, 다른 방식은 확인된 사실 또는 확인 필요 항목을 2~3개 작성한다. 후보별 출처 이름·날짜·URL은 headlineRefs의 첫 기사를 서버가 입력 메타데이터에서 채우므로 JSON에서 만들지 않는다. 확인 불가능한 정보와 숫자는 제외한다.
-- 제목은 독자가 그 상황에 처했다면 무엇을 할지 묻는 한 문장으로 쓴다. 제목에 상황과 선택의 갈림길을 함께 담는다. 예: 퇴근 후 상사 카톡, 지금 답할까 내일 답할까? 사회 이슈는 생활 속 선택으로 풀되, 가정이나 불확실한 내용을 사실처럼 제시하지 않는다. 배경은 intro에 쉬운 말로 2~3문장 안에 정리한다.
+- 시사 모드에서는 앞의 결정 주체에 따른 질문 기준을 우선 적용한다. 다른 모드의 제목은 독자가 그 상황에 처했다면 무엇을 할지 묻는 한 문장으로 쓴다. 제목에 상황과 선택의 갈림길을 함께 담는다. 예: 퇴근 후 상사 카톡, 지금 답할까 내일 답할까? 사회 이슈는 생활 속 선택으로 풀되, 가정이나 불확실한 내용을 사실처럼 제시하지 않는다. 배경은 intro에 쉬운 말로 2~3문장 안에 정리한다.
 - AI 후보는 행동이 구체적으로 드러나는 선택지 두 개를 낸다. forText는 첫 번째, againstText는 두 번째 선택을 지지하는 이유다. 각 필드에 '- '로 시작하는 짧은 이유 2개를 줄바꿈으로 나누고, 양쪽에 비슷한 길이와 구체성을 적용한다. 상대를 비하하지 않고 선택마다 중요하게 보는 가치를 설명한다.
 - 찬성·반대는 항목 수, 구체성, 길이를 비슷하게 맞춘다. 한쪽을 약하게 만들거나 AI가 결론을 정하지 않는다. 전문용어는 쉬운 말로 풀어 쓴다.
 - trendingReason에는 지금 다룰 이유 또는 재미의 요소와 선택의 고민을 적는다. 뉴스가 아닌 소재를 현재 뉴스라고 쓰지 않는다.
@@ -648,13 +648,14 @@ async function generateTopics(input: Record<string, any>, actorId: string) {
 다음 형식의 JSON 객체만 반환한다. candidates는 1개 이상 5개 이하다:
 {"candidates":[{"category":"분야","title":"짧고 구체적인 토론 질문형 제목","intro":"쟁점 배경을 1~2문장으로 소개하고, 다음 문장에서 토론할 질문을 분명히 적는다.","trendingReason":"생성 시점 주요 기사와 연결된 주목 근거","facts":["확인된 사실"],"forText":"- 찬성 논거 하나를 설명한다.\n- 다른 찬성 논거를 설명한다.","againstText":"- 반대 논거 하나를 설명한다.\n- 다른 반대 논거를 설명한다.","imageKeywords":["피사체 1","피사체 2"],"voteOptions":["구체적인 행동 A","구체적인 행동 B"],"headlineRefs":[1,2],"primarySources":[{"title":"자료 제목","publisher":"기관·저널","url":"입력 자료나 실제 검색 인용에서 확인한 HTTPS URL","supports":"확인할 사실 또는 논거"}]}]}`;
   const generation = await runAi({prompt, instructions: `${TOPIC_GUIDELINES}\n추가 반환 항목: 각 candidates 항목에 isHypothetical(boolean), editorialReview(string)를 반드시 포함한다.`,search:mode === 'news' || mode === 'material',maxTokens:10000}, (value:any)=>{
-    if(!Array.isArray(value.candidates) || value.candidates.length<1 || value.candidates.length>5) throw new Error('후보 개수 오류');
+    if(!Array.isArray(value.candidates) || (mode !== 'news' && value.candidates.length<1) || value.candidates.length>5) throw new Error('후보 개수 오류');
     for(const item of value.candidates) {
       if (!Array.isArray(item.voteOptions) || item.voteOptions.length !== 2) throw new Error('AI 후보에는 구체적인 선택지가 두 개 필요합니다.');
       if(!item.title || !item.forText || !item.againstText || !item.editorialReview || !Array.isArray(item.facts) || item.facts.length<2) throw new Error('필수 항목 누락');
     }
   });
   const {parsed,citations}=generation;
+  if (!parsed.candidates.length) return {candidates:[], aiProvider:generation.provider, attempts:generation.attempts, newsSource:mode, discoveryWarnings:[...discoveryWarnings,'기사에서 별도의 판단거리를 확인하지 못했습니다.']};
   for(const item of parsed.candidates) {
     if(!generation.webSearch) {
       item.editorialReview=`[웹 검색 미수행 · 입력 자료/가정 기반 초안] 원자료와 사실 확인이 필요합니다. ${item.editorialReview}`;
