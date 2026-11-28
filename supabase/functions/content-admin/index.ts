@@ -311,7 +311,7 @@ async function collectTopicNews(keyword = '') {
       publishedAt: xmlValue(item, 'pubDate'),
       description: stripHtml(xmlValue(item, 'description')).slice(0, 500),
       source
-    })).filter(article => article.title && article.url && Date.parse(article.publishedAt) >= Date.now() - 7 * 86400000);
+    })).filter(article => article.title && article.url && Date.parse(article.publishedAt) >= Date.now() - 24 * 60 * 60 * 1000);
     if (!entries.length) throw new Error('최근 기사 없음');
     return entries;
   }));
