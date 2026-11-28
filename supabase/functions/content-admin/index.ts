@@ -880,7 +880,7 @@ async function handle(request: Request) {
       if (liveError || archiveError) throw liveError || archiveError;
       const data = [...(live || []), ...(archived || [])];
       const topics = data.map((row: any) => ({
-        id: row.id, vote_options: row.vote_options, is_hypothetical: Boolean(row.data_signals?.isHypothetical), generation_mode: row.data_signals?.generationMode || 'news', category: row.category, title: row.title, intro: row.intro, facts: row.facts,
+        id: row.id, vote_options: row.vote_options, ai_perspectives: Boolean(row.data_signals?.aiProvider), is_hypothetical: Boolean(row.data_signals?.isHypothetical), generation_mode: row.data_signals?.generationMode || 'news', category: row.category, title: row.title, intro: row.intro, facts: row.facts,
         source: row.source, source_date: row.source_date, source_url: row.source_url,
         for_text: row.for_text, against_text: row.against_text, decided_at: row.decided_at, scheduled_for: row.scheduled_for,
         published_at: row.published_at, expires_at: row.expires_at,
@@ -906,7 +906,7 @@ async function handle(request: Request) {
   try {
     if (action === 'topics-clear-pending') {
       const { error, count } = await service.from('topic_candidates')
-        .delete({ count: 'exact' }).eq('status', 'pending');
+        .delete({ count: 'exact' }).eq('status', 'pending').is('data_signals->>suggestionId', null);
       if (error) throw error;
       return respond({ deletedCount: count ?? 0 });
     }
