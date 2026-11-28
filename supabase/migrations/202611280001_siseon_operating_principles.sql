@@ -119,7 +119,8 @@ drop policy suggestions_public_read on public.topic_suggestions;
 create policy suggestions_public_read on public.topic_suggestions for select
 using (
   public.is_siseon_admin()
-  or (status in ('pending','approved') and created_at+interval '15 days'>now())
+  or (status='pending' and qualified_at is null)
+  or (status='approved' and created_at+interval '15 days'>now())
 );
 
 select cron.schedule('siseon-finish-member-suggestions','* * * * *','select private.finish_member_suggestions()');
