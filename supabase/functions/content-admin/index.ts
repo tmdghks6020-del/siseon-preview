@@ -640,16 +640,17 @@ async function generateTopics(input: Record<string, any>, actorId: string) {
 - 인물 비방, 확인되지 않은 루머, 개인 의료·법률 조언, 개인 맞춤 매수·매도 권유는 제외한다. 증시·손실 대응의 원칙을 토론할 수 있다. 수익률에는 기준일·기간·매수가 대비인지 여부가 필요하며, 자료가 없는 -38% 같은 수치는 가정으로만 사용한다.
 - 같은 사건의 반복 질문은 피하고, 기존 공개 제목과 중복하지 않는다: ${JSON.stringify(existingTitles)}
 - 생성 방식 지침이 우선한다. 재미 투표는 가정 조건을 2~3개 작성하고, 다른 방식은 확인된 사실 또는 확인 필요 항목을 2~3개 작성한다. 후보별 출처 이름·날짜·URL은 headlineRefs의 첫 기사를 서버가 입력 메타데이터에서 채우므로 JSON에서 만들지 않는다. 확인 불가능한 정보와 숫자는 제외한다.
-- 제목은 전문지식 없이 5초 안에 이해할 수 있는 한 문장 질문으로, 가급적 45자 이내로 쓴다. 핵심 대상과 선택을 남기고 전문용어·불필요한 수치는 설명으로 옮긴다. intro는 배경과 실제 쟁점을 쉬운 말로 2~3문장 안에 정리하고, 한 문장을 길게 이어 쓰지 않는다.
-- forText와 againstText는 각각 핵심 논거 2~3개를 문자열 안에서 줄바꿈으로 구분한다. 각 줄은 '- '로 시작하고 논거 하나만 담으며, 항목당 1~2문장으로 쓴다. '① … ② … ③ …'처럼 한 문단에 항목을 이어 붙이지 않는다.
+- 제목은 독자가 그 상황에 처했다면 무엇을 할지 묻는 한 문장으로 쓴다. 제목에 상황과 선택의 갈림길을 함께 담는다. 예: 퇴근 후 상사 카톡, 지금 답할까 내일 답할까? 사회 이슈는 생활 속 선택으로 풀되, 가정이나 불확실한 내용을 사실처럼 제시하지 않는다. 배경은 intro에 쉬운 말로 2~3문장 안에 정리한다.
+- AI 후보는 행동이 구체적으로 드러나는 선택지 두 개를 낸다. forText는 첫 번째, againstText는 두 번째 선택을 지지하는 이유다. 각 필드에 '- '로 시작하는 짧은 이유 2개를 줄바꿈으로 나누고, 양쪽에 비슷한 길이와 구체성을 적용한다. 상대를 비하하지 않고 선택마다 중요하게 보는 가치를 설명한다.
 - 찬성·반대는 항목 수, 구체성, 길이를 비슷하게 맞춘다. 한쪽을 약하게 만들거나 AI가 결론을 정하지 않는다. 전문용어는 쉬운 말로 풀어 쓴다.
 - trendingReason에는 지금 다룰 이유 또는 재미의 요소와 선택의 고민을 적는다. 뉴스가 아닌 소재를 현재 뉴스라고 쓰지 않는다.
 
 다음 형식의 JSON 객체만 반환한다. candidates는 1개 이상 5개 이하다:
-{"candidates":[{"category":"분야","title":"짧고 구체적인 토론 질문형 제목","intro":"쟁점 배경을 1~2문장으로 소개하고, 다음 문장에서 토론할 질문을 분명히 적는다.","trendingReason":"생성 시점 주요 기사와 연결된 주목 근거","facts":["확인된 사실"],"forText":"- 찬성 논거 하나를 설명한다.\n- 다른 찬성 논거를 설명한다.","againstText":"- 반대 논거 하나를 설명한다.\n- 다른 반대 논거를 설명한다.","imageKeywords":["피사체 1","피사체 2"],"voteOptions":["선택 A","선택 B","잘 모르겠다"],"headlineRefs":[1,2],"primarySources":[{"title":"자료 제목","publisher":"기관·저널","url":"입력 자료나 실제 검색 인용에서 확인한 HTTPS URL","supports":"확인할 사실 또는 논거"}]}]}`;
+{"candidates":[{"category":"분야","title":"짧고 구체적인 토론 질문형 제목","intro":"쟁점 배경을 1~2문장으로 소개하고, 다음 문장에서 토론할 질문을 분명히 적는다.","trendingReason":"생성 시점 주요 기사와 연결된 주목 근거","facts":["확인된 사실"],"forText":"- 찬성 논거 하나를 설명한다.\n- 다른 찬성 논거를 설명한다.","againstText":"- 반대 논거 하나를 설명한다.\n- 다른 반대 논거를 설명한다.","imageKeywords":["피사체 1","피사체 2"],"voteOptions":["구체적인 행동 A","구체적인 행동 B"],"headlineRefs":[1,2],"primarySources":[{"title":"자료 제목","publisher":"기관·저널","url":"입력 자료나 실제 검색 인용에서 확인한 HTTPS URL","supports":"확인할 사실 또는 논거"}]}]}`;
   const generation = await runAi({prompt, instructions: `${TOPIC_GUIDELINES}\n추가 반환 항목: 각 candidates 항목에 isHypothetical(boolean), editorialReview(string)를 반드시 포함한다.`,search:mode === 'news' || mode === 'material',maxTokens:10000}, (value:any)=>{
     if(!Array.isArray(value.candidates) || value.candidates.length<1 || value.candidates.length>5) throw new Error('후보 개수 오류');
     for(const item of value.candidates) {
+      if (!Array.isArray(item.voteOptions) || item.voteOptions.length !== 2) throw new Error('AI 후보에는 구체적인 선택지가 두 개 필요합니다.');
       if(!item.title || !item.forText || !item.againstText || !item.editorialReview || !Array.isArray(item.facts) || item.facts.length<2) throw new Error('필수 항목 누락');
     }
   });
